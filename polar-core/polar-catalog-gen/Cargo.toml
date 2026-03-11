@@ -1,0 +1,8 @@
+[package]
+name = "polar-catalog-gen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tetra3 = "0.3.2"
+anyhow = "1"

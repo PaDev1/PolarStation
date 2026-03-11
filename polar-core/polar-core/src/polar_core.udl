@@ -1,0 +1,209 @@
+namespace polar_core {
+    /// Compute polar alignment error from three plate-solved positions.
+    [Throws=AlignmentError]
+    PolarError compute_polar_error(
+        CelestialCoord pos1,
+        CelestialCoord pos2,
+        CelestialCoord pos3,
+        f64 observer_lat_deg,
+        f64 observer_lon_deg,
+        f64 timestamp_jd
+    );
+
+    /// Convert equatorial coordinates to horizontal (alt/az).
+    AltAzCoord celestial_to_altaz(
+        CelestialCoord coord,
+        f64 observer_lat_deg,
+        f64 observer_lon_deg,
+        f64 timestamp_jd
+    );
+
+    /// Compute Julian Date from UTC date/time components.
+    f64 julian_date(i32 year, u32 month, u32 day, u32 hour, u32 min, f64 sec);
+
+    /// Compute local sidereal time in degrees.
+    f64 local_sidereal_time(f64 jd, f64 longitude_deg);
+
+    /// Angular separation between two celestial positions (degrees).
+    f64 angular_separation(CelestialCoord a, CelestialCoord b);
+
+    /// Library version string.
+    string polar_core_version();
+
+    /// Discover ASCOM Alpaca devices on local network via UDP broadcast.
+    sequence<string> discover_alpaca(u32 timeout_ms);
+
+    /// List available serial ports for LX200/USB mount connections.
+    sequence<string> list_serial_ports();
+};
+
+dictionary StarCentroid {
+    f64 x;
+    f64 y;
+    f64 brightness;
+};
+
+dictionary CelestialCoord {
+    f64 ra_deg;
+    f64 dec_deg;
+};
+
+dictionary AltAzCoord {
+    f64 alt_deg;
+    f64 az_deg;
+};
+
+dictionary SolveResult {
+    boolean success;
+    f64 ra_deg;
+    f64 dec_deg;
+    f64 roll_deg;
+    f64 fov_deg;
+    u32 matched_stars;
+    f64 solve_time_ms;
+    f64 rmse_arcsec;
+};
+
+dictionary PolarError {
+    f64 alt_error_arcmin;
+    f64 az_error_arcmin;
+    f64 total_error_arcmin;
+    CelestialCoord mount_axis;
+};
+
+dictionary CatalogStar {
+    f64 ra_deg;
+    f64 dec_deg;
+    f64 magnitude;
+};
+
+dictionary MountStatus {
+    boolean connected;
+    f64 ra_hours;
+    f64 dec_deg;
+    boolean tracking;
+    boolean slewing;
+    u8 tracking_rate;
+    boolean at_park;
+};
+
+[Error]
+enum AlignmentError {
+    "CollinearPoints",
+    "InvalidCoordinates",
+    "ComputationFailed",
+};
+
+[Error]
+enum SolverError {
+    "NoDatabaseLoaded",
+    "DatabaseLoadFailed",
+    "NoMatch",
+    "TooFewCentroids",
+    "Timeout",
+};
+
+interface PlateSolver {
+    constructor();
+
+    /// Load a pre-built solver database from an .rkyv file.
+    [Throws=SolverError]
+    void load_database(string path);
+
+    /// Solve: find sky position from star centroids.
+    [Throws=SolverError]
+    SolveResult solve(
+        sequence<StarCentroid> centroids,
+        u32 image_width,
+        u32 image_height,
+        f64 fov_deg,
+        f64 fov_tolerance_deg
+    );
+
+    /// Get all stars from the loaded catalog (for sky map display).
+    sequence<CatalogStar> get_star_catalog();
+
+    /// Get database info string.
+    string? database_info();
+};
+
+[Error]
+enum MountError {
+    "NotConnected",
+    "ConnectionFailed",
+    "CommunicationError",
+    "CommandRejected",
+    "InvalidResponse",
+    "Timeout",
+};
+
+interface MountController {
+    constructor();
+
+    /// Connect to an ASCOM Alpaca mount over HTTP.
+    [Throws=MountError]
+    void connect_alpaca(string host, u32 port);
+
+    /// Connect to a mount via LX200 serial protocol.
+    [Throws=MountError]
+    void connect_lx200(string device_path, u32 baud_rate);
+
+    /// Connect to a mount via LX200 protocol over TCP/WiFi.
+    /// AM5 default: host="192.168.4.1", port=4030.
+    [Throws=MountError]
+    void connect_lx200_tcp(string host, u32 port);
+
+    /// Disconnect from the mount.
+    [Throws=MountError]
+    void disconnect();
+
+    /// Check if connected.
+    boolean is_connected();
+
+    /// Name of the connected backend (e.g. "Alpaca", "LX200").
+    string? backend_name();
+
+    /// Get current mount status.
+    [Throws=MountError]
+    MountStatus get_status();
+
+    /// Get current RA in hours.
+    [Throws=MountError]
+    f64 get_ra_hours();
+
+    /// Get current Dec in degrees.
+    [Throws=MountError]
+    f64 get_dec_deg();
+
+    /// Slew RA axis by given degrees. Positive = east.
+    [Throws=MountError]
+    void slew_ra_degrees(f64 degrees);
+
+    /// Start or stop sidereal tracking.
+    [Throws=MountError]
+    void set_tracking(boolean enabled);
+
+    /// Emergency stop all motion.
+    [Throws=MountError]
+    void abort();
+
+    /// GoTo a specific RA/Dec (J2000). Starts async slew.
+    [Throws=MountError]
+    void goto_radec(f64 ra_hours, f64 dec_deg);
+
+    /// Set tracking rate (0=sidereal, 1=lunar, 2=solar, 3=king).
+    [Throws=MountError]
+    void set_tracking_rate(u8 rate);
+
+    /// Move an axis at given rate (deg/sec). 0=stop. axis: 0=RA, 1=Dec.
+    [Throws=MountError]
+    void move_axis(u8 axis, f64 rate_deg_per_sec);
+
+    /// Park the mount.
+    [Throws=MountError]
+    void park();
+
+    /// Unpark the mount.
+    [Throws=MountError]
+    void unpark();
+};

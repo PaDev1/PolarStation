@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+._*
+
+# Xcode
+*.xcuserdata/
+xcuserdata/
+DerivedData/
+*.xcworkspace/xcuserdata/
+build/
+
+# Rust
+polar-core/target/
+
+# Rust star catalog data (large, downloaded)
+polar-core/data/
+
+# Swift package build output
+PolarCore/libpolar_core.a
+PolarCore/.build/
+
+# ML model training
+ml-model/.venv/
+ml-model/data/
+ml-model/checkpoints/
+ml-model/__pycache__/
+
+# Python
+__pycache__/
+*.pyc
+
+# Claude
+.claude/

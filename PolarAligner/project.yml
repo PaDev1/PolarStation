@@ -1,0 +1,78 @@
+name: PolarAligner
+options:
+  bundleIdPrefix: com.polaraligner
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.1"
+  createIntermediateGroups: true
+
+packages:
+  PolarCore:
+    path: ../PolarCore
+
+targets:
+  PolarAligner:
+    type: application
+    platform: macOS
+    sources:
+      - path: PolarAligner
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.polaraligner.app
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: 1
+        INFOPLIST_FILE: PolarAligner/App/Info.plist
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        LIBRARY_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(PROJECT_DIR)/../PolarCore"
+          - "$(PROJECT_DIR)/Vendor/ZWO_SDK/lib"
+          - "/opt/homebrew/lib"
+        HEADER_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(PROJECT_DIR)/Vendor/ZWO_SDK/include"
+        SWIFT_OBJC_BRIDGING_HEADER: PolarAligner/Camera/ASICameraBridge-Bridging-Header.h
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-lASICamera2"
+          - "-lusb-1.0"
+    dependencies:
+      - package: PolarCore
+    postBuildScripts:
+      - name: "Copy ZWO SDK dylib"
+        script: |
+          FRAMEWORKS_DIR="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}"
+          mkdir -p "${FRAMEWORKS_DIR}"
+          cp -f "${PROJECT_DIR}/Vendor/ZWO_SDK/lib/libASICamera2.dylib" "${FRAMEWORKS_DIR}/"
+          # Also copy libusb from Homebrew
+          if [ -f "/opt/homebrew/lib/libusb-1.0.0.dylib" ]; then
+            cp -f "/opt/homebrew/lib/libusb-1.0.0.dylib" "${FRAMEWORKS_DIR}/"
+          fi
+          # Fix install names so the app finds them at @rpath
+          install_name_tool -id "@rpath/libASICamera2.dylib" "${FRAMEWORKS_DIR}/libASICamera2.dylib" 2>/dev/null || true
+          install_name_tool -id "@rpath/libusb-1.0.0.dylib" "${FRAMEWORKS_DIR}/libusb-1.0.0.dylib" 2>/dev/null || true
+          # Fix libASICamera2's reference to libusb
+          install_name_tool -change "/opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib" "@rpath/libusb-1.0.0.dylib" "${FRAMEWORKS_DIR}/libASICamera2.dylib" 2>/dev/null || true
+          # Ad-hoc sign the dylibs so macOS doesn't reject them
+          codesign --force --sign - "${FRAMEWORKS_DIR}/libASICamera2.dylib"
+          codesign --force --sign - "${FRAMEWORKS_DIR}/libusb-1.0.0.dylib"
+        basedOnDependencyAnalysis: false
+
+  PolarAlignerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: PolarAlignerTests
+    dependencies:
+      - target: PolarAligner
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: YES
+        HEADER_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(PROJECT_DIR)/Vendor/ZWO_SDK/include"
