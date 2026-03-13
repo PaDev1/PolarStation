@@ -36,7 +36,7 @@ protocol StarDetectorProtocol {
 /// Configuration for star detection.
 struct StarDetectionConfig {
     /// Minimum SNR for a detection to be accepted.
-    var minSNR: Double = 3.0
+    var minSNR: Double = 8.0
 
     /// Maximum number of stars to return.
     var maxStars: Int = 200

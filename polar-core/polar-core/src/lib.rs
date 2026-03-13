@@ -1,10 +1,21 @@
+pub mod camera;
 pub mod coordinates;
+pub mod filterwheel;
 pub mod mount;
 pub mod plate_solver;
 pub mod polar_error;
 pub mod time_utils;
 
+use camera::AlpacaCameraController;
+use camera::AlpacaCameraInfo;
+use camera::AlpacaDeviceInfo;
+use camera::CameraError;
+use camera::discover_alpaca_cameras;
 use coordinates::*;
+use filterwheel::AlpacaFilterWheelController;
+use filterwheel::AlpacaFilterWheelInfo;
+use filterwheel::FilterWheelError;
+use filterwheel::discover_alpaca_filterwheels;
 use mount::MountController;
 use mount::MountError;
 use plate_solver::*;

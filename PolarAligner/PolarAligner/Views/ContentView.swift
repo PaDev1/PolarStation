@@ -11,6 +11,7 @@ struct ContentView: View {
                 NavigationLink("Adjustment", value: "adjustment")
                 NavigationLink("Mount", value: "mount")
                 NavigationLink("Camera", value: "camera")
+                NavigationLink("Guide Camera", value: "guide")
                 NavigationLink("Settings", value: "settings")
             }
             .navigationTitle("PolarAligner")
@@ -31,12 +32,22 @@ struct ContentView: View {
                 )
             case "camera":
                 CameraTabView(viewModel: appState.cameraViewModel)
+            case "guide":
+                GuideTabView(
+                    cameraViewModel: appState.guideCameraViewModel,
+                    calibrator: appState.guideCalibrator,
+                    session: appState.guideSession,
+                    mountService: appState.mountService,
+                    simulatedGuideEngine: appState.simulatedGuideEngine
+                )
             case "settings":
                 SettingsView(
                     mountService: appState.mountService,
                     plateSolveService: appState.plateSolveService,
                     coordinator: appState.alignmentCoordinator,
-                    cameraViewModel: appState.cameraViewModel
+                    cameraViewModel: appState.cameraViewModel,
+                    guideCameraViewModel: appState.guideCameraViewModel,
+                    filterWheelViewModel: appState.filterWheelViewModel
                 )
             default:
                 Text("Select a tab")
@@ -44,6 +55,7 @@ struct ContentView: View {
             }
         }
     }
+
 }
 
 #Preview {

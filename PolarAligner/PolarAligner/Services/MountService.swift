@@ -35,6 +35,7 @@ final class MountService: ObservableObject {
     }
 
     /// Connect via LX200 serial protocol (AM5 USB, etc.).
+    /// Automatically syncs mount clock and location from observer settings.
     func connectLx200(devicePath: String, baudRate: UInt32 = 9600) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             mountQueue.async { [controller] in
@@ -68,6 +69,34 @@ final class MountService: ObservableObject {
         backendName = controller.backendName()
         error = nil
         startStatusPolling()
+    }
+
+    /// Sync mount's clock and location using stored observer settings.
+    private func syncMountDatetime() async {
+        let lat = UserDefaults.standard.double(forKey: "observerLat")
+        let lon = UserDefaults.standard.double(forKey: "observerLon")
+        let utcOffset = Double(TimeZone.current.secondsFromGMT()) / 3600.0
+        do {
+            try await syncDatetime(observerLat: lat, observerLon: lon, utcOffsetHours: utcOffset)
+            print("[MountService] Synced mount time: lat=\(lat), lon=\(lon), utcOffset=\(utcOffset)h")
+        } catch {
+            print("[MountService] Time sync failed: \(error)")
+        }
+    }
+
+    /// Establish alignment by syncing the mount's own reported RA/Dec.
+    /// This tells the mount "you are where you think you are" via :CM#,
+    /// which clears the "not aligned" state and allows GoTo to work.
+    private func syncMountPosition() async {
+        do {
+            try await refreshStatus()
+            if let s = status {
+                try await syncPosition(raHours: s.raHours, decDeg: s.decDeg)
+                print("[MountService] Synced mount position: RA=\(s.raHours)h Dec=\(s.decDeg)°")
+            }
+        } catch {
+            print("[MountService] Position sync failed: \(error)")
+        }
     }
 
     /// Disconnect from mount.
@@ -202,12 +231,56 @@ final class MountService: ObservableObject {
         }
     }
 
+    /// Sync mount position: tell the mount "you are pointing at (raHours, decDeg)".
+    /// Establishes alignment so GoTo works. Call after plate solving, or on connect.
+    func syncPosition(raHours: Double, decDeg: Double) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            mountQueue.async { [controller] in
+                do {
+                    try controller.syncPosition(raHours: raHours, decDeg: decDeg)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Sync mount's internal clock and site location with computer.
+    /// Call after connecting to LX200 mounts so their alt/az is correct.
+    func syncDatetime(observerLat: Double, observerLon: Double, utcOffsetHours: Double) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            mountQueue.async { [controller] in
+                do {
+                    try controller.syncDatetime(observerLatDeg: observerLat, observerLonDeg: observerLon, utcOffsetHours: utcOffsetHours)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Unpark the mount.
     func unpark() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             mountQueue.async { [controller] in
                 do {
                     try controller.unpark()
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Slew to home position. Alpaca: native findhome. LX200: GoTo Polaris.
+    func findHome() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            mountQueue.async { [controller] in
+                do {
+                    try controller.findHome()
                     continuation.resume()
                 } catch {
                     continuation.resume(throwing: error)

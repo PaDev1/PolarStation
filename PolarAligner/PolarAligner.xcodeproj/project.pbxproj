@@ -7,21 +7,29 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		020B08D0F4145D38C89A3DAE /* AlpacaCameraBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118837AAA56C4DC080CC2BFD /* AlpacaCameraBridge.swift */; };
+		6DB743408EF44AD183A59055 /* AlpacaFilterWheelBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5005D941040F43F5AC587C7F /* AlpacaFilterWheelBridge.swift */; };
+		25055F54C8E346F08B11E81F /* FilterWheelViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94694EC6F10C434BA4562535 /* FilterWheelViewModel.swift */; };
 		056677F71FA0836494040B92 /* CentroidExtractor.metal in Sources */ = {isa = PBXBuildFile; fileRef = 72D42D53989F171AD0E77390 /* CentroidExtractor.metal */; };
+		0670F6D26DEE03B87CBDAE5D /* FrameSaverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77ABA3C380453B9A2B1FE820 /* FrameSaverTests.swift */; };
 		079B926030BDC44E6DC6C87A /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA8FD3B4B00A2E5E066BAA6 /* AppState.swift */; };
 		10CE779E9F19BD9B86C2E9B8 /* PlateSolveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CDB4454434C2EE32680E95 /* PlateSolveService.swift */; };
+		13FB1F1136FAC0B8C62848C0 /* MountTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D083431597B495E99C4492C /* MountTabView.swift */; };
 		1BA4369C97DA27F1CF2191A6 /* PolarAlignerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83FB2261D598CE736A38D07 /* PolarAlignerApp.swift */; };
+		2475155442280D1301D285A2 /* StarDetector.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 6EFA5B9FA485EA81B9C04325 /* StarDetector.mlpackage */; };
 		26185D07EB522E57ED1BE506 /* AlignmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E9A8E5D104B136217EFAC0 /* AlignmentView.swift */; };
 		2915B1F0D9AE4ACE8E9D31E0 /* AdjustmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A66F6CD6AE2586730DCB855 /* AdjustmentView.swift */; };
 		3350CF19CEAC4EB07029B9FA /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89FDD03F62D5E9D379BAFBCF /* CameraPreviewView.swift */; };
 		46C81C4A786BDAAFF8201057 /* StarMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2357629857C643B42C61FD /* StarMatcher.swift */; };
+		4AB0B1A3678E084361F4EBCC /* SkyMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2415B2AA600FBE33D227163 /* SkyMapView.swift */; };
+		546DBF3A4C04FA63E5E161A0 /* SkyMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F36828616645E56689659781 /* SkyMapTests.swift */; };
 		5BD5F05ED32667C0FBE5C94B /* CameraTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85EF55B01D01F2B0E9AA0273 /* CameraTabView.swift */; };
 		5CCABC9CC2F811949C966C45 /* StarDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FAB2166688961D4C68EFDDF /* StarDetectorTests.swift */; };
-		A1B2C3D4E5F60718A9B0C1D2 /* FrameSaverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A9B0C1D3 /* FrameSaverTests.swift */; };
 		6A5CBFA210BA59B4FD924EFE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C5165F3B4FE32DA23B94330 /* ContentView.swift */; };
 		880603980433D77FD369FF64 /* Preprocessing.metal in Sources */ = {isa = PBXBuildFile; fileRef = 7A942BA6F5E4F184838080A6 /* Preprocessing.metal */; };
 		8F917F9A32D93D9647DA7C9D /* PolarCore in Frameworks */ = {isa = PBXBuildFile; productRef = 39F4E644735371355925E40E /* PolarCore */; };
 		937DB35232ED08BE23B0964A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D4E85CF213B9098F67B7F6 /* SettingsView.swift */; };
+		9C19EEC55DA98D06F2B366FD /* MessierCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0E9AF5568EBA1F962CBE50A /* MessierCatalog.swift */; };
 		A8DF317619E3CB3E81235535 /* PolarCoreFFITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 128F6D6969FAB0A240C1EF2A /* PolarCoreFFITests.swift */; };
 		B609C83F7FFF8ED7774A5B9D /* MountService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4E82877A64F47BA88252B /* MountService.swift */; };
 		B6D6F9159C02B38265E6E331 /* CoreMLDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A257B2A4BEFB6EDA1109FB /* CoreMLDetector.swift */; };
@@ -33,13 +41,15 @@
 		DD9EDA67FE9A1DCCD95A9C31 /* MetalPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23B64395D489E6194B8A6985 /* MetalPipeline.swift */; };
 		E5B4922BA0F2843FA91F689B /* ErrorTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 418E9E36E6182A146DDA2788 /* ErrorTracker.swift */; };
 		ECBA00D9C3927637ADBDE329 /* CameraSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDE8E447639571186201071D /* CameraSettings.swift */; };
+		F8B39A4CB2E01D0B99D900B9 /* AlpacaFrameGrabber.swift in Sources */ = {isa = PBXBuildFile; fileRef = F91F20912D0811BF8AA3A71C /* AlpacaFrameGrabber.swift */; };
 		F974A20106235FF9D10E4ACF /* ClassicalDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E25F59D55854CE942FAA73A /* ClassicalDetector.swift */; };
 		FDE4F85A924AFE49F4F55336 /* FrameSaver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 690C98F0F4A82574295CD33B /* FrameSaver.swift */; };
-		AA1234567890ABCDEF123402 /* StarDetector.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = AA1234567890ABCDEF123401 /* StarDetector.mlpackage */; };
-		BB12345678ABCDEF00000002 /* MessierCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB12345678ABCDEF00000001 /* MessierCatalog.swift */; };
-		BB12345678ABCDEF00000004 /* SkyMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB12345678ABCDEF00000003 /* SkyMapView.swift */; };
-		BB12345678ABCDEF00000006 /* MountTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB12345678ABCDEF00000005 /* MountTabView.swift */; };
-		BB12345678ABCDEF00000008 /* SkyMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB12345678ABCDEF00000007 /* SkyMapTests.swift */; };
+		AA10000000000000000001B1 /* GuideCalibration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000001F1 /* GuideCalibration.swift */; };
+		AA10000000000000000002B2 /* GuideCalibrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000002F2 /* GuideCalibrator.swift */; };
+		AA10000000000000000003B3 /* GuideSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000003F3 /* GuideSession.swift */; };
+		AA10000000000000000004B4 /* GuideGraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000004F4 /* GuideGraphView.swift */; };
+		AA10000000000000000005B5 /* GuideTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000005F5 /* GuideTabView.swift */; };
+		AA10000000000000000007B7 /* SimulatedGuideEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000007F7 /* SimulatedGuideEngine.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -55,6 +65,9 @@
 /* Begin PBXFileReference section */
 		04F09AA481B4E158A11F0B33 /* PolarAligner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PolarAligner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0A2357629857C643B42C61FD /* StarMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarMatcher.swift; sourceTree = "<group>"; };
+		118837AAA56C4DC080CC2BFD /* AlpacaCameraBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaCameraBridge.swift; sourceTree = "<group>"; };
+		5005D941040F43F5AC587C7F /* AlpacaFilterWheelBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaFilterWheelBridge.swift; sourceTree = "<group>"; };
+		94694EC6F10C434BA4562535 /* FilterWheelViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterWheelViewModel.swift; sourceTree = "<group>"; };
 		128F6D6969FAB0A240C1EF2A /* PolarCoreFFITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarCoreFFITests.swift; sourceTree = "<group>"; };
 		12A257B2A4BEFB6EDA1109FB /* CoreMLDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreMLDetector.swift; sourceTree = "<group>"; };
 		1A66F6CD6AE2586730DCB855 /* AdjustmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdjustmentView.swift; sourceTree = "<group>"; };
@@ -65,15 +78,17 @@
 		418E9E36E6182A146DDA2788 /* ErrorTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorTracker.swift; sourceTree = "<group>"; };
 		4E25F59D55854CE942FAA73A /* ClassicalDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassicalDetector.swift; sourceTree = "<group>"; };
 		4FAB2166688961D4C68EFDDF /* StarDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarDetectorTests.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F60718A9B0C1D3 /* FrameSaverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSaverTests.swift; sourceTree = "<group>"; };
 		5C5165F3B4FE32DA23B94330 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		66DDD3E49A40C59A164272C0 /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
 		690C98F0F4A82574295CD33B /* FrameSaver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSaver.swift; sourceTree = "<group>"; };
+		6EFA5B9FA485EA81B9C04325 /* StarDetector.mlpackage */ = {isa = PBXFileReference; path = StarDetector.mlpackage; sourceTree = "<group>"; };
 		70344B4164FAFF67CAAE4FC0 /* ASICameraBridge-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "ASICameraBridge-Bridging-Header.h"; sourceTree = "<group>"; };
 		72D42D53989F171AD0E77390 /* CentroidExtractor.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = CentroidExtractor.metal; sourceTree = "<group>"; };
 		72D4E85CF213B9098F67B7F6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		75CDB4454434C2EE32680E95 /* PlateSolveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateSolveService.swift; sourceTree = "<group>"; };
+		77ABA3C380453B9A2B1FE820 /* FrameSaverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSaverTests.swift; sourceTree = "<group>"; };
 		7A942BA6F5E4F184838080A6 /* Preprocessing.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Preprocessing.metal; sourceTree = "<group>"; };
+		7D083431597B495E99C4492C /* MountTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountTabView.swift; sourceTree = "<group>"; };
 		85EF55B01D01F2B0E9AA0273 /* CameraTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraTabView.swift; sourceTree = "<group>"; };
 		89FDD03F62D5E9D379BAFBCF /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
 		933B9AD5E58347FB4183514D /* StarDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarDetector.swift; sourceTree = "<group>"; };
@@ -82,14 +97,19 @@
 		A83FB2261D598CE736A38D07 /* PolarAlignerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarAlignerApp.swift; sourceTree = "<group>"; };
 		BDE8E447639571186201071D /* CameraSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraSettings.swift; sourceTree = "<group>"; };
 		C1E9A8E5D104B136217EFAC0 /* AlignmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlignmentView.swift; sourceTree = "<group>"; };
+		C2415B2AA600FBE33D227163 /* SkyMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyMapView.swift; sourceTree = "<group>"; };
 		C886D4F7CB8232B4F0A94CF7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		EE48E0174955FBD82C3946DB /* AlignmentCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlignmentCoordinator.swift; sourceTree = "<group>"; };
 		EE8647E166C4E5E079F70E22 /* ASICameraBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASICameraBridge.swift; sourceTree = "<group>"; };
-		AA1234567890ABCDEF123401 /* StarDetector.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = StarDetector.mlpackage; sourceTree = "<group>"; };
-		BB12345678ABCDEF00000001 /* MessierCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessierCatalog.swift; sourceTree = "<group>"; };
-		BB12345678ABCDEF00000003 /* SkyMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyMapView.swift; sourceTree = "<group>"; };
-		BB12345678ABCDEF00000005 /* MountTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountTabView.swift; sourceTree = "<group>"; };
-		BB12345678ABCDEF00000007 /* SkyMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyMapTests.swift; sourceTree = "<group>"; };
+		F0E9AF5568EBA1F962CBE50A /* MessierCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessierCatalog.swift; sourceTree = "<group>"; };
+		F36828616645E56689659781 /* SkyMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyMapTests.swift; sourceTree = "<group>"; };
+		F91F20912D0811BF8AA3A71C /* AlpacaFrameGrabber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaFrameGrabber.swift; sourceTree = "<group>"; };
+		AA10000000000000000001F1 /* GuideCalibration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideCalibration.swift; sourceTree = "<group>"; };
+		AA10000000000000000002F2 /* GuideCalibrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideCalibrator.swift; sourceTree = "<group>"; };
+		AA10000000000000000003F3 /* GuideSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideSession.swift; sourceTree = "<group>"; };
+		AA10000000000000000004F4 /* GuideGraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideGraphView.swift; sourceTree = "<group>"; };
+		AA10000000000000000005F5 /* GuideTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideTabView.swift; sourceTree = "<group>"; };
+		AA10000000000000000007F7 /* SimulatedGuideEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedGuideEngine.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -120,8 +140,9 @@
 				8FBDFA25E1CE134C4296F6C2 /* Alignment */,
 				1C351A6029375A2040449995 /* App */,
 				8F83EF6C219FD3B1D6501CA8 /* Camera */,
+				AA10000000000000000006A6 /* Guiding */,
 				CD865166DE05ADB2C6D85390 /* Pipeline */,
-				AA1234567890ABCDEF123403 /* Resources */,
+				F693F7C395B6BC2B592E5002 /* Resources */,
 				8DD49CC3A6F4D47AB78F4A22 /* Services */,
 				F7C52D998CD58A35324B0796 /* Views */,
 			);
@@ -150,6 +171,10 @@
 		8F83EF6C219FD3B1D6501CA8 /* Camera */ = {
 			isa = PBXGroup;
 			children = (
+				118837AAA56C4DC080CC2BFD /* AlpacaCameraBridge.swift */,
+				5005D941040F43F5AC587C7F /* AlpacaFilterWheelBridge.swift */,
+				F91F20912D0811BF8AA3A71C /* AlpacaFrameGrabber.swift */,
+				94694EC6F10C434BA4562535 /* FilterWheelViewModel.swift */,
 				70344B4164FAFF67CAAE4FC0 /* ASICameraBridge-Bridging-Header.h */,
 				EE8647E166C4E5E079F70E22 /* ASICameraBridge.swift */,
 				BDE8E447639571186201071D /* CameraSettings.swift */,
@@ -191,14 +216,6 @@
 			path = Pipeline;
 			sourceTree = "<group>";
 		};
-		AA1234567890ABCDEF123403 /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				AA1234567890ABCDEF123401 /* StarDetector.mlpackage */,
-			);
-			path = Resources;
-			sourceTree = "<group>";
-		};
 		CDD3AB2E0713149B8AEE826F /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -211,12 +228,31 @@
 		E15F8EE4EAB050BE56FE03A6 /* PolarAlignerTests */ = {
 			isa = PBXGroup;
 			children = (
-				A1B2C3D4E5F60718A9B0C1D3 /* FrameSaverTests.swift */,
+				77ABA3C380453B9A2B1FE820 /* FrameSaverTests.swift */,
 				128F6D6969FAB0A240C1EF2A /* PolarCoreFFITests.swift */,
-				BB12345678ABCDEF00000007 /* SkyMapTests.swift */,
+				F36828616645E56689659781 /* SkyMapTests.swift */,
 				4FAB2166688961D4C68EFDDF /* StarDetectorTests.swift */,
 			);
 			path = PolarAlignerTests;
+			sourceTree = "<group>";
+		};
+		F693F7C395B6BC2B592E5002 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				6EFA5B9FA485EA81B9C04325 /* StarDetector.mlpackage */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		AA10000000000000000006A6 /* Guiding */ = {
+			isa = PBXGroup;
+			children = (
+				AA10000000000000000001F1 /* GuideCalibration.swift */,
+				AA10000000000000000002F2 /* GuideCalibrator.swift */,
+				AA10000000000000000003F3 /* GuideSession.swift */,
+				AA10000000000000000007F7 /* SimulatedGuideEngine.swift */,
+			);
+			path = Guiding;
 			sourceTree = "<group>";
 		};
 		F7C52D998CD58A35324B0796 /* Views */ = {
@@ -227,10 +263,12 @@
 				89FDD03F62D5E9D379BAFBCF /* CameraPreviewView.swift */,
 				85EF55B01D01F2B0E9AA0273 /* CameraTabView.swift */,
 				5C5165F3B4FE32DA23B94330 /* ContentView.swift */,
-				BB12345678ABCDEF00000001 /* MessierCatalog.swift */,
-				BB12345678ABCDEF00000005 /* MountTabView.swift */,
+				AA10000000000000000004F4 /* GuideGraphView.swift */,
+				AA10000000000000000005F5 /* GuideTabView.swift */,
+				F0E9AF5568EBA1F962CBE50A /* MessierCatalog.swift */,
+				7D083431597B495E99C4492C /* MountTabView.swift */,
 				72D4E85CF213B9098F67B7F6 /* SettingsView.swift */,
-				BB12345678ABCDEF00000003 /* SkyMapView.swift */,
+				C2415B2AA600FBE33D227163 /* SkyMapView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -262,7 +300,6 @@
 			buildPhases = (
 				EFC1087FF8CE0647C679332E /* Sources */,
 				EDF5276B3997FCDEED13726C /* Frameworks */,
-				AA1234567890ABCDEF123404 /* Resources */,
 				7EEC028923D094F3FA3F09E7 /* Copy ZWO SDK dylib */,
 			);
 			buildRules = (
@@ -315,17 +352,6 @@
 		};
 /* End PBXProject section */
 
-/* Begin PBXResourcesBuildPhase section */
-		AA1234567890ABCDEF123404 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				AA1234567890ABCDEF123402 /* StarDetector.mlpackage in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXResourcesBuildPhase section */
-
 /* Begin PBXShellScriptBuildPhase section */
 		7EEC028923D094F3FA3F09E7 /* Copy ZWO SDK dylib */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -353,10 +379,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1B2C3D4E5F60718A9B0C1D2 /* FrameSaverTests.swift in Sources */,
+				0670F6D26DEE03B87CBDAE5D /* FrameSaverTests.swift in Sources */,
 				A8DF317619E3CB3E81235535 /* PolarCoreFFITests.swift in Sources */,
+				546DBF3A4C04FA63E5E161A0 /* SkyMapTests.swift in Sources */,
 				5CCABC9CC2F811949C966C45 /* StarDetectorTests.swift in Sources */,
-				BB12345678ABCDEF00000008 /* SkyMapTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -368,6 +394,10 @@
 				2915B1F0D9AE4ACE8E9D31E0 /* AdjustmentView.swift in Sources */,
 				D0856F7FEF8D5AE06A34E116 /* AlignmentCoordinator.swift in Sources */,
 				26185D07EB522E57ED1BE506 /* AlignmentView.swift in Sources */,
+				020B08D0F4145D38C89A3DAE /* AlpacaCameraBridge.swift in Sources */,
+				6DB743408EF44AD183A59055 /* AlpacaFilterWheelBridge.swift in Sources */,
+				25055F54C8E346F08B11E81F /* FilterWheelViewModel.swift in Sources */,
+				F8B39A4CB2E01D0B99D900B9 /* AlpacaFrameGrabber.swift in Sources */,
 				079B926030BDC44E6DC6C87A /* AppState.swift in Sources */,
 				3350CF19CEAC4EB07029B9FA /* CameraPreviewView.swift in Sources */,
 				ECBA00D9C3927637ADBDE329 /* CameraSettings.swift in Sources */,
@@ -380,17 +410,24 @@
 				E5B4922BA0F2843FA91F689B /* ErrorTracker.swift in Sources */,
 				D0939FD13481E766555672F9 /* FrameGrabber.swift in Sources */,
 				FDE4F85A924AFE49F4F55336 /* FrameSaver.swift in Sources */,
+				AA10000000000000000001B1 /* GuideCalibration.swift in Sources */,
+				AA10000000000000000002B2 /* GuideCalibrator.swift in Sources */,
+				AA10000000000000000003B3 /* GuideSession.swift in Sources */,
+				AA10000000000000000004B4 /* GuideGraphView.swift in Sources */,
+				AA10000000000000000005B5 /* GuideTabView.swift in Sources */,
+				AA10000000000000000007B7 /* SimulatedGuideEngine.swift in Sources */,
+				9C19EEC55DA98D06F2B366FD /* MessierCatalog.swift in Sources */,
 				DD9EDA67FE9A1DCCD95A9C31 /* MetalPipeline.swift in Sources */,
 				B609C83F7FFF8ED7774A5B9D /* MountService.swift in Sources */,
+				13FB1F1136FAC0B8C62848C0 /* MountTabView.swift in Sources */,
 				10CE779E9F19BD9B86C2E9B8 /* PlateSolveService.swift in Sources */,
 				1BA4369C97DA27F1CF2191A6 /* PolarAlignerApp.swift in Sources */,
 				880603980433D77FD369FF64 /* Preprocessing.metal in Sources */,
 				937DB35232ED08BE23B0964A /* SettingsView.swift in Sources */,
+				4AB0B1A3678E084361F4EBCC /* SkyMapView.swift in Sources */,
+				2475155442280D1301D285A2 /* StarDetector.mlpackage in Sources */,
 				D88AD67AC06EA0008D7357E6 /* StarDetector.swift in Sources */,
 				46C81C4A786BDAAFF8201057 /* StarMatcher.swift in Sources */,
-				BB12345678ABCDEF00000002 /* MessierCatalog.swift in Sources */,
-				BB12345678ABCDEF00000004 /* SkyMapView.swift in Sources */,
-				BB12345678ABCDEF00000006 /* MountTabView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -496,6 +533,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				COREML_CODEGEN_LANGUAGE = None;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				HEADER_SEARCH_PATHS = (
@@ -586,6 +624,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				COREML_CODEGEN_LANGUAGE = None;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				HEADER_SEARCH_PATHS = (

@@ -400,6 +400,38 @@ fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
+    typealias FfiType = UInt8
+    typealias SwiftType = UInt8
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt8 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: UInt8, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
+    typealias FfiType = UInt16
+    typealias SwiftType = UInt16
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt16 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
     typealias FfiType = UInt32
     typealias SwiftType = UInt32
@@ -448,6 +480,30 @@ fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterBool : FfiConverter {
+    typealias FfiType = Int8
+    typealias SwiftType = Bool
+
+    public static func lift(_ value: Int8) throws -> Bool {
+        return value != 0
+    }
+
+    public static func lower(_ value: Bool) -> Int8 {
+        return value ? 1 : 0
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Bool {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Bool, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterString: FfiConverter {
     typealias SwiftType = String
     typealias FfiType = RustBuffer
@@ -484,6 +540,1180 @@ fileprivate struct FfiConverterString: FfiConverter {
         writeInt(&buf, len)
         writeBytes(&buf, value.utf8)
     }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterData: FfiConverterRustBuffer {
+    typealias SwiftType = Data
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Data {
+        let len: Int32 = try readInt(&buf)
+        return Data(try readBytes(&buf, count: Int(len)))
+    }
+
+    public static func write(_ value: Data, into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        writeBytes(&buf, value)
+    }
+}
+
+
+
+
+public protocol AlpacaCameraControllerProtocol: AnyObject, Sendable {
+    
+    /**
+     * Abort the current exposure.
+     */
+    func abortExposure() throws 
+    
+    /**
+     * Get camera state (0=idle, 1=waiting, 2=exposing, 3=reading, 4=download, 5=error).
+     */
+    func cameraState() throws  -> UInt8
+    
+    /**
+     * Connect to an ASCOM Alpaca camera device.
+     */
+    func connect(host: String, port: UInt32, deviceNumber: UInt32) throws  -> AlpacaCameraInfo
+    
+    /**
+     * Disconnect from the camera.
+     */
+    func disconnect() throws 
+    
+    /**
+     * Download the last captured image as raw pixel bytes (16-bit LE).
+     */
+    func downloadImage() throws  -> Data
+    
+    /**
+     * Get sensor temperature in Celsius.
+     */
+    func getTemperature() throws  -> Double
+    
+    /**
+     * Check if connected.
+     */
+    func isConnected()  -> Bool
+    
+    /**
+     * Check if the last exposure image is ready for download.
+     */
+    func isImageReady() throws  -> Bool
+    
+    /**
+     * Set binning factor (1, 2, 3, 4).
+     */
+    func setBinning(bin: UInt8) throws 
+    
+    /**
+     * Set cooler on/off with target temperature.
+     */
+    func setCooler(enabled: Bool, targetCelsius: Double) throws 
+    
+    /**
+     * Set gain value.
+     */
+    func setGain(gain: Int32) throws 
+    
+    /**
+     * Start an exposure (duration in seconds).
+     */
+    func startExposure(durationSecs: Double) throws 
+    
+}
+open class AlpacaCameraController: AlpacaCameraControllerProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_polar_core_fn_clone_alpacacameracontroller(self.pointer, $0) }
+    }
+public convenience init() {
+    let pointer =
+        try! rustCall() {
+    uniffi_polar_core_fn_constructor_alpacacameracontroller_new($0
+    )
+}
+    self.init(unsafeFromRawPointer: pointer)
+}
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_polar_core_fn_free_alpacacameracontroller(pointer, $0) }
+    }
+
+    
+
+    
+    /**
+     * Abort the current exposure.
+     */
+open func abortExposure()throws   {try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_abort_exposure(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
+     * Get camera state (0=idle, 1=waiting, 2=exposing, 3=reading, 4=download, 5=error).
+     */
+open func cameraState()throws  -> UInt8  {
+    return try  FfiConverterUInt8.lift(try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_camera_state(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Connect to an ASCOM Alpaca camera device.
+     */
+open func connect(host: String, port: UInt32, deviceNumber: UInt32)throws  -> AlpacaCameraInfo  {
+    return try  FfiConverterTypeAlpacaCameraInfo_lift(try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_connect(self.uniffiClonePointer(),
+        FfiConverterString.lower(host),
+        FfiConverterUInt32.lower(port),
+        FfiConverterUInt32.lower(deviceNumber),$0
+    )
+})
+}
+    
+    /**
+     * Disconnect from the camera.
+     */
+open func disconnect()throws   {try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_disconnect(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
+     * Download the last captured image as raw pixel bytes (16-bit LE).
+     */
+open func downloadImage()throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_download_image(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Get sensor temperature in Celsius.
+     */
+open func getTemperature()throws  -> Double  {
+    return try  FfiConverterDouble.lift(try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_get_temperature(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Check if connected.
+     */
+open func isConnected() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_polar_core_fn_method_alpacacameracontroller_is_connected(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Check if the last exposure image is ready for download.
+     */
+open func isImageReady()throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_is_image_ready(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Set binning factor (1, 2, 3, 4).
+     */
+open func setBinning(bin: UInt8)throws   {try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_set_binning(self.uniffiClonePointer(),
+        FfiConverterUInt8.lower(bin),$0
+    )
+}
+}
+    
+    /**
+     * Set cooler on/off with target temperature.
+     */
+open func setCooler(enabled: Bool, targetCelsius: Double)throws   {try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_set_cooler(self.uniffiClonePointer(),
+        FfiConverterBool.lower(enabled),
+        FfiConverterDouble.lower(targetCelsius),$0
+    )
+}
+}
+    
+    /**
+     * Set gain value.
+     */
+open func setGain(gain: Int32)throws   {try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_set_gain(self.uniffiClonePointer(),
+        FfiConverterInt32.lower(gain),$0
+    )
+}
+}
+    
+    /**
+     * Start an exposure (duration in seconds).
+     */
+open func startExposure(durationSecs: Double)throws   {try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_start_exposure(self.uniffiClonePointer(),
+        FfiConverterDouble.lower(durationSecs),$0
+    )
+}
+}
+    
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAlpacaCameraController: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = AlpacaCameraController
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> AlpacaCameraController {
+        return AlpacaCameraController(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: AlpacaCameraController) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlpacaCameraController {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: AlpacaCameraController, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaCameraController_lift(_ pointer: UnsafeMutableRawPointer) throws -> AlpacaCameraController {
+    return try FfiConverterTypeAlpacaCameraController.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaCameraController_lower(_ value: AlpacaCameraController) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeAlpacaCameraController.lower(value)
+}
+
+
+
+
+
+
+public protocol MountControllerProtocol: AnyObject, Sendable {
+    
+    /**
+     * Emergency stop all motion.
+     */
+    func abort() throws 
+    
+    /**
+     * Name of the connected backend (e.g. "Alpaca", "LX200").
+     */
+    func backendName()  -> String?
+    
+    /**
+     * Connect to an ASCOM Alpaca mount over HTTP.
+     */
+    func connectAlpaca(host: String, port: UInt32) throws 
+    
+    /**
+     * Connect to a mount via LX200 serial protocol.
+     */
+    func connectLx200(devicePath: String, baudRate: UInt32) throws 
+    
+    /**
+     * Connect to a mount via LX200 protocol over TCP/WiFi.
+     * AM5 default: host="192.168.4.1", port=4030.
+     */
+    func connectLx200Tcp(host: String, port: UInt32) throws 
+    
+    /**
+     * Disconnect from the mount.
+     */
+    func disconnect() throws 
+    
+    /**
+     * Slew to home position. Alpaca: native findhome. LX200: GoTo Polaris.
+     */
+    func findHome() throws 
+    
+    /**
+     * Get current Dec in degrees.
+     */
+    func getDecDeg() throws  -> Double
+    
+    /**
+     * Get current RA in hours.
+     */
+    func getRaHours() throws  -> Double
+    
+    /**
+     * Get current mount status.
+     */
+    func getStatus() throws  -> MountStatus
+    
+    /**
+     * GoTo a specific RA/Dec (J2000). Starts async slew.
+     */
+    func gotoRadec(raHours: Double, decDeg: Double) throws 
+    
+    /**
+     * Check if connected.
+     */
+    func isConnected()  -> Bool
+    
+    /**
+     * Move an axis at given rate (deg/sec). 0=stop. axis: 0=RA, 1=Dec.
+     */
+    func moveAxis(axis: UInt8, rateDegPerSec: Double) throws 
+    
+    /**
+     * Park the mount.
+     */
+    func park() throws 
+    
+    /**
+     * Start or stop sidereal tracking.
+     */
+    func setTracking(enabled: Bool) throws 
+    
+    /**
+     * Set tracking rate (0=sidereal, 1=lunar, 2=solar, 3=king).
+     */
+    func setTrackingRate(rate: UInt8) throws 
+    
+    /**
+     * Slew RA axis by given degrees. Positive = east.
+     */
+    func slewRaDegrees(degrees: Double) throws 
+    
+    /**
+     * Sync mount clock and site location with computer.
+     */
+    func syncDatetime(observerLatDeg: Double, observerLonDeg: Double, utcOffsetHours: Double) throws 
+    
+    /**
+     * Sync mount position: tell the mount "you are pointing here". Needed for GoTo alignment.
+     */
+    func syncPosition(raHours: Double, decDeg: Double) throws 
+    
+    /**
+     * Unpark the mount.
+     */
+    func unpark() throws 
+    
+}
+open class MountController: MountControllerProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_polar_core_fn_clone_mountcontroller(self.pointer, $0) }
+    }
+public convenience init() {
+    let pointer =
+        try! rustCall() {
+    uniffi_polar_core_fn_constructor_mountcontroller_new($0
+    )
+}
+    self.init(unsafeFromRawPointer: pointer)
+}
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_polar_core_fn_free_mountcontroller(pointer, $0) }
+    }
+
+    
+
+    
+    /**
+     * Emergency stop all motion.
+     */
+open func abort()throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_abort(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
+     * Name of the connected backend (e.g. "Alpaca", "LX200").
+     */
+open func backendName() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_polar_core_fn_method_mountcontroller_backend_name(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Connect to an ASCOM Alpaca mount over HTTP.
+     */
+open func connectAlpaca(host: String, port: UInt32)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_connect_alpaca(self.uniffiClonePointer(),
+        FfiConverterString.lower(host),
+        FfiConverterUInt32.lower(port),$0
+    )
+}
+}
+    
+    /**
+     * Connect to a mount via LX200 serial protocol.
+     */
+open func connectLx200(devicePath: String, baudRate: UInt32)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_connect_lx200(self.uniffiClonePointer(),
+        FfiConverterString.lower(devicePath),
+        FfiConverterUInt32.lower(baudRate),$0
+    )
+}
+}
+    
+    /**
+     * Connect to a mount via LX200 protocol over TCP/WiFi.
+     * AM5 default: host="192.168.4.1", port=4030.
+     */
+open func connectLx200Tcp(host: String, port: UInt32)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_connect_lx200_tcp(self.uniffiClonePointer(),
+        FfiConverterString.lower(host),
+        FfiConverterUInt32.lower(port),$0
+    )
+}
+}
+    
+    /**
+     * Disconnect from the mount.
+     */
+open func disconnect()throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_disconnect(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
+     * Slew to home position. Alpaca: native findhome. LX200: GoTo Polaris.
+     */
+open func findHome()throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_find_home(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
+     * Get current Dec in degrees.
+     */
+open func getDecDeg()throws  -> Double  {
+    return try  FfiConverterDouble.lift(try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_get_dec_deg(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Get current RA in hours.
+     */
+open func getRaHours()throws  -> Double  {
+    return try  FfiConverterDouble.lift(try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_get_ra_hours(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Get current mount status.
+     */
+open func getStatus()throws  -> MountStatus  {
+    return try  FfiConverterTypeMountStatus_lift(try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_get_status(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * GoTo a specific RA/Dec (J2000). Starts async slew.
+     */
+open func gotoRadec(raHours: Double, decDeg: Double)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_goto_radec(self.uniffiClonePointer(),
+        FfiConverterDouble.lower(raHours),
+        FfiConverterDouble.lower(decDeg),$0
+    )
+}
+}
+    
+    /**
+     * Check if connected.
+     */
+open func isConnected() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_polar_core_fn_method_mountcontroller_is_connected(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Move an axis at given rate (deg/sec). 0=stop. axis: 0=RA, 1=Dec.
+     */
+open func moveAxis(axis: UInt8, rateDegPerSec: Double)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_move_axis(self.uniffiClonePointer(),
+        FfiConverterUInt8.lower(axis),
+        FfiConverterDouble.lower(rateDegPerSec),$0
+    )
+}
+}
+    
+    /**
+     * Park the mount.
+     */
+open func park()throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_park(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
+     * Start or stop sidereal tracking.
+     */
+open func setTracking(enabled: Bool)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_set_tracking(self.uniffiClonePointer(),
+        FfiConverterBool.lower(enabled),$0
+    )
+}
+}
+    
+    /**
+     * Set tracking rate (0=sidereal, 1=lunar, 2=solar, 3=king).
+     */
+open func setTrackingRate(rate: UInt8)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_set_tracking_rate(self.uniffiClonePointer(),
+        FfiConverterUInt8.lower(rate),$0
+    )
+}
+}
+    
+    /**
+     * Slew RA axis by given degrees. Positive = east.
+     */
+open func slewRaDegrees(degrees: Double)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_slew_ra_degrees(self.uniffiClonePointer(),
+        FfiConverterDouble.lower(degrees),$0
+    )
+}
+}
+    
+    /**
+     * Sync mount clock and site location with computer.
+     */
+open func syncDatetime(observerLatDeg: Double, observerLonDeg: Double, utcOffsetHours: Double)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_sync_datetime(self.uniffiClonePointer(),
+        FfiConverterDouble.lower(observerLatDeg),
+        FfiConverterDouble.lower(observerLonDeg),
+        FfiConverterDouble.lower(utcOffsetHours),$0
+    )
+}
+}
+    
+    /**
+     * Sync mount position: tell the mount "you are pointing here". Needed for GoTo alignment.
+     */
+open func syncPosition(raHours: Double, decDeg: Double)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_sync_position(self.uniffiClonePointer(),
+        FfiConverterDouble.lower(raHours),
+        FfiConverterDouble.lower(decDeg),$0
+    )
+}
+}
+    
+    /**
+     * Unpark the mount.
+     */
+open func unpark()throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_unpark(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMountController: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = MountController
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> MountController {
+        return MountController(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: MountController) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MountController {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: MountController, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMountController_lift(_ pointer: UnsafeMutableRawPointer) throws -> MountController {
+    return try FfiConverterTypeMountController.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMountController_lower(_ value: MountController) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeMountController.lower(value)
+}
+
+
+
+
+
+
+public protocol PlateSolverProtocol: AnyObject, Sendable {
+    
+    /**
+     * Get database info string.
+     */
+    func databaseInfo()  -> String?
+    
+    /**
+     * Get all stars from the loaded catalog (for sky map display).
+     */
+    func getStarCatalog()  -> [CatalogStar]
+    
+    /**
+     * Load a pre-built solver database from an .rkyv file.
+     */
+    func loadDatabase(path: String) throws 
+    
+    /**
+     * Solve: find sky position from star centroids.
+     */
+    func solve(centroids: [StarCentroid], imageWidth: UInt32, imageHeight: UInt32, fovDeg: Double, fovToleranceDeg: Double) throws  -> SolveResult
+    
+}
+open class PlateSolver: PlateSolverProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_polar_core_fn_clone_platesolver(self.pointer, $0) }
+    }
+public convenience init() {
+    let pointer =
+        try! rustCall() {
+    uniffi_polar_core_fn_constructor_platesolver_new($0
+    )
+}
+    self.init(unsafeFromRawPointer: pointer)
+}
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_polar_core_fn_free_platesolver(pointer, $0) }
+    }
+
+    
+
+    
+    /**
+     * Get database info string.
+     */
+open func databaseInfo() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_polar_core_fn_method_platesolver_database_info(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Get all stars from the loaded catalog (for sky map display).
+     */
+open func getStarCatalog() -> [CatalogStar]  {
+    return try!  FfiConverterSequenceTypeCatalogStar.lift(try! rustCall() {
+    uniffi_polar_core_fn_method_platesolver_get_star_catalog(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Load a pre-built solver database from an .rkyv file.
+     */
+open func loadDatabase(path: String)throws   {try rustCallWithError(FfiConverterTypeSolverError_lift) {
+    uniffi_polar_core_fn_method_platesolver_load_database(self.uniffiClonePointer(),
+        FfiConverterString.lower(path),$0
+    )
+}
+}
+    
+    /**
+     * Solve: find sky position from star centroids.
+     */
+open func solve(centroids: [StarCentroid], imageWidth: UInt32, imageHeight: UInt32, fovDeg: Double, fovToleranceDeg: Double)throws  -> SolveResult  {
+    return try  FfiConverterTypeSolveResult_lift(try rustCallWithError(FfiConverterTypeSolverError_lift) {
+    uniffi_polar_core_fn_method_platesolver_solve(self.uniffiClonePointer(),
+        FfiConverterSequenceTypeStarCentroid.lower(centroids),
+        FfiConverterUInt32.lower(imageWidth),
+        FfiConverterUInt32.lower(imageHeight),
+        FfiConverterDouble.lower(fovDeg),
+        FfiConverterDouble.lower(fovToleranceDeg),$0
+    )
+})
+}
+    
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlateSolver: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = PlateSolver
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> PlateSolver {
+        return PlateSolver(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: PlateSolver) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlateSolver {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: PlateSolver, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlateSolver_lift(_ pointer: UnsafeMutableRawPointer) throws -> PlateSolver {
+    return try FfiConverterTypePlateSolver.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlateSolver_lower(_ value: PlateSolver) -> UnsafeMutableRawPointer {
+    return FfiConverterTypePlateSolver.lower(value)
+}
+
+
+
+
+public struct AlpacaCameraInfo {
+    public var name: String
+    public var width: UInt32
+    public var height: UInt32
+    public var sensorType: UInt8
+    public var maxBin: UInt8
+    public var maxAdu: UInt32
+    public var hasCooler: Bool
+    public var pixelSizeX: Double
+    public var pixelSizeY: Double
+    public var bayerOffsetX: UInt8
+    public var bayerOffsetY: UInt8
+    public var gainMin: Int32
+    public var gainMax: Int32
+    public var gain: Int32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, width: UInt32, height: UInt32, sensorType: UInt8, maxBin: UInt8, maxAdu: UInt32, hasCooler: Bool, pixelSizeX: Double, pixelSizeY: Double, bayerOffsetX: UInt8, bayerOffsetY: UInt8, gainMin: Int32, gainMax: Int32, gain: Int32) {
+        self.name = name
+        self.width = width
+        self.height = height
+        self.sensorType = sensorType
+        self.maxBin = maxBin
+        self.maxAdu = maxAdu
+        self.hasCooler = hasCooler
+        self.pixelSizeX = pixelSizeX
+        self.pixelSizeY = pixelSizeY
+        self.bayerOffsetX = bayerOffsetX
+        self.bayerOffsetY = bayerOffsetY
+        self.gainMin = gainMin
+        self.gainMax = gainMax
+        self.gain = gain
+    }
+}
+
+#if compiler(>=6)
+extension AlpacaCameraInfo: Sendable {}
+#endif
+
+
+extension AlpacaCameraInfo: Equatable, Hashable {
+    public static func ==(lhs: AlpacaCameraInfo, rhs: AlpacaCameraInfo) -> Bool {
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.width != rhs.width {
+            return false
+        }
+        if lhs.height != rhs.height {
+            return false
+        }
+        if lhs.sensorType != rhs.sensorType {
+            return false
+        }
+        if lhs.maxBin != rhs.maxBin {
+            return false
+        }
+        if lhs.maxAdu != rhs.maxAdu {
+            return false
+        }
+        if lhs.hasCooler != rhs.hasCooler {
+            return false
+        }
+        if lhs.pixelSizeX != rhs.pixelSizeX {
+            return false
+        }
+        if lhs.pixelSizeY != rhs.pixelSizeY {
+            return false
+        }
+        if lhs.bayerOffsetX != rhs.bayerOffsetX {
+            return false
+        }
+        if lhs.bayerOffsetY != rhs.bayerOffsetY {
+            return false
+        }
+        if lhs.gainMin != rhs.gainMin {
+            return false
+        }
+        if lhs.gainMax != rhs.gainMax {
+            return false
+        }
+        if lhs.gain != rhs.gain {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(width)
+        hasher.combine(height)
+        hasher.combine(sensorType)
+        hasher.combine(maxBin)
+        hasher.combine(maxAdu)
+        hasher.combine(hasCooler)
+        hasher.combine(pixelSizeX)
+        hasher.combine(pixelSizeY)
+        hasher.combine(bayerOffsetX)
+        hasher.combine(bayerOffsetY)
+        hasher.combine(gainMin)
+        hasher.combine(gainMax)
+        hasher.combine(gain)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAlpacaCameraInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlpacaCameraInfo {
+        return
+            try AlpacaCameraInfo(
+                name: FfiConverterString.read(from: &buf), 
+                width: FfiConverterUInt32.read(from: &buf), 
+                height: FfiConverterUInt32.read(from: &buf), 
+                sensorType: FfiConverterUInt8.read(from: &buf), 
+                maxBin: FfiConverterUInt8.read(from: &buf), 
+                maxAdu: FfiConverterUInt32.read(from: &buf), 
+                hasCooler: FfiConverterBool.read(from: &buf), 
+                pixelSizeX: FfiConverterDouble.read(from: &buf), 
+                pixelSizeY: FfiConverterDouble.read(from: &buf), 
+                bayerOffsetX: FfiConverterUInt8.read(from: &buf), 
+                bayerOffsetY: FfiConverterUInt8.read(from: &buf), 
+                gainMin: FfiConverterInt32.read(from: &buf), 
+                gainMax: FfiConverterInt32.read(from: &buf), 
+                gain: FfiConverterInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AlpacaCameraInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterUInt32.write(value.width, into: &buf)
+        FfiConverterUInt32.write(value.height, into: &buf)
+        FfiConverterUInt8.write(value.sensorType, into: &buf)
+        FfiConverterUInt8.write(value.maxBin, into: &buf)
+        FfiConverterUInt32.write(value.maxAdu, into: &buf)
+        FfiConverterBool.write(value.hasCooler, into: &buf)
+        FfiConverterDouble.write(value.pixelSizeX, into: &buf)
+        FfiConverterDouble.write(value.pixelSizeY, into: &buf)
+        FfiConverterUInt8.write(value.bayerOffsetX, into: &buf)
+        FfiConverterUInt8.write(value.bayerOffsetY, into: &buf)
+        FfiConverterInt32.write(value.gainMin, into: &buf)
+        FfiConverterInt32.write(value.gainMax, into: &buf)
+        FfiConverterInt32.write(value.gain, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaCameraInfo_lift(_ buf: RustBuffer) throws -> AlpacaCameraInfo {
+    return try FfiConverterTypeAlpacaCameraInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaCameraInfo_lower(_ value: AlpacaCameraInfo) -> RustBuffer {
+    return FfiConverterTypeAlpacaCameraInfo.lower(value)
+}
+
+
+public struct AlpacaDeviceInfo {
+    public var deviceName: String
+    public var deviceType: String
+    public var deviceNumber: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(deviceName: String, deviceType: String, deviceNumber: UInt32) {
+        self.deviceName = deviceName
+        self.deviceType = deviceType
+        self.deviceNumber = deviceNumber
+    }
+}
+
+#if compiler(>=6)
+extension AlpacaDeviceInfo: Sendable {}
+#endif
+
+
+extension AlpacaDeviceInfo: Equatable, Hashable {
+    public static func ==(lhs: AlpacaDeviceInfo, rhs: AlpacaDeviceInfo) -> Bool {
+        if lhs.deviceName != rhs.deviceName {
+            return false
+        }
+        if lhs.deviceType != rhs.deviceType {
+            return false
+        }
+        if lhs.deviceNumber != rhs.deviceNumber {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(deviceName)
+        hasher.combine(deviceType)
+        hasher.combine(deviceNumber)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAlpacaDeviceInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlpacaDeviceInfo {
+        return
+            try AlpacaDeviceInfo(
+                deviceName: FfiConverterString.read(from: &buf), 
+                deviceType: FfiConverterString.read(from: &buf), 
+                deviceNumber: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AlpacaDeviceInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.deviceName, into: &buf)
+        FfiConverterString.write(value.deviceType, into: &buf)
+        FfiConverterUInt32.write(value.deviceNumber, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaDeviceInfo_lift(_ buf: RustBuffer) throws -> AlpacaDeviceInfo {
+    return try FfiConverterTypeAlpacaDeviceInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaDeviceInfo_lower(_ value: AlpacaDeviceInfo) -> RustBuffer {
+    return FfiConverterTypeAlpacaDeviceInfo.lower(value)
 }
 
 
@@ -557,6 +1787,84 @@ public func FfiConverterTypeAltAzCoord_lower(_ value: AltAzCoord) -> RustBuffer 
 }
 
 
+public struct CatalogStar {
+    public var raDeg: Double
+    public var decDeg: Double
+    public var magnitude: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(raDeg: Double, decDeg: Double, magnitude: Double) {
+        self.raDeg = raDeg
+        self.decDeg = decDeg
+        self.magnitude = magnitude
+    }
+}
+
+#if compiler(>=6)
+extension CatalogStar: Sendable {}
+#endif
+
+
+extension CatalogStar: Equatable, Hashable {
+    public static func ==(lhs: CatalogStar, rhs: CatalogStar) -> Bool {
+        if lhs.raDeg != rhs.raDeg {
+            return false
+        }
+        if lhs.decDeg != rhs.decDeg {
+            return false
+        }
+        if lhs.magnitude != rhs.magnitude {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(raDeg)
+        hasher.combine(decDeg)
+        hasher.combine(magnitude)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCatalogStar: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CatalogStar {
+        return
+            try CatalogStar(
+                raDeg: FfiConverterDouble.read(from: &buf), 
+                decDeg: FfiConverterDouble.read(from: &buf), 
+                magnitude: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CatalogStar, into buf: inout [UInt8]) {
+        FfiConverterDouble.write(value.raDeg, into: &buf)
+        FfiConverterDouble.write(value.decDeg, into: &buf)
+        FfiConverterDouble.write(value.magnitude, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCatalogStar_lift(_ buf: RustBuffer) throws -> CatalogStar {
+    return try FfiConverterTypeCatalogStar.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCatalogStar_lower(_ value: CatalogStar) -> RustBuffer {
+    return FfiConverterTypeCatalogStar.lower(value)
+}
+
+
 public struct CelestialCoord {
     public var raDeg: Double
     public var decDeg: Double
@@ -624,6 +1932,132 @@ public func FfiConverterTypeCelestialCoord_lift(_ buf: RustBuffer) throws -> Cel
 #endif
 public func FfiConverterTypeCelestialCoord_lower(_ value: CelestialCoord) -> RustBuffer {
     return FfiConverterTypeCelestialCoord.lower(value)
+}
+
+
+public struct MountStatus {
+    public var connected: Bool
+    public var raHours: Double
+    public var decDeg: Double
+    public var altDeg: Double
+    public var azDeg: Double
+    public var tracking: Bool
+    public var slewing: Bool
+    public var trackingRate: UInt8
+    public var atPark: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(connected: Bool, raHours: Double, decDeg: Double, altDeg: Double, azDeg: Double, tracking: Bool, slewing: Bool, trackingRate: UInt8, atPark: Bool) {
+        self.connected = connected
+        self.raHours = raHours
+        self.decDeg = decDeg
+        self.altDeg = altDeg
+        self.azDeg = azDeg
+        self.tracking = tracking
+        self.slewing = slewing
+        self.trackingRate = trackingRate
+        self.atPark = atPark
+    }
+}
+
+#if compiler(>=6)
+extension MountStatus: Sendable {}
+#endif
+
+
+extension MountStatus: Equatable, Hashable {
+    public static func ==(lhs: MountStatus, rhs: MountStatus) -> Bool {
+        if lhs.connected != rhs.connected {
+            return false
+        }
+        if lhs.raHours != rhs.raHours {
+            return false
+        }
+        if lhs.decDeg != rhs.decDeg {
+            return false
+        }
+        if lhs.altDeg != rhs.altDeg {
+            return false
+        }
+        if lhs.azDeg != rhs.azDeg {
+            return false
+        }
+        if lhs.tracking != rhs.tracking {
+            return false
+        }
+        if lhs.slewing != rhs.slewing {
+            return false
+        }
+        if lhs.trackingRate != rhs.trackingRate {
+            return false
+        }
+        if lhs.atPark != rhs.atPark {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(connected)
+        hasher.combine(raHours)
+        hasher.combine(decDeg)
+        hasher.combine(altDeg)
+        hasher.combine(azDeg)
+        hasher.combine(tracking)
+        hasher.combine(slewing)
+        hasher.combine(trackingRate)
+        hasher.combine(atPark)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMountStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MountStatus {
+        return
+            try MountStatus(
+                connected: FfiConverterBool.read(from: &buf), 
+                raHours: FfiConverterDouble.read(from: &buf), 
+                decDeg: FfiConverterDouble.read(from: &buf), 
+                altDeg: FfiConverterDouble.read(from: &buf), 
+                azDeg: FfiConverterDouble.read(from: &buf), 
+                tracking: FfiConverterBool.read(from: &buf), 
+                slewing: FfiConverterBool.read(from: &buf), 
+                trackingRate: FfiConverterUInt8.read(from: &buf), 
+                atPark: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MountStatus, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.connected, into: &buf)
+        FfiConverterDouble.write(value.raHours, into: &buf)
+        FfiConverterDouble.write(value.decDeg, into: &buf)
+        FfiConverterDouble.write(value.altDeg, into: &buf)
+        FfiConverterDouble.write(value.azDeg, into: &buf)
+        FfiConverterBool.write(value.tracking, into: &buf)
+        FfiConverterBool.write(value.slewing, into: &buf)
+        FfiConverterUInt8.write(value.trackingRate, into: &buf)
+        FfiConverterBool.write(value.atPark, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMountStatus_lift(_ buf: RustBuffer) throws -> MountStatus {
+    return try FfiConverterTypeMountStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMountStatus_lower(_ value: MountStatus) -> RustBuffer {
+    return FfiConverterTypeMountStatus.lower(value)
 }
 
 
@@ -710,6 +2144,124 @@ public func FfiConverterTypePolarError_lift(_ buf: RustBuffer) throws -> PolarEr
 #endif
 public func FfiConverterTypePolarError_lower(_ value: PolarError) -> RustBuffer {
     return FfiConverterTypePolarError.lower(value)
+}
+
+
+public struct SolveResult {
+    public var success: Bool
+    public var raDeg: Double
+    public var decDeg: Double
+    public var rollDeg: Double
+    public var fovDeg: Double
+    public var matchedStars: UInt32
+    public var solveTimeMs: Double
+    public var rmseArcsec: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(success: Bool, raDeg: Double, decDeg: Double, rollDeg: Double, fovDeg: Double, matchedStars: UInt32, solveTimeMs: Double, rmseArcsec: Double) {
+        self.success = success
+        self.raDeg = raDeg
+        self.decDeg = decDeg
+        self.rollDeg = rollDeg
+        self.fovDeg = fovDeg
+        self.matchedStars = matchedStars
+        self.solveTimeMs = solveTimeMs
+        self.rmseArcsec = rmseArcsec
+    }
+}
+
+#if compiler(>=6)
+extension SolveResult: Sendable {}
+#endif
+
+
+extension SolveResult: Equatable, Hashable {
+    public static func ==(lhs: SolveResult, rhs: SolveResult) -> Bool {
+        if lhs.success != rhs.success {
+            return false
+        }
+        if lhs.raDeg != rhs.raDeg {
+            return false
+        }
+        if lhs.decDeg != rhs.decDeg {
+            return false
+        }
+        if lhs.rollDeg != rhs.rollDeg {
+            return false
+        }
+        if lhs.fovDeg != rhs.fovDeg {
+            return false
+        }
+        if lhs.matchedStars != rhs.matchedStars {
+            return false
+        }
+        if lhs.solveTimeMs != rhs.solveTimeMs {
+            return false
+        }
+        if lhs.rmseArcsec != rhs.rmseArcsec {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(success)
+        hasher.combine(raDeg)
+        hasher.combine(decDeg)
+        hasher.combine(rollDeg)
+        hasher.combine(fovDeg)
+        hasher.combine(matchedStars)
+        hasher.combine(solveTimeMs)
+        hasher.combine(rmseArcsec)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSolveResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SolveResult {
+        return
+            try SolveResult(
+                success: FfiConverterBool.read(from: &buf), 
+                raDeg: FfiConverterDouble.read(from: &buf), 
+                decDeg: FfiConverterDouble.read(from: &buf), 
+                rollDeg: FfiConverterDouble.read(from: &buf), 
+                fovDeg: FfiConverterDouble.read(from: &buf), 
+                matchedStars: FfiConverterUInt32.read(from: &buf), 
+                solveTimeMs: FfiConverterDouble.read(from: &buf), 
+                rmseArcsec: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SolveResult, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.success, into: &buf)
+        FfiConverterDouble.write(value.raDeg, into: &buf)
+        FfiConverterDouble.write(value.decDeg, into: &buf)
+        FfiConverterDouble.write(value.rollDeg, into: &buf)
+        FfiConverterDouble.write(value.fovDeg, into: &buf)
+        FfiConverterUInt32.write(value.matchedStars, into: &buf)
+        FfiConverterDouble.write(value.solveTimeMs, into: &buf)
+        FfiConverterDouble.write(value.rmseArcsec, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSolveResult_lift(_ buf: RustBuffer) throws -> SolveResult {
+    return try FfiConverterTypeSolveResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSolveResult_lower(_ value: SolveResult) -> RustBuffer {
+    return FfiConverterTypeSolveResult.lower(value)
 }
 
 
@@ -881,6 +2433,486 @@ extension AlignmentError: Foundation.LocalizedError {
 
 
 
+
+
+public enum CameraError: Swift.Error {
+
+    
+    
+    case NotConnected(message: String)
+    
+    case ConnectionFailed(message: String)
+    
+    case CommunicationError(message: String)
+    
+    case CommandRejected(message: String)
+    
+    case InvalidResponse(message: String)
+    
+    case Timeout(message: String)
+    
+    case ExposureInProgress(message: String)
+    
+    case ImageNotReady(message: String)
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCameraError: FfiConverterRustBuffer {
+    typealias SwiftType = CameraError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CameraError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .NotConnected(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .ConnectionFailed(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .CommunicationError(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .CommandRejected(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .InvalidResponse(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .Timeout(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 7: return .ExposureInProgress(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 8: return .ImageNotReady(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CameraError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        case .NotConnected(_ /* message is ignored*/):
+            writeInt(&buf, Int32(1))
+        case .ConnectionFailed(_ /* message is ignored*/):
+            writeInt(&buf, Int32(2))
+        case .CommunicationError(_ /* message is ignored*/):
+            writeInt(&buf, Int32(3))
+        case .CommandRejected(_ /* message is ignored*/):
+            writeInt(&buf, Int32(4))
+        case .InvalidResponse(_ /* message is ignored*/):
+            writeInt(&buf, Int32(5))
+        case .Timeout(_ /* message is ignored*/):
+            writeInt(&buf, Int32(6))
+        case .ExposureInProgress(_ /* message is ignored*/):
+            writeInt(&buf, Int32(7))
+        case .ImageNotReady(_ /* message is ignored*/):
+            writeInt(&buf, Int32(8))
+
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCameraError_lift(_ buf: RustBuffer) throws -> CameraError {
+    return try FfiConverterTypeCameraError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCameraError_lower(_ value: CameraError) -> RustBuffer {
+    return FfiConverterTypeCameraError.lower(value)
+}
+
+
+extension CameraError: Equatable, Hashable {}
+
+
+
+
+extension CameraError: Foundation.LocalizedError {
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+}
+
+
+
+
+
+public enum MountError: Swift.Error {
+
+    
+    
+    case NotConnected(message: String)
+    
+    case ConnectionFailed(message: String)
+    
+    case CommunicationError(message: String)
+    
+    case CommandRejected(message: String)
+    
+    case InvalidResponse(message: String)
+    
+    case Timeout(message: String)
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMountError: FfiConverterRustBuffer {
+    typealias SwiftType = MountError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MountError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .NotConnected(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .ConnectionFailed(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .CommunicationError(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .CommandRejected(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .InvalidResponse(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .Timeout(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: MountError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        case .NotConnected(_ /* message is ignored*/):
+            writeInt(&buf, Int32(1))
+        case .ConnectionFailed(_ /* message is ignored*/):
+            writeInt(&buf, Int32(2))
+        case .CommunicationError(_ /* message is ignored*/):
+            writeInt(&buf, Int32(3))
+        case .CommandRejected(_ /* message is ignored*/):
+            writeInt(&buf, Int32(4))
+        case .InvalidResponse(_ /* message is ignored*/):
+            writeInt(&buf, Int32(5))
+        case .Timeout(_ /* message is ignored*/):
+            writeInt(&buf, Int32(6))
+
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMountError_lift(_ buf: RustBuffer) throws -> MountError {
+    return try FfiConverterTypeMountError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMountError_lower(_ value: MountError) -> RustBuffer {
+    return FfiConverterTypeMountError.lower(value)
+}
+
+
+extension MountError: Equatable, Hashable {}
+
+
+
+
+extension MountError: Foundation.LocalizedError {
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+}
+
+
+
+
+
+public enum SolverError: Swift.Error {
+
+    
+    
+    case NoDatabaseLoaded(message: String)
+    
+    case DatabaseLoadFailed(message: String)
+    
+    case NoMatch(message: String)
+    
+    case TooFewCentroids(message: String)
+    
+    case Timeout(message: String)
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSolverError: FfiConverterRustBuffer {
+    typealias SwiftType = SolverError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SolverError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .NoDatabaseLoaded(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .DatabaseLoadFailed(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .NoMatch(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .TooFewCentroids(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .Timeout(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SolverError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        case .NoDatabaseLoaded(_ /* message is ignored*/):
+            writeInt(&buf, Int32(1))
+        case .DatabaseLoadFailed(_ /* message is ignored*/):
+            writeInt(&buf, Int32(2))
+        case .NoMatch(_ /* message is ignored*/):
+            writeInt(&buf, Int32(3))
+        case .TooFewCentroids(_ /* message is ignored*/):
+            writeInt(&buf, Int32(4))
+        case .Timeout(_ /* message is ignored*/):
+            writeInt(&buf, Int32(5))
+
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSolverError_lift(_ buf: RustBuffer) throws -> SolverError {
+    return try FfiConverterTypeSolverError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSolverError_lower(_ value: SolverError) -> RustBuffer {
+    return FfiConverterTypeSolverError.lower(value)
+}
+
+
+extension SolverError: Equatable, Hashable {}
+
+
+
+
+extension SolverError: Foundation.LocalizedError {
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+}
+
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
+    typealias SwiftType = String?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterString.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]
+
+    public static func write(_ value: [String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterString.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [String]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeAlpacaDeviceInfo: FfiConverterRustBuffer {
+    typealias SwiftType = [AlpacaDeviceInfo]
+
+    public static func write(_ value: [AlpacaDeviceInfo], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAlpacaDeviceInfo.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AlpacaDeviceInfo] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AlpacaDeviceInfo]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAlpacaDeviceInfo.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCatalogStar: FfiConverterRustBuffer {
+    typealias SwiftType = [CatalogStar]
+
+    public static func write(_ value: [CatalogStar], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCatalogStar.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CatalogStar] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CatalogStar]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCatalogStar.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeStarCentroid: FfiConverterRustBuffer {
+    typealias SwiftType = [StarCentroid]
+
+    public static func write(_ value: [StarCentroid], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeStarCentroid.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [StarCentroid] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [StarCentroid]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeStarCentroid.read(from: &buf))
+        }
+        return seq
+    }
+}
 /**
  * Angular separation between two celestial positions (degrees).
  */
@@ -921,6 +2953,27 @@ public func computePolarError(pos1: CelestialCoord, pos2: CelestialCoord, pos3: 
 })
 }
 /**
+ * Discover ASCOM Alpaca devices on local network via UDP broadcast.
+ */
+public func discoverAlpaca(timeoutMs: UInt32) -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+    uniffi_polar_core_fn_func_discover_alpaca(
+        FfiConverterUInt32.lower(timeoutMs),$0
+    )
+})
+}
+/**
+ * Discover cameras on an ASCOM Alpaca server (management API).
+ */
+public func discoverAlpacaCameras(host: String, port: UInt16)throws  -> [AlpacaDeviceInfo]  {
+    return try  FfiConverterSequenceTypeAlpacaDeviceInfo.lift(try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_func_discover_alpaca_cameras(
+        FfiConverterString.lower(host),
+        FfiConverterUInt16.lower(port),$0
+    )
+})
+}
+/**
  * Compute Julian Date from UTC date/time components.
  */
 public func julianDate(year: Int32, month: UInt32, day: UInt32, hour: UInt32, min: UInt32, sec: Double) -> Double  {
@@ -932,6 +2985,15 @@ public func julianDate(year: Int32, month: UInt32, day: UInt32, hour: UInt32, mi
         FfiConverterUInt32.lower(hour),
         FfiConverterUInt32.lower(min),
         FfiConverterDouble.lower(sec),$0
+    )
+})
+}
+/**
+ * List available serial ports for LX200/USB mount connections.
+ */
+public func listSerialPorts() -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+    uniffi_polar_core_fn_func_list_serial_ports($0
     )
 })
 }
@@ -980,13 +3042,139 @@ private let initializationResult: InitializationResult = {
     if (uniffi_polar_core_checksum_func_compute_polar_error() != 29002) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_polar_core_checksum_func_discover_alpaca() != 40484) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_func_discover_alpaca_cameras() != 57168) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_polar_core_checksum_func_julian_date() != 38302) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_func_list_serial_ports() != 42379) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_func_local_sidereal_time() != 23246) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_func_polar_core_version() != 23056) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_abort_exposure() != 57509) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_camera_state() != 27095) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_connect() != 31027) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_disconnect() != 39561) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_download_image() != 4140) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_get_temperature() != 12861) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_is_connected() != 30287) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_is_image_ready() != 45171) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_set_binning() != 38228) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_set_cooler() != 57468) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_set_gain() != 26860) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_start_exposure() != 9897) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_abort() != 10394) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_backend_name() != 50139) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_connect_alpaca() != 14014) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_connect_lx200() != 41352) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_connect_lx200_tcp() != 3640) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_disconnect() != 56614) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_find_home() != 5786) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_get_dec_deg() != 22353) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_get_ra_hours() != 50111) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_get_status() != 63494) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_goto_radec() != 3222) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_is_connected() != 50745) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_move_axis() != 19571) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_park() != 47362) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_set_tracking() != 3707) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_set_tracking_rate() != 54216) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_slew_ra_degrees() != 30042) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_sync_datetime() != 63396) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_sync_position() != 33091) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_unpark() != 20092) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_platesolver_database_info() != 39882) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_platesolver_get_star_catalog() != 49432) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_platesolver_load_database() != 33099) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_platesolver_solve() != 27506) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_constructor_alpacacameracontroller_new() != 1431) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_constructor_mountcontroller_new() != 24961) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_constructor_platesolver_new() != 6638) {
         return InitializationResult.apiChecksumMismatch
     }
 

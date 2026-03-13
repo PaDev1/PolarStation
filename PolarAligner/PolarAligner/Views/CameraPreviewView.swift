@@ -1,8 +1,13 @@
 import SwiftUI
 import Metal
 import MetalKit
+import MetalPerformanceShaders
 
 /// Displays live camera frames using Metal rendering.
+///
+/// The image is scaled to fill the view using aspect-fit (letterboxed).
+/// The `imageRect` published on the view model gives the actual image area
+/// in SwiftUI points, so overlays can position correctly.
 struct CameraPreviewView: NSViewRepresentable {
     @ObservedObject var viewModel: CameraPreviewViewModel
 
@@ -14,11 +19,21 @@ struct CameraPreviewView: NSViewRepresentable {
         mtkView.isPaused = true
         mtkView.colorPixelFormat = .bgra8Unorm
         mtkView.framebufferOnly = false
+        mtkView.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         return mtkView
     }
 
     func updateNSView(_ nsView: MTKView, context: Context) {
         context.coordinator.viewModel = viewModel
+        // Force drawable to match the view's actual size
+        let scale = nsView.window?.backingScaleFactor ?? 2.0
+        let newSize = CGSize(
+            width: nsView.bounds.width * scale,
+            height: nsView.bounds.height * scale
+        )
+        if nsView.drawableSize != newSize && newSize.width > 0 && newSize.height > 0 {
+            nsView.drawableSize = newSize
+        }
         nsView.setNeedsDisplay(nsView.bounds)
     }
 
@@ -28,6 +43,7 @@ struct CameraPreviewView: NSViewRepresentable {
 
     class Coordinator: NSObject, MTKViewDelegate {
         var viewModel: CameraPreviewViewModel
+        private var loggedDimensions = false
 
         init(viewModel: CameraPreviewViewModel) {
             self.viewModel = viewModel
@@ -38,28 +54,57 @@ struct CameraPreviewView: NSViewRepresentable {
         func draw(in view: MTKView) {
             guard let texture = viewModel.displayTexture,
                   let drawable = view.currentDrawable,
+                  let device = viewModel.device,
                   let commandBuffer = viewModel.commandQueue?.makeCommandBuffer() else {
                 return
             }
 
-            // Blit the processed texture to the drawable
-            let blitEncoder = commandBuffer.makeBlitCommandEncoder()
-            let sourceSize = MTLSize(width: min(texture.width, drawable.texture.width),
-                                     height: min(texture.height, drawable.texture.height),
-                                     depth: 1)
-            blitEncoder?.copy(
-                from: texture,
-                sourceSlice: 0, sourceLevel: 0,
-                sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
-                sourceSize: sourceSize,
-                to: drawable.texture,
-                destinationSlice: 0, destinationLevel: 0,
-                destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
+            let drawW = drawable.texture.width
+            let drawH = drawable.texture.height
+            let texW = texture.width
+            let texH = texture.height
+
+            // Log dimensions once for debugging
+            if !loggedDimensions {
+                loggedDimensions = true
+                let bounds = view.bounds
+                let drawableSize = view.drawableSize
+                let msg = "[Preview] bounds=\(Int(bounds.width))x\(Int(bounds.height)) drawableSize=\(Int(drawableSize.width))x\(Int(drawableSize.height)) drawable=\(drawW)x\(drawH) tex=\(texW)x\(texH)"
+                Task { @MainActor [weak self] in
+                    self?.viewModel.debugMessage = msg
+                }
+            }
+
+            // Scale the source image to fill the entire drawable (stretch to fit).
+            // imageRect covers the full view so overlays map 1:1.
+            let scaler = MPSImageBilinearScale(device: device)
+            var transform = MPSScaleTransform(
+                scaleX: Double(texW) / Double(drawW),
+                scaleY: Double(texH) / Double(drawH),
+                translateX: 0,
+                translateY: 0
             )
-            blitEncoder?.endEncoding()
+            withUnsafePointer(to: &transform) { ptr in
+                scaler.scaleTransform = ptr
+                scaler.encode(commandBuffer: commandBuffer,
+                             sourceTexture: texture,
+                             destinationTexture: drawable.texture)
+            }
 
             commandBuffer.present(drawable)
             commandBuffer.commit()
+
+            // Image fills the entire view — imageRect = full view bounds in points
+            let backingScale = view.window?.backingScaleFactor ?? 2.0
+            let rectInPoints = CGRect(
+                x: 0,
+                y: 0,
+                width: CGFloat(drawW) / backingScale,
+                height: CGFloat(drawH) / backingScale
+            )
+            Task { @MainActor [weak self] in
+                self?.viewModel.imageRect = rectInPoints
+            }
         }
     }
 }
@@ -74,6 +119,13 @@ final class CameraPreviewViewModel: ObservableObject {
     @Published var isCapturing = false
     @Published var frameRate: Double = 0
     @Published var frameCount: UInt64 = 0
+
+    /// The actual image rectangle in SwiftUI points within the preview view.
+    /// Used by overlays to position star markers correctly.
+    @Published var imageRect: CGRect = .zero
+
+    /// Debug message from the draw function (logged once, displayed in debug strip).
+    @Published var debugMessage: String?
 
     /// Called after each frame is processed (on MainActor).
     var onFrameProcessed: (() -> Void)?

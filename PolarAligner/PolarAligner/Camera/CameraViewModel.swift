@@ -1,5 +1,12 @@
 import Foundation
 import Metal
+import PolarCore
+
+/// Camera connection source.
+enum CameraSource: String, CaseIterable {
+    case usb = "USB"
+    case alpaca = "ASCOM Alpaca"
+}
 
 /// Manages camera lifecycle: discovery, connection, capture, and frame forwarding to Metal preview.
 @MainActor
@@ -7,6 +14,7 @@ final class CameraViewModel: ObservableObject {
 
     // MARK: - Published state
 
+    @Published var cameraSource: CameraSource = .usb
     @Published var discoveredCameras: [ASICameraInfo] = []
     @Published var selectedCameraIndex: Int = -1
     @Published var isConnected = false
@@ -15,6 +23,16 @@ final class CameraViewModel: ObservableObject {
     @Published var captureHeight: Int = 0
     @Published var statusMessage = "Select a camera and connect"
     @Published var errorMessage: String?
+
+    // Alpaca connection settings (set from SettingsView / CameraTabView)
+    var alpacaHost: String = "192.168.8.30"
+    var alpacaPort: UInt32 = 11111
+    var alpacaDeviceNumber: UInt32 = 0
+
+    // Alpaca device discovery
+    @Published var alpacaDevices: [AlpacaDeviceInfo] = []
+    @Published var selectedAlpacaDevice: Int = -1
+    @Published var isDiscoveringAlpacaDevices = false
 
     // Capture sequence
     @Published var isSaving = false
@@ -26,6 +44,11 @@ final class CameraViewModel: ObservableObject {
     @Published var starDetectionEnabled = true
     @Published var starDetectorModelLoaded = false
     @Published var starDetectorStatus = "Model not loaded"
+
+    /// Debug log lines for the guide tab debug strip.
+    @Published var debugLog: String = ""
+    private var debugLines: [String] = []
+    private let maxDebugLines = 30
 
     // Sensor cooling
     @Published var sensorTempC: Double?
@@ -39,9 +62,14 @@ final class CameraViewModel: ObservableObject {
     // MARK: - Internal
 
     private var cameraBridge: ASICameraBridge?
+    private var alpacaCameraBridge: AlpacaCameraBridge?
     private var frameGrabber: FrameGrabber?
+    private var alpacaFrameGrabber: AlpacaFrameGrabber?
     private let frameForwarder = FrameForwarder()
     private let starDetector = CoreMLDetector()
+    /// When true, bypass CoreML and use ClassicalDetector directly.
+    @Published var forceClassicalDetector = true
+    private let classicalDetector = ClassicalDetector()
     private var detectionFrameSkip: UInt64 = 0
     private var tempPollTimer: Timer?
 
@@ -70,12 +98,12 @@ final class CameraViewModel: ObservableObject {
         do {
             try starDetector.loadModel(named: "StarDetector")
             starDetectorModelLoaded = true
-            starDetectorStatus = "Model loaded (CoreML UNet)"
-            print("[StarDetector] Core ML model loaded successfully")
+            starDetectorStatus = "CoreML UNet loaded"
+            appendDebug("[Model] CoreML StarDetector loaded OK")
         } catch {
             starDetectorModelLoaded = false
-            starDetectorStatus = "Model failed: \(error.localizedDescription)"
-            print("[StarDetector] Failed to load model: \(error)")
+            starDetectorStatus = "Fallback: Classical (\(error.localizedDescription))"
+            appendDebug("[Model] CoreML failed: \(error.localizedDescription) → using ClassicalDetector")
         }
     }
 
@@ -86,12 +114,49 @@ final class CameraViewModel: ObservableObject {
               let device = previewViewModel.device,
               let commandQueue = previewViewModel.commandQueue else { return }
 
-        do {
-            let stars = try starDetector.detectStars(in: texture, device: device, commandQueue: commandQueue)
-            detectedStars = stars
-        } catch {
-            print("[StarDetector] Detection error: \(error)")
+        runStarDetection(on: texture, device: device, commandQueue: commandQueue)
+    }
+
+    /// Run star detection on a specific texture (used by simulator to bypass debayer).
+    func runStarDetection(on texture: MTLTexture, device: MTLDevice, commandQueue: MTLCommandQueue) {
+        guard starDetectionEnabled else {
+            appendDebug("[Det] disabled")
+            return
         }
+
+        let fmt = texture.pixelFormat.rawValue
+        let storage = texture.storageMode.rawValue
+        let modelLoaded = starDetectorModelLoaded
+        let useClassical = forceClassicalDetector || !starDetectorModelLoaded
+        appendDebug("[Det] tex=\(texture.width)x\(texture.height) fmt=\(fmt) storage=\(storage) model=\(modelLoaded) classical=\(useClassical)")
+
+        do {
+            let detector: StarDetectorProtocol = useClassical ? classicalDetector : starDetector
+            let stars = try detector.detectStars(in: texture, device: device, commandQueue: commandQueue)
+            detectedStars = stars
+            // Log CoreML diagnostics if available
+            if !useClassical {
+                appendDebug("[Det] \(starDetector.lastDiagnostic)")
+            }
+            if let s = stars.first {
+                appendDebug("[Det] found \(stars.count) stars, best: x=\(String(format:"%.1f",s.x)) y=\(String(format:"%.1f",s.y)) snr=\(String(format:"%.1f",s.snr)) fwhm=\(String(format:"%.1f",s.fwhm))")
+            } else {
+                appendDebug("[Det] found 0 stars")
+            }
+        } catch {
+            appendDebug("[Det] ERROR: \(error)")
+        }
+    }
+
+    /// Append a line to the visible debug log.
+    func appendDebug(_ msg: String) {
+        let ts = String(format: "%.1f", Date.now.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000))
+        let line = "[\(ts)] \(msg)"
+        debugLines.append(line)
+        if debugLines.count > maxDebugLines {
+            debugLines.removeFirst(debugLines.count - maxDebugLines)
+        }
+        debugLog = debugLines.joined(separator: "\n")
     }
 
     // MARK: - Cooling
@@ -101,11 +166,16 @@ final class CameraViewModel: ObservableObject {
     }
 
     func setCoolerOn(targetCelsius: Int) {
-        guard let bridge = cameraBridge, isConnected, hasCooler else { return }
+        guard isConnected, hasCooler else { return }
         coolerTargetC = targetCelsius
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
             do {
-                try bridge.setCoolerTarget(celsius: targetCelsius)
+                if let bridge = self.alpacaCameraBridge {
+                    try bridge.setCooler(enabled: true, targetCelsius: Double(targetCelsius))
+                } else if let bridge = self.cameraBridge {
+                    try bridge.setCoolerTarget(celsius: targetCelsius)
+                }
                 Task { @MainActor [weak self] in
                     self?.coolerEnabled = true
                 }
@@ -118,11 +188,16 @@ final class CameraViewModel: ObservableObject {
     }
 
     func setCoolerOff() {
-        guard let bridge = cameraBridge, isConnected else { return }
+        guard isConnected else { return }
         coolerTargetC = nil
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
             do {
-                try bridge.setControlValue(kASI_COOLER_ON, value: 0)
+                if let bridge = self.alpacaCameraBridge {
+                    try bridge.setCooler(enabled: false, targetCelsius: 0)
+                } else if let bridge = self.cameraBridge {
+                    try bridge.setControlValue(kASI_COOLER_ON, value: 0)
+                }
                 Task { @MainActor [weak self] in
                     self?.coolerEnabled = false
                 }
@@ -136,11 +211,15 @@ final class CameraViewModel: ObservableObject {
 
     /// Gradually warm up the sensor by raising the target temperature in steps.
     func warmup() {
-        guard let bridge = cameraBridge, isConnected, hasCooler, coolerEnabled else { return }
-        // Set target to +20°C (ambient) — the cooler will gradually warm
-        DispatchQueue.global(qos: .userInitiated).async {
+        guard isConnected, hasCooler, coolerEnabled else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
             do {
-                try bridge.setControlValue(kASI_TARGET_TEMP, value: 20)
+                if let bridge = self.alpacaCameraBridge {
+                    try bridge.setCooler(enabled: true, targetCelsius: 20)
+                } else if let bridge = self.cameraBridge {
+                    try bridge.setControlValue(kASI_TARGET_TEMP, value: 20)
+                }
                 Task { @MainActor [weak self] in
                     self?.coolerTargetC = 20
                 }
@@ -168,15 +247,24 @@ final class CameraViewModel: ObservableObject {
     }
 
     private func pollTemperature() {
-        guard let bridge = cameraBridge, isConnected, hasCooler else { return }
-        DispatchQueue.global(qos: .utility).async {
-            let temp = try? bridge.getTemperature()
-            let power = try? bridge.getControlValue(kASI_COOLER_POWER_PERC).value
-            let coolerOn = try? bridge.getControlValue(kASI_COOLER_ON).value
-            Task { @MainActor [weak self] in
-                self?.sensorTempC = temp
-                self?.coolerPowerPercent = power
-                self?.coolerEnabled = (coolerOn ?? 0) != 0
+        guard isConnected, hasCooler else { return }
+        if let bridge = alpacaCameraBridge {
+            DispatchQueue.global(qos: .utility).async {
+                let temp = try? bridge.getTemperature()
+                Task { @MainActor [weak self] in
+                    self?.sensorTempC = temp
+                }
+            }
+        } else if let bridge = cameraBridge {
+            DispatchQueue.global(qos: .utility).async {
+                let temp = try? bridge.getTemperature()
+                let power = try? bridge.getControlValue(kASI_COOLER_POWER_PERC).value
+                let coolerOn = try? bridge.getControlValue(kASI_COOLER_ON).value
+                Task { @MainActor [weak self] in
+                    self?.sensorTempC = temp
+                    self?.coolerPowerPercent = power
+                    self?.coolerEnabled = (coolerOn ?? 0) != 0
+                }
             }
         }
     }
@@ -196,15 +284,41 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
+    /// Discover cameras available on the Alpaca server.
+    func discoverAlpacaCameras(host: String, port: UInt32) {
+        isDiscoveringAlpacaDevices = true
+        let h = host
+        let p = port
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let devices = (try? PolarCore.discoverAlpacaCameras(host: h, port: UInt16(p))) ?? []
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.alpacaDevices = devices
+                if self.selectedAlpacaDevice < 0, !devices.isEmpty {
+                    self.selectedAlpacaDevice = 0
+                }
+                self.isDiscoveringAlpacaDevices = false
+            }
+        }
+    }
+
     // MARK: - Connection
 
     func connect() {
+        guard !isConnected else { return }
+
+        if cameraSource == .alpaca {
+            connectAlpaca()
+        } else {
+            connectUSB()
+        }
+    }
+
+    private func connectUSB() {
         guard let cam = selectedCamera else {
             errorMessage = "No camera selected"
             return
         }
-        guard !isConnected else { return }
-
         errorMessage = nil
         statusMessage = "Connecting to \(cam.name)..."
 
@@ -232,6 +346,41 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
+    private func connectAlpaca() {
+        errorMessage = nil
+        statusMessage = "Connecting to Alpaca camera..."
+
+        let host = alpacaHost
+        let port = alpacaPort
+        let deviceNum = alpacaDeviceNumber
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let bridge = AlpacaCameraBridge()
+                try bridge.open(host: host, port: port, deviceNumber: deviceNum)
+                let camInfo = bridge.toASICameraInfo()
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.alpacaCameraBridge = bridge
+                    self.isConnected = true
+                    // Update discovered cameras list with the Alpaca camera info
+                    if let info = camInfo {
+                        self.discoveredCameras = [info]
+                        self.selectedCameraIndex = 0
+                    }
+                    self.statusMessage = "Connected to \(bridge.info?.name ?? "Alpaca camera")"
+                    if self.hasCooler {
+                        self.startTemperaturePolling()
+                    }
+                }
+            } catch {
+                Task { @MainActor [weak self] in
+                    self?.errorMessage = error.localizedDescription
+                    self?.statusMessage = "Connection failed"
+                }
+            }
+        }
+    }
+
     func disconnect() {
         stopCapture()
         stopTemperaturePolling()
@@ -240,7 +389,13 @@ final class CameraViewModel: ObservableObject {
                 try? bridge.close()
             }
         }
+        if let bridge = alpacaCameraBridge {
+            DispatchQueue.global(qos: .userInitiated).async {
+                try? bridge.close()
+            }
+        }
         cameraBridge = nil
+        alpacaCameraBridge = nil
         isConnected = false
         coolerEnabled = false
         sensorTempC = nil
@@ -254,6 +409,12 @@ final class CameraViewModel: ObservableObject {
     private func ensureConnected(then completion: @escaping @MainActor () -> Void) {
         if isConnected {
             completion()
+            return
+        }
+        if cameraSource == .alpaca {
+            connectAlpaca()
+            // For Alpaca, we can't easily chain completion — just connect first
+            // The user will press Live after connecting
             return
         }
         guard let cam = selectedCamera else {
@@ -292,9 +453,16 @@ final class CameraViewModel: ObservableObject {
 
     func startLive(settings: CameraSettings) {
         ensureConnected { [weak self] in
-            self?.frameForwarder.onSaveFrame = nil
-            self?.frameForwarder.onFrameReceived = nil
-            self?.startCaptureInternal(settings: settings)
+            guard let self else { return }
+            self.frameForwarder.onSaveFrame = nil
+            self.frameForwarder.onFrameReceived = nil
+
+            // Auto-boost binning for Alpaca to speed up preview (network transfer is the bottleneck)
+            var liveSettings = settings
+            if self.cameraSource == .alpaca && liveSettings.binning < 2 {
+                liveSettings.binning = 2
+            }
+            self.startCaptureInternal(settings: liveSettings)
         }
     }
 
@@ -348,6 +516,9 @@ final class CameraViewModel: ObservableObject {
         frameForwarder.onSaveFrame = { [weak self] data, w, h, bpp, _ in
             seqNum += 1
             let num = seqNum
+
+            // Skip frames beyond target (capture loop may deliver extra before stop propagates)
+            guard num <= count else { return }
 
             DispatchQueue.global(qos: .utility).async {
                 let metadata = CaptureMetadata(
@@ -406,6 +577,8 @@ final class CameraViewModel: ObservableObject {
         guard isCapturing else { return }
         frameGrabber?.stop()
         frameGrabber = nil
+        alpacaFrameGrabber?.stop()
+        alpacaFrameGrabber = nil
         isCapturing = false
         frameForwarder.onSaveFrame = nil
         frameForwarder.onFrameReceived = nil
@@ -418,7 +591,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     private func startCaptureInternal(settings: CameraSettings) {
-        guard let bridge = cameraBridge, isConnected else {
+        guard isConnected else {
             errorMessage = "Camera not connected"
             return
         }
@@ -426,29 +599,65 @@ final class CameraViewModel: ObservableObject {
 
         errorMessage = nil
 
-        let grabber = FrameGrabber(camera: bridge, settings: settings)
-        grabber.delegate = frameForwarder
-        self.frameGrabber = grabber
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                try grabber.start()
+        if let bridge = alpacaCameraBridge {
+            // Alpaca capture
+            let grabber = AlpacaFrameGrabber(camera: bridge, settings: settings)
+            grabber.delegate = frameForwarder
+            grabber.onError = { [weak self] msg in
                 Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    self.isCapturing = true
-                    self.captureWidth = grabber.captureWidth
-                    self.captureHeight = grabber.captureHeight
-                    if !self.isSaving {
-                        self.statusMessage = "Live \(grabber.captureWidth)x\(grabber.captureHeight)"
-                    }
-                }
-            } catch {
-                Task { @MainActor [weak self] in
-                    self?.errorMessage = error.localizedDescription
-                    self?.statusMessage = "Capture failed"
-                    self?.isSaving = false
+                    self?.errorMessage = "Alpaca: \(msg)"
                 }
             }
+            self.alpacaFrameGrabber = grabber
+
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                do {
+                    try grabber.start()
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        self.isCapturing = true
+                        self.captureWidth = grabber.captureWidth
+                        self.captureHeight = grabber.captureHeight
+                        if !self.isSaving {
+                            self.statusMessage = "Live \(grabber.captureWidth)x\(grabber.captureHeight) (Alpaca)"
+                        }
+                    }
+                } catch {
+                    Task { @MainActor [weak self] in
+                        self?.errorMessage = error.localizedDescription
+                        self?.statusMessage = "Capture failed"
+                        self?.isSaving = false
+                    }
+                }
+            }
+        } else if let bridge = cameraBridge {
+            // USB capture
+            let grabber = FrameGrabber(camera: bridge, settings: settings)
+            grabber.delegate = frameForwarder
+            self.frameGrabber = grabber
+
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                do {
+                    try grabber.start()
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        self.isCapturing = true
+                        self.captureWidth = grabber.captureWidth
+                        self.captureHeight = grabber.captureHeight
+                        if !self.isSaving {
+                            self.statusMessage = "Live \(grabber.captureWidth)x\(grabber.captureHeight)"
+                        }
+                    }
+                } catch {
+                    Task { @MainActor [weak self] in
+                        self?.errorMessage = error.localizedDescription
+                        self?.statusMessage = "Capture failed"
+                        self?.isSaving = false
+                    }
+                }
+            }
+        } else {
+            errorMessage = "No camera backend connected"
         }
     }
 
@@ -471,7 +680,7 @@ private class FrameForwarder: FrameGrabberDelegate {
     var onFrameReceived: (@Sendable (UInt64) -> Void)?
     var onSaveFrame: ((Data, Int, Int, Int, UInt64) -> Void)?
 
-    func frameGrabber(_ grabber: FrameGrabber, didCapture buffer: UnsafeBufferPointer<UInt8>,
+    func frameGrabber(_ grabber: FrameGrabber?, didCapture buffer: UnsafeBufferPointer<UInt8>,
                       width: Int, height: Int, bytesPerPixel: Int, frameNumber: UInt64) {
         // Forward to Metal preview
         previewViewModel?.processFrame(buffer: buffer, width: width, height: height, bytesPerPixel: bytesPerPixel)

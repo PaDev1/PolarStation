@@ -13,6 +13,27 @@ use std::time::Duration;
 use crate::coordinates::MountStatus;
 use super::{MountError, TrackingRate};
 
+/// Append a line to /tmp/polar_mount.log for debugging.
+fn mount_log(msg: &str) {
+    use std::fs::OpenOptions;
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/tmp/polar_mount.log") {
+        let _ = writeln!(f, "[{}] {}", chrono_now(), msg);
+    }
+    eprintln!("{}", msg);
+}
+
+/// Simple local timestamp (UTC+2 for Finland).
+fn chrono_now() -> String {
+    let dur = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = dur.as_secs() + 2 * 3600; // UTC+2
+    let h = (secs % 86400) / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    format!("{:02}:{:02}:{:02}", h, m, s)
+}
+
 /// Abstract transport: serial port or TCP socket.
 trait Transport: Read + Write + Send {
     fn clear_buffers(&mut self) -> Result<(), MountError>;
@@ -242,6 +263,23 @@ impl Lx200Client {
         Ok(hours + minutes / 60.0 + seconds / 3600.0)
     }
 
+    /// Parse LX200 azimuth string "DDD*MM:SS" or "DDD*MM" to decimal degrees (0-360).
+    fn parse_az(s: &str) -> Result<f64, MountError> {
+        let s = s.replace(['*', '\u{00b0}', '\u{00df}', '\''], ":");
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() < 2 {
+            return Err(MountError::InvalidResponse);
+        }
+        let deg: f64 = parts[0].parse().map_err(|_| MountError::InvalidResponse)?;
+        let min: f64 = parts[1].parse().map_err(|_| MountError::InvalidResponse)?;
+        let sec: f64 = if parts.len() > 2 {
+            parts[2].parse().unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        Ok(deg + min / 60.0 + sec / 3600.0)
+    }
+
     /// Parse LX200 Dec string "+DD*MM:SS" or "+DD*MM" to decimal degrees.
     fn parse_dec(s: &str) -> Result<f64, MountError> {
         let s = s.replace(['*', '\u{00b0}', '\u{00df}'], ":");
@@ -298,10 +336,21 @@ impl Lx200Client {
             }
         }
 
+        // Query altitude (:GA#) and azimuth (:GZ#) — standard LX200 commands
+        // Format: sDD*MM'SS# (same as Dec)
+        let alt_deg = self.command(":GA#").ok()
+            .and_then(|s| Self::parse_dec(&s).ok())
+            .unwrap_or(f64::NAN);
+        let az_deg = self.command(":GZ#").ok()
+            .and_then(|s| Self::parse_az(&s).ok())
+            .unwrap_or(f64::NAN);
+
         Ok(MountStatus {
             connected: true,
             ra_hours,
             dec_deg,
+            alt_deg,
+            az_deg,
             tracking,
             slewing,
             tracking_rate,
@@ -313,20 +362,27 @@ impl Lx200Client {
     /// Matches INDI lx200driver.cpp: setObjectRA + setObjectDEC + Slew.
     /// :Sr and :Sd return 1 byte ('1'=OK), :MS# returns 1 byte ('0'=OK).
     fn set_target_and_slew(&mut self, ra_hours: f64, dec_deg: f64) -> Result<(), MountError> {
-        // Auto-unpark if mount is at home (same as move_axis)
+        mount_log(&format!("[LX200] GoTo: RA={:.4}h Dec={:.4}°", ra_hours, dec_deg));
+
+        // Log full mount state for diagnostics
         if let Ok(gu) = self.command(":GU#") {
-            if gu.contains('H') {
+            mount_log(&format!("[LX200] :GU# flags: {:?}", gu));
+            if gu.contains('n') || gu.contains('H') {
+                mount_log("[LX200] Tracking off, enabling before GoTo");
                 let _ = self.set_tracking(true);
+                std::thread::sleep(Duration::from_millis(200));
             }
         }
-
         // Set target RA — response is 1 byte: '1'=valid, '0'=invalid
         let ra_h = ra_hours as u32;
         let ra_m = ((ra_hours - ra_h as f64) * 60.0) as u32;
         let ra_s = ((ra_hours - ra_h as f64 - ra_m as f64 / 60.0) * 3600.0) as u32;
         let cmd = format!(":Sr {:02}:{:02}:{:02}#", ra_h, ra_m, ra_s);
+        mount_log(&format!("[LX200] Sending: {}", cmd));
         let resp = self.command_fixed(&cmd, 1)?;
+        mount_log(&format!("[LX200] :Sr response: {:?}", resp));
         if resp != "1" {
+            mount_log(&format!("[LX200] ERROR: :Sr rejected (response={:?})", resp));
             return Err(MountError::CommandRejected);
         }
 
@@ -337,16 +393,36 @@ impl Lx200Client {
         let dec_m = ((dec_abs - dec_d as f64) * 60.0) as u32;
         let dec_s = ((dec_abs - dec_d as f64 - dec_m as f64 / 60.0) * 3600.0) as u32;
         let cmd = format!(":Sd {}{:02}*{:02}:{:02}#", dec_sign, dec_d, dec_m, dec_s);
+        mount_log(&format!("[LX200] Sending: {}", cmd));
         let resp = self.command_fixed(&cmd, 1)?;
+        mount_log(&format!("[LX200] :Sd response: {:?}", resp));
         if resp != "1" {
+            mount_log(&format!("[LX200] ERROR: :Sd rejected (response={:?})", resp));
             return Err(MountError::CommandRejected);
         }
 
-        // Initiate slew — response is 1 byte: '0'=OK, '1'=below horizon, '2'=above limit
+        // Initiate slew — first byte: '0'=OK, anything else=error
+        // On error, AM5/OnStep may send additional message followed by '#'
+        mount_log("[LX200] Sending: :MS#");
         let resp = self.command_fixed(":MS#", 1)?;
+        mount_log(&format!("[LX200] :MS response byte: {:?}", resp));
         if resp != "0" {
+            // Try to read error message (OnStep sends 'E<n><msg>#')
+            let mut err_detail = resp.clone();
+            // Read remaining bytes until '#' without sending anything
+            let mut buf = [0u8; 1];
+            let deadline = std::time::Instant::now() + Duration::from_millis(500);
+            while std::time::Instant::now() < deadline {
+                match self.transport.read(&mut buf) {
+                    Ok(1) if buf[0] == b'#' => break,
+                    Ok(1) => err_detail.push(buf[0] as char),
+                    _ => break,
+                }
+            }
+            mount_log(&format!("[LX200] ERROR: :MS rejected: {:?}", err_detail));
             return Err(MountError::CommandRejected);
         }
+        mount_log("[LX200] GoTo initiated successfully");
         Ok(())
     }
 
@@ -361,6 +437,42 @@ impl Lx200Client {
 
     pub fn goto_radec(&mut self, ra_hours: f64, dec_deg: f64) -> Result<(), MountError> {
         self.set_target_and_slew(ra_hours, dec_deg)
+    }
+
+    /// Sync mount position: tell the mount it is currently pointing at (ra_hours, dec_deg).
+    /// Uses :Sr/:Sd to set target, then :CM# to sync (align).
+    /// This is needed before GoTo will work — the mount must know its position.
+    pub fn sync_position(&mut self, ra_hours: f64, dec_deg: f64) -> Result<(), MountError> {
+        mount_log(&format!("[LX200] Sync position: RA={:.4}h Dec={:.4}°", ra_hours, dec_deg));
+
+        // Set target RA
+        let ra_h = ra_hours as u32;
+        let ra_m = ((ra_hours - ra_h as f64) * 60.0) as u32;
+        let ra_s = ((ra_hours - ra_h as f64 - ra_m as f64 / 60.0) * 3600.0) as u32;
+        let cmd = format!(":Sr {:02}:{:02}:{:02}#", ra_h, ra_m, ra_s);
+        let resp = self.command_fixed(&cmd, 1)?;
+        if resp != "1" {
+            mount_log(&format!("[LX200] ERROR: :Sr rejected for sync (response={:?})", resp));
+            return Err(MountError::CommandRejected);
+        }
+
+        // Set target Dec
+        let dec_sign = if dec_deg >= 0.0 { '+' } else { '-' };
+        let dec_abs = dec_deg.abs();
+        let dec_d = dec_abs as u32;
+        let dec_m = ((dec_abs - dec_d as f64) * 60.0) as u32;
+        let dec_s = ((dec_abs - dec_d as f64 - dec_m as f64 / 60.0) * 3600.0) as u32;
+        let cmd = format!(":Sd {}{:02}*{:02}:{:02}#", dec_sign, dec_d, dec_m, dec_s);
+        let resp = self.command_fixed(&cmd, 1)?;
+        if resp != "1" {
+            mount_log(&format!("[LX200] ERROR: :Sd rejected for sync (response={:?})", resp));
+            return Err(MountError::CommandRejected);
+        }
+
+        // Sync: :CM# tells the mount "you are currently pointing at the Sr/Sd target"
+        let resp = self.command(":CM#")?;
+        mount_log(&format!("[LX200] :CM# sync response: {:?}", resp));
+        Ok(())
     }
 
     /// Enable/disable tracking. AM5 uses :Te#/:Td# (not generic LX200 :TQ#/:TN#).
@@ -442,6 +554,126 @@ impl Lx200Client {
         }
     }
 
+    /// Sync the mount's internal clock and site location with the computer.
+    ///
+    /// LX200 commands:
+    ///   :SL HH:MM:SS# — set local time
+    ///   :SC MM/DD/YY# — set date
+    ///   :SG sHH.H#    — set UTC offset (hours behind UTC, negative = east)
+    ///   :St sDD*MM#   — set site latitude
+    ///   :Sg DDD*MM#   — set site longitude
+    pub fn sync_datetime(&mut self, observer_lat_deg: f64, observer_lon_deg: f64, utc_offset_hours: f64) -> Result<(), MountError> {
+        mount_log(&format!("[LX200] sync_datetime: lat={:.4} lon={:.4} utcOff={:.1}",
+            observer_lat_deg, observer_lon_deg, utc_offset_hours));
+
+        // Get current UTC time
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| MountError::CommunicationError)?;
+        let total_secs = now.as_secs();
+
+        // Compute LOCAL seconds since epoch for both time-of-day and date
+        let offset_secs = (utc_offset_hours * 3600.0) as i64;
+        let local_epoch_secs = total_secs as i64 + offset_secs;
+
+        // Local time of day
+        let local_day_secs = local_epoch_secs.rem_euclid(86400) as u32;
+        let local_h = local_day_secs / 3600;
+        let local_m = (local_day_secs % 3600) / 60;
+        let local_s = local_day_secs % 60;
+
+        // Local date (Hinnant algorithm on local days, not UTC days)
+        let local_days = local_epoch_secs.div_euclid(86400);
+        let z = local_days + 719468;
+        let era = z.div_euclid(146097);
+        let doe = z.rem_euclid(146097);
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let y = yoe + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = if m <= 2 { y + 1 } else { y };
+
+        mount_log(&format!("[LX200] Setting local time: {:02}:{:02}:{:02}, date: {}-{:02}-{:02}",
+            local_h, local_m, local_s, y, m, d));
+
+        // Set UTC offset FIRST — mount needs this for date validation
+        let sg_offset = -utc_offset_hours;
+        let cmd = if sg_offset.fract().abs() < 0.01 {
+            format!(":SG {:+03.0}#", sg_offset)
+        } else {
+            format!(":SG {:+05.1}#", sg_offset)
+        };
+        mount_log(&format!("[LX200] Sending: {}", cmd));
+        let resp = self.command_fixed(&cmd, 1);
+        mount_log(&format!("[LX200] :SG response: {:?}", resp));
+
+        // Set site latitude: :St sDD*MM#
+        let lat_sign = if observer_lat_deg >= 0.0 { '+' } else { '-' };
+        let lat_abs = observer_lat_deg.abs();
+        let lat_d = lat_abs as u32;
+        let lat_m = ((lat_abs - lat_d as f64) * 60.0) as u32;
+        let cmd = format!(":St {}{:02}*{:02}#", lat_sign, lat_d, lat_m);
+        mount_log(&format!("[LX200] Sending: {}", cmd));
+        let resp = self.command_fixed(&cmd, 1);
+        mount_log(&format!("[LX200] :St response: {:?}", resp));
+
+        // Set site longitude: :Sg DDD*MM#
+        let lon_lx = if observer_lon_deg >= 0.0 {
+            360.0 - observer_lon_deg
+        } else {
+            -observer_lon_deg
+        };
+        let lon_d = lon_lx as u32;
+        let lon_m = ((lon_lx - lon_d as f64) * 60.0) as u32;
+        let cmd = format!(":Sg {:03}*{:02}#", lon_d, lon_m);
+        mount_log(&format!("[LX200] Sending: {}", cmd));
+        let resp = self.command_fixed(&cmd, 1);
+        mount_log(&format!("[LX200] :Sg response: {:?}", resp));
+
+        // Set local time: :SL HH:MM:SS#
+        let cmd = format!(":SL {:02}:{:02}:{:02}#", local_h, local_m, local_s);
+        mount_log(&format!("[LX200] Sending: {}", cmd));
+        let resp = self.command_fixed(&cmd, 1);
+        mount_log(&format!("[LX200] :SL response: {:?}", resp));
+        std::thread::sleep(Duration::from_millis(100));
+
+        // Set date: :SC MM/DD/YY#
+        // OnStep responds: 1 byte ('1'=ok, '0'=fail), then on success two '#'-terminated strings.
+        self.transport.clear_buffers()?;
+        let yy = (y % 100) as u32;
+        let mm = m as u32;
+        let dd = d as u32;
+        let cmd = format!(":SC {:02}/{:02}/{:02}#", mm, dd, yy);
+        mount_log(&format!("[LX200] Sending: {}", cmd));
+        let resp = self.command_fixed(&cmd, 1);
+        mount_log(&format!("[LX200] :SC response byte: {:?}", resp));
+        if matches!(resp.as_deref(), Ok("0")) {
+            // Standard format failed — try without space (some firmwares)
+            std::thread::sleep(Duration::from_millis(200));
+            self.transport.clear_buffers()?;
+            let cmd = format!(":SC{:02}/{:02}/{:02}#", mm, dd, yy);
+            mount_log(&format!("[LX200] Retrying without space: {}", cmd));
+            let resp = self.command_fixed(&cmd, 1);
+            mount_log(&format!("[LX200] :SC retry response: {:?}", resp));
+        }
+        // Drain trailing "Updating Planetary Data#...#"
+        std::thread::sleep(Duration::from_millis(500));
+        self.transport.clear_buffers()?;
+
+        // Read back all settings to verify
+        mount_log("[LX200] === Verifying settings ===");
+        if let Ok(v) = self.command(":GG#") { mount_log(&format!("[LX200] Read back UTC off  :GG# = {:?}", v)); }
+        if let Ok(v) = self.command(":Gt#") { mount_log(&format!("[LX200] Read back Site lat :Gt# = {:?}", v)); }
+        if let Ok(v) = self.command(":Gg#") { mount_log(&format!("[LX200] Read back Site lon :Gg# = {:?}", v)); }
+        if let Ok(v) = self.command(":GL#") { mount_log(&format!("[LX200] Read back Local tm :GL# = {:?}", v)); }
+        if let Ok(v) = self.command(":GC#") { mount_log(&format!("[LX200] Read back Date     :GC# = {:?}", v)); }
+
+        mount_log("[LX200] sync_datetime complete");
+        Ok(())
+    }
+
     /// Park (go home). AM5 INDI driver uses :hC# (go to home position).
     pub fn park(&mut self) -> Result<(), MountError> {
         self.command_blind(":hC#")
@@ -496,6 +728,14 @@ impl super::MountBackendTrait for Lx200Client {
 
     fn unpark(&mut self) -> Result<(), MountError> {
         Lx200Client::unpark(self)
+    }
+
+    fn sync_position(&mut self, ra_hours: f64, dec_deg: f64) -> Result<(), MountError> {
+        Lx200Client::sync_position(self, ra_hours, dec_deg)
+    }
+
+    fn sync_datetime(&mut self, observer_lat_deg: f64, observer_lon_deg: f64, utc_offset_hours: f64) -> Result<(), MountError> {
+        Lx200Client::sync_datetime(self, observer_lat_deg, observer_lon_deg, utc_offset_hours)
     }
 }
 

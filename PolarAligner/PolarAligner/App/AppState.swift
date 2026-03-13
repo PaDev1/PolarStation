@@ -9,7 +9,14 @@ final class AppState: ObservableObject {
     let plateSolveService = PlateSolveService()
     let mountService = MountService()
     let cameraViewModel = CameraViewModel()
+    let guideCameraViewModel = CameraViewModel()
+    let filterWheelViewModel = FilterWheelViewModel()
     let errorTracker = ErrorTracker()
+    let guideSession = GuideSession()
+    let simulatedGuideEngine = SimulatedGuideEngine()
+    lazy var guideCalibrator: GuideCalibrator = {
+        GuideCalibrator(mountService: mountService, cameraViewModel: guideCameraViewModel)
+    }()
     lazy var alignmentCoordinator: AlignmentCoordinator = {
         let coord = AlignmentCoordinator(
             plateSolveService: plateSolveService,

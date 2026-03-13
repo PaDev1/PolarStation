@@ -26,6 +26,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         SWIFT_VERSION: "5.9"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
+        COREML_CODEGEN_LANGUAGE: "None"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
         LIBRARY_SEARCH_PATHS:
           - "$(inherited)"

@@ -85,6 +85,24 @@ pub trait MountBackendTrait: Send {
     fn unpark(&mut self) -> Result<(), MountError> {
         Err(MountError::CommandRejected)
     }
+
+    /// Slew to home position. Alpaca: uses findhome. LX200: GoTo Polaris.
+    fn find_home(&mut self) -> Result<(), MountError> {
+        // Default: GoTo Polaris
+        self.goto_radec(2.53, 89.26)
+    }
+
+    /// Sync mount position: tell the mount it is currently pointing at (ra_hours, dec_deg).
+    /// Required for GoTo on mounts that need alignment (e.g., AM5 after fresh connect).
+    fn sync_position(&mut self, _ra_hours: f64, _dec_deg: f64) -> Result<(), MountError> {
+        Ok(()) // Default no-op
+    }
+
+    /// Sync mount's internal clock and site location with computer.
+    /// Default: no-op (Alpaca mounts typically manage time internally).
+    fn sync_datetime(&mut self, _observer_lat_deg: f64, _observer_lon_deg: f64, _utc_offset_hours: f64) -> Result<(), MountError> {
+        Ok(())
+    }
 }
 
 /// Mount controller exposed to Swift via UniFFI.
@@ -237,6 +255,36 @@ impl MountController {
         let mut guard = self.backend.lock().unwrap();
         match guard.as_mut() {
             Some(backend) => backend.unpark(),
+            None => Err(MountError::NotConnected),
+        }
+    }
+
+    /// Slew to home position. Alpaca: native findhome. LX200: GoTo Polaris.
+    pub fn find_home(&self) -> Result<(), MountError> {
+        let mut guard = self.backend.lock().unwrap();
+        match guard.as_mut() {
+            Some(backend) => backend.find_home(),
+            None => Err(MountError::NotConnected),
+        }
+    }
+
+    /// Sync mount position: tell the mount "you are pointing at (ra_hours, dec_deg)".
+    /// This establishes alignment so GoTo works. Call after plate solving.
+    pub fn sync_position(&self, ra_hours: f64, dec_deg: f64) -> Result<(), MountError> {
+        let mut guard = self.backend.lock().unwrap();
+        match guard.as_mut() {
+            Some(backend) => backend.sync_position(ra_hours, dec_deg),
+            None => Err(MountError::NotConnected),
+        }
+    }
+
+    /// Sync mount's internal clock and observer location with the computer.
+    /// For LX200 mounts this sets the time, date, UTC offset, and site coordinates.
+    /// For Alpaca mounts this is a no-op (they manage time internally).
+    pub fn sync_datetime(&self, observer_lat_deg: f64, observer_lon_deg: f64, utc_offset_hours: f64) -> Result<(), MountError> {
+        let mut guard = self.backend.lock().unwrap();
+        match guard.as_mut() {
+            Some(backend) => backend.sync_datetime(observer_lat_deg, observer_lon_deg, utc_offset_hours),
             None => Err(MountError::NotConnected),
         }
     }

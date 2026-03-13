@@ -416,6 +416,38 @@ fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
+    typealias FfiType = UInt16
+    typealias SwiftType = UInt16
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt16 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterInt16: FfiConverterPrimitive {
+    typealias FfiType = Int16
+    typealias SwiftType = Int16
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int16 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int16, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
     typealias FfiType = UInt32
     typealias SwiftType = UInt32
@@ -526,6 +558,538 @@ fileprivate struct FfiConverterString: FfiConverter {
     }
 }
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterData: FfiConverterRustBuffer {
+    typealias SwiftType = Data
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Data {
+        let len: Int32 = try readInt(&buf)
+        return Data(try readBytes(&buf, count: Int(len)))
+    }
+
+    public static func write(_ value: Data, into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        writeBytes(&buf, value)
+    }
+}
+
+
+
+
+public protocol AlpacaCameraControllerProtocol: AnyObject, Sendable {
+    
+    /**
+     * Abort the current exposure.
+     */
+    func abortExposure() throws 
+    
+    /**
+     * Get camera state (0=idle, 1=waiting, 2=exposing, 3=reading, 4=download, 5=error).
+     */
+    func cameraState() throws  -> UInt8
+    
+    /**
+     * Connect to an ASCOM Alpaca camera device.
+     */
+    func connect(host: String, port: UInt32, deviceNumber: UInt32) throws  -> AlpacaCameraInfo
+    
+    /**
+     * Disconnect from the camera.
+     */
+    func disconnect() throws 
+    
+    /**
+     * Download the last captured image as raw pixel bytes (16-bit LE).
+     */
+    func downloadImage() throws  -> Data
+    
+    /**
+     * Get sensor temperature in Celsius.
+     */
+    func getTemperature() throws  -> Double
+    
+    /**
+     * Check if connected.
+     */
+    func isConnected()  -> Bool
+    
+    /**
+     * Check if the last exposure image is ready for download.
+     */
+    func isImageReady() throws  -> Bool
+    
+    /**
+     * Set binning factor (1, 2, 3, 4).
+     */
+    func setBinning(bin: UInt8) throws 
+    
+    /**
+     * Set cooler on/off with target temperature.
+     */
+    func setCooler(enabled: Bool, targetCelsius: Double) throws 
+    
+    /**
+     * Set gain value.
+     */
+    func setGain(gain: Int32) throws 
+    
+    /**
+     * Start an exposure (duration in seconds).
+     */
+    func startExposure(durationSecs: Double) throws 
+    
+}
+open class AlpacaCameraController: AlpacaCameraControllerProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_polar_core_fn_clone_alpacacameracontroller(self.pointer, $0) }
+    }
+public convenience init() {
+    let pointer =
+        try! rustCall() {
+    uniffi_polar_core_fn_constructor_alpacacameracontroller_new($0
+    )
+}
+    self.init(unsafeFromRawPointer: pointer)
+}
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_polar_core_fn_free_alpacacameracontroller(pointer, $0) }
+    }
+
+    
+
+    
+    /**
+     * Abort the current exposure.
+     */
+open func abortExposure()throws   {try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_abort_exposure(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
+     * Get camera state (0=idle, 1=waiting, 2=exposing, 3=reading, 4=download, 5=error).
+     */
+open func cameraState()throws  -> UInt8  {
+    return try  FfiConverterUInt8.lift(try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_camera_state(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Connect to an ASCOM Alpaca camera device.
+     */
+open func connect(host: String, port: UInt32, deviceNumber: UInt32)throws  -> AlpacaCameraInfo  {
+    return try  FfiConverterTypeAlpacaCameraInfo_lift(try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_connect(self.uniffiClonePointer(),
+        FfiConverterString.lower(host),
+        FfiConverterUInt32.lower(port),
+        FfiConverterUInt32.lower(deviceNumber),$0
+    )
+})
+}
+    
+    /**
+     * Disconnect from the camera.
+     */
+open func disconnect()throws   {try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_disconnect(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
+     * Download the last captured image as raw pixel bytes (16-bit LE).
+     */
+open func downloadImage()throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_download_image(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Get sensor temperature in Celsius.
+     */
+open func getTemperature()throws  -> Double  {
+    return try  FfiConverterDouble.lift(try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_get_temperature(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Check if connected.
+     */
+open func isConnected() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_polar_core_fn_method_alpacacameracontroller_is_connected(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Check if the last exposure image is ready for download.
+     */
+open func isImageReady()throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_is_image_ready(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Set binning factor (1, 2, 3, 4).
+     */
+open func setBinning(bin: UInt8)throws   {try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_set_binning(self.uniffiClonePointer(),
+        FfiConverterUInt8.lower(bin),$0
+    )
+}
+}
+    
+    /**
+     * Set cooler on/off with target temperature.
+     */
+open func setCooler(enabled: Bool, targetCelsius: Double)throws   {try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_set_cooler(self.uniffiClonePointer(),
+        FfiConverterBool.lower(enabled),
+        FfiConverterDouble.lower(targetCelsius),$0
+    )
+}
+}
+    
+    /**
+     * Set gain value.
+     */
+open func setGain(gain: Int32)throws   {try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_set_gain(self.uniffiClonePointer(),
+        FfiConverterInt32.lower(gain),$0
+    )
+}
+}
+    
+    /**
+     * Start an exposure (duration in seconds).
+     */
+open func startExposure(durationSecs: Double)throws   {try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_method_alpacacameracontroller_start_exposure(self.uniffiClonePointer(),
+        FfiConverterDouble.lower(durationSecs),$0
+    )
+}
+}
+    
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAlpacaCameraController: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = AlpacaCameraController
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> AlpacaCameraController {
+        return AlpacaCameraController(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: AlpacaCameraController) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlpacaCameraController {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: AlpacaCameraController, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaCameraController_lift(_ pointer: UnsafeMutableRawPointer) throws -> AlpacaCameraController {
+    return try FfiConverterTypeAlpacaCameraController.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaCameraController_lower(_ value: AlpacaCameraController) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeAlpacaCameraController.lower(value)
+}
+
+
+
+
+
+
+public protocol AlpacaFilterWheelControllerProtocol: AnyObject, Sendable {
+    
+    /**
+     * Connect to an ASCOM Alpaca filter wheel device.
+     */
+    func connect(host: String, port: UInt32, deviceNumber: UInt32) throws  -> AlpacaFilterWheelInfo
+    
+    /**
+     * Disconnect from the filter wheel.
+     */
+    func disconnect() throws 
+    
+    /**
+     * Get filter names.
+     */
+    func getNames() throws  -> [String]
+    
+    /**
+     * Get current filter position (-1 = moving).
+     */
+    func getPosition() throws  -> Int16
+    
+    /**
+     * Check if connected.
+     */
+    func isConnected()  -> Bool
+    
+    /**
+     * Set filter position (0-based index).
+     */
+    func setPosition(position: Int16) throws 
+    
+}
+open class AlpacaFilterWheelController: AlpacaFilterWheelControllerProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_polar_core_fn_clone_alpacafilterwheelcontroller(self.pointer, $0) }
+    }
+public convenience init() {
+    let pointer =
+        try! rustCall() {
+    uniffi_polar_core_fn_constructor_alpacafilterwheelcontroller_new($0
+    )
+}
+    self.init(unsafeFromRawPointer: pointer)
+}
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_polar_core_fn_free_alpacafilterwheelcontroller(pointer, $0) }
+    }
+
+    
+
+    
+    /**
+     * Connect to an ASCOM Alpaca filter wheel device.
+     */
+open func connect(host: String, port: UInt32, deviceNumber: UInt32)throws  -> AlpacaFilterWheelInfo  {
+    return try  FfiConverterTypeAlpacaFilterWheelInfo_lift(try rustCallWithError(FfiConverterTypeFilterWheelError_lift) {
+    uniffi_polar_core_fn_method_alpacafilterwheelcontroller_connect(self.uniffiClonePointer(),
+        FfiConverterString.lower(host),
+        FfiConverterUInt32.lower(port),
+        FfiConverterUInt32.lower(deviceNumber),$0
+    )
+})
+}
+    
+    /**
+     * Disconnect from the filter wheel.
+     */
+open func disconnect()throws   {try rustCallWithError(FfiConverterTypeFilterWheelError_lift) {
+    uniffi_polar_core_fn_method_alpacafilterwheelcontroller_disconnect(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
+     * Get filter names.
+     */
+open func getNames()throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeFilterWheelError_lift) {
+    uniffi_polar_core_fn_method_alpacafilterwheelcontroller_get_names(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Get current filter position (-1 = moving).
+     */
+open func getPosition()throws  -> Int16  {
+    return try  FfiConverterInt16.lift(try rustCallWithError(FfiConverterTypeFilterWheelError_lift) {
+    uniffi_polar_core_fn_method_alpacafilterwheelcontroller_get_position(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Check if connected.
+     */
+open func isConnected() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_polar_core_fn_method_alpacafilterwheelcontroller_is_connected(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Set filter position (0-based index).
+     */
+open func setPosition(position: Int16)throws   {try rustCallWithError(FfiConverterTypeFilterWheelError_lift) {
+    uniffi_polar_core_fn_method_alpacafilterwheelcontroller_set_position(self.uniffiClonePointer(),
+        FfiConverterInt16.lower(position),$0
+    )
+}
+}
+    
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAlpacaFilterWheelController: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = AlpacaFilterWheelController
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> AlpacaFilterWheelController {
+        return AlpacaFilterWheelController(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: AlpacaFilterWheelController) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlpacaFilterWheelController {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: AlpacaFilterWheelController, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaFilterWheelController_lift(_ pointer: UnsafeMutableRawPointer) throws -> AlpacaFilterWheelController {
+    return try FfiConverterTypeAlpacaFilterWheelController.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaFilterWheelController_lower(_ value: AlpacaFilterWheelController) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeAlpacaFilterWheelController.lower(value)
+}
+
+
+
 
 
 
@@ -561,6 +1125,11 @@ public protocol MountControllerProtocol: AnyObject, Sendable {
      * Disconnect from the mount.
      */
     func disconnect() throws 
+    
+    /**
+     * Slew to home position. Alpaca: native findhome. LX200: GoTo Polaris.
+     */
+    func findHome() throws 
     
     /**
      * Get current Dec in degrees.
@@ -611,6 +1180,16 @@ public protocol MountControllerProtocol: AnyObject, Sendable {
      * Slew RA axis by given degrees. Positive = east.
      */
     func slewRaDegrees(degrees: Double) throws 
+    
+    /**
+     * Sync mount clock and site location with computer.
+     */
+    func syncDatetime(observerLatDeg: Double, observerLonDeg: Double, utcOffsetHours: Double) throws 
+    
+    /**
+     * Sync mount position: tell the mount "you are pointing here". Needed for GoTo alignment.
+     */
+    func syncPosition(raHours: Double, decDeg: Double) throws 
     
     /**
      * Unpark the mount.
@@ -740,6 +1319,15 @@ open func disconnect()throws   {try rustCallWithError(FfiConverterTypeMountError
 }
     
     /**
+     * Slew to home position. Alpaca: native findhome. LX200: GoTo Polaris.
+     */
+open func findHome()throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_find_home(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
      * Get current Dec in degrees.
      */
 open func getDecDeg()throws  -> Double  {
@@ -836,6 +1424,29 @@ open func setTrackingRate(rate: UInt8)throws   {try rustCallWithError(FfiConvert
 open func slewRaDegrees(degrees: Double)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
     uniffi_polar_core_fn_method_mountcontroller_slew_ra_degrees(self.uniffiClonePointer(),
         FfiConverterDouble.lower(degrees),$0
+    )
+}
+}
+    
+    /**
+     * Sync mount clock and site location with computer.
+     */
+open func syncDatetime(observerLatDeg: Double, observerLonDeg: Double, utcOffsetHours: Double)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_sync_datetime(self.uniffiClonePointer(),
+        FfiConverterDouble.lower(observerLatDeg),
+        FfiConverterDouble.lower(observerLonDeg),
+        FfiConverterDouble.lower(utcOffsetHours),$0
+    )
+}
+}
+    
+    /**
+     * Sync mount position: tell the mount "you are pointing here". Needed for GoTo alignment.
+     */
+open func syncPosition(raHours: Double, decDeg: Double)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_sync_position(self.uniffiClonePointer(),
+        FfiConverterDouble.lower(raHours),
+        FfiConverterDouble.lower(decDeg),$0
     )
 }
 }
@@ -1090,6 +1701,328 @@ public func FfiConverterTypePlateSolver_lower(_ value: PlateSolver) -> UnsafeMut
 
 
 
+public struct AlpacaCameraInfo {
+    public var name: String
+    public var width: UInt32
+    public var height: UInt32
+    public var sensorType: UInt8
+    public var maxBin: UInt8
+    public var maxAdu: UInt32
+    public var hasCooler: Bool
+    public var pixelSizeX: Double
+    public var pixelSizeY: Double
+    public var bayerOffsetX: UInt8
+    public var bayerOffsetY: UInt8
+    public var gainMin: Int32
+    public var gainMax: Int32
+    public var gain: Int32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, width: UInt32, height: UInt32, sensorType: UInt8, maxBin: UInt8, maxAdu: UInt32, hasCooler: Bool, pixelSizeX: Double, pixelSizeY: Double, bayerOffsetX: UInt8, bayerOffsetY: UInt8, gainMin: Int32, gainMax: Int32, gain: Int32) {
+        self.name = name
+        self.width = width
+        self.height = height
+        self.sensorType = sensorType
+        self.maxBin = maxBin
+        self.maxAdu = maxAdu
+        self.hasCooler = hasCooler
+        self.pixelSizeX = pixelSizeX
+        self.pixelSizeY = pixelSizeY
+        self.bayerOffsetX = bayerOffsetX
+        self.bayerOffsetY = bayerOffsetY
+        self.gainMin = gainMin
+        self.gainMax = gainMax
+        self.gain = gain
+    }
+}
+
+#if compiler(>=6)
+extension AlpacaCameraInfo: Sendable {}
+#endif
+
+
+extension AlpacaCameraInfo: Equatable, Hashable {
+    public static func ==(lhs: AlpacaCameraInfo, rhs: AlpacaCameraInfo) -> Bool {
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.width != rhs.width {
+            return false
+        }
+        if lhs.height != rhs.height {
+            return false
+        }
+        if lhs.sensorType != rhs.sensorType {
+            return false
+        }
+        if lhs.maxBin != rhs.maxBin {
+            return false
+        }
+        if lhs.maxAdu != rhs.maxAdu {
+            return false
+        }
+        if lhs.hasCooler != rhs.hasCooler {
+            return false
+        }
+        if lhs.pixelSizeX != rhs.pixelSizeX {
+            return false
+        }
+        if lhs.pixelSizeY != rhs.pixelSizeY {
+            return false
+        }
+        if lhs.bayerOffsetX != rhs.bayerOffsetX {
+            return false
+        }
+        if lhs.bayerOffsetY != rhs.bayerOffsetY {
+            return false
+        }
+        if lhs.gainMin != rhs.gainMin {
+            return false
+        }
+        if lhs.gainMax != rhs.gainMax {
+            return false
+        }
+        if lhs.gain != rhs.gain {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(width)
+        hasher.combine(height)
+        hasher.combine(sensorType)
+        hasher.combine(maxBin)
+        hasher.combine(maxAdu)
+        hasher.combine(hasCooler)
+        hasher.combine(pixelSizeX)
+        hasher.combine(pixelSizeY)
+        hasher.combine(bayerOffsetX)
+        hasher.combine(bayerOffsetY)
+        hasher.combine(gainMin)
+        hasher.combine(gainMax)
+        hasher.combine(gain)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAlpacaCameraInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlpacaCameraInfo {
+        return
+            try AlpacaCameraInfo(
+                name: FfiConverterString.read(from: &buf), 
+                width: FfiConverterUInt32.read(from: &buf), 
+                height: FfiConverterUInt32.read(from: &buf), 
+                sensorType: FfiConverterUInt8.read(from: &buf), 
+                maxBin: FfiConverterUInt8.read(from: &buf), 
+                maxAdu: FfiConverterUInt32.read(from: &buf), 
+                hasCooler: FfiConverterBool.read(from: &buf), 
+                pixelSizeX: FfiConverterDouble.read(from: &buf), 
+                pixelSizeY: FfiConverterDouble.read(from: &buf), 
+                bayerOffsetX: FfiConverterUInt8.read(from: &buf), 
+                bayerOffsetY: FfiConverterUInt8.read(from: &buf), 
+                gainMin: FfiConverterInt32.read(from: &buf), 
+                gainMax: FfiConverterInt32.read(from: &buf), 
+                gain: FfiConverterInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AlpacaCameraInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterUInt32.write(value.width, into: &buf)
+        FfiConverterUInt32.write(value.height, into: &buf)
+        FfiConverterUInt8.write(value.sensorType, into: &buf)
+        FfiConverterUInt8.write(value.maxBin, into: &buf)
+        FfiConverterUInt32.write(value.maxAdu, into: &buf)
+        FfiConverterBool.write(value.hasCooler, into: &buf)
+        FfiConverterDouble.write(value.pixelSizeX, into: &buf)
+        FfiConverterDouble.write(value.pixelSizeY, into: &buf)
+        FfiConverterUInt8.write(value.bayerOffsetX, into: &buf)
+        FfiConverterUInt8.write(value.bayerOffsetY, into: &buf)
+        FfiConverterInt32.write(value.gainMin, into: &buf)
+        FfiConverterInt32.write(value.gainMax, into: &buf)
+        FfiConverterInt32.write(value.gain, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaCameraInfo_lift(_ buf: RustBuffer) throws -> AlpacaCameraInfo {
+    return try FfiConverterTypeAlpacaCameraInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaCameraInfo_lower(_ value: AlpacaCameraInfo) -> RustBuffer {
+    return FfiConverterTypeAlpacaCameraInfo.lower(value)
+}
+
+
+public struct AlpacaDeviceInfo {
+    public var deviceName: String
+    public var deviceType: String
+    public var deviceNumber: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(deviceName: String, deviceType: String, deviceNumber: UInt32) {
+        self.deviceName = deviceName
+        self.deviceType = deviceType
+        self.deviceNumber = deviceNumber
+    }
+}
+
+#if compiler(>=6)
+extension AlpacaDeviceInfo: Sendable {}
+#endif
+
+
+extension AlpacaDeviceInfo: Equatable, Hashable {
+    public static func ==(lhs: AlpacaDeviceInfo, rhs: AlpacaDeviceInfo) -> Bool {
+        if lhs.deviceName != rhs.deviceName {
+            return false
+        }
+        if lhs.deviceType != rhs.deviceType {
+            return false
+        }
+        if lhs.deviceNumber != rhs.deviceNumber {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(deviceName)
+        hasher.combine(deviceType)
+        hasher.combine(deviceNumber)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAlpacaDeviceInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlpacaDeviceInfo {
+        return
+            try AlpacaDeviceInfo(
+                deviceName: FfiConverterString.read(from: &buf), 
+                deviceType: FfiConverterString.read(from: &buf), 
+                deviceNumber: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AlpacaDeviceInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.deviceName, into: &buf)
+        FfiConverterString.write(value.deviceType, into: &buf)
+        FfiConverterUInt32.write(value.deviceNumber, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaDeviceInfo_lift(_ buf: RustBuffer) throws -> AlpacaDeviceInfo {
+    return try FfiConverterTypeAlpacaDeviceInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaDeviceInfo_lower(_ value: AlpacaDeviceInfo) -> RustBuffer {
+    return FfiConverterTypeAlpacaDeviceInfo.lower(value)
+}
+
+
+public struct AlpacaFilterWheelInfo {
+    public var name: String
+    public var filterNames: [String]
+    public var position: Int16
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, filterNames: [String], position: Int16) {
+        self.name = name
+        self.filterNames = filterNames
+        self.position = position
+    }
+}
+
+#if compiler(>=6)
+extension AlpacaFilterWheelInfo: Sendable {}
+#endif
+
+
+extension AlpacaFilterWheelInfo: Equatable, Hashable {
+    public static func ==(lhs: AlpacaFilterWheelInfo, rhs: AlpacaFilterWheelInfo) -> Bool {
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.filterNames != rhs.filterNames {
+            return false
+        }
+        if lhs.position != rhs.position {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(filterNames)
+        hasher.combine(position)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAlpacaFilterWheelInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlpacaFilterWheelInfo {
+        return
+            try AlpacaFilterWheelInfo(
+                name: FfiConverterString.read(from: &buf), 
+                filterNames: FfiConverterSequenceString.read(from: &buf), 
+                position: FfiConverterInt16.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AlpacaFilterWheelInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterSequenceString.write(value.filterNames, into: &buf)
+        FfiConverterInt16.write(value.position, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaFilterWheelInfo_lift(_ buf: RustBuffer) throws -> AlpacaFilterWheelInfo {
+    return try FfiConverterTypeAlpacaFilterWheelInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAlpacaFilterWheelInfo_lower(_ value: AlpacaFilterWheelInfo) -> RustBuffer {
+    return FfiConverterTypeAlpacaFilterWheelInfo.lower(value)
+}
+
+
 public struct AltAzCoord {
     public var altDeg: Double
     public var azDeg: Double
@@ -1312,6 +2245,8 @@ public struct MountStatus {
     public var connected: Bool
     public var raHours: Double
     public var decDeg: Double
+    public var altDeg: Double
+    public var azDeg: Double
     public var tracking: Bool
     public var slewing: Bool
     public var trackingRate: UInt8
@@ -1319,10 +2254,12 @@ public struct MountStatus {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(connected: Bool, raHours: Double, decDeg: Double, tracking: Bool, slewing: Bool, trackingRate: UInt8, atPark: Bool) {
+    public init(connected: Bool, raHours: Double, decDeg: Double, altDeg: Double, azDeg: Double, tracking: Bool, slewing: Bool, trackingRate: UInt8, atPark: Bool) {
         self.connected = connected
         self.raHours = raHours
         self.decDeg = decDeg
+        self.altDeg = altDeg
+        self.azDeg = azDeg
         self.tracking = tracking
         self.slewing = slewing
         self.trackingRate = trackingRate
@@ -1346,6 +2283,12 @@ extension MountStatus: Equatable, Hashable {
         if lhs.decDeg != rhs.decDeg {
             return false
         }
+        if lhs.altDeg != rhs.altDeg {
+            return false
+        }
+        if lhs.azDeg != rhs.azDeg {
+            return false
+        }
         if lhs.tracking != rhs.tracking {
             return false
         }
@@ -1365,6 +2308,8 @@ extension MountStatus: Equatable, Hashable {
         hasher.combine(connected)
         hasher.combine(raHours)
         hasher.combine(decDeg)
+        hasher.combine(altDeg)
+        hasher.combine(azDeg)
         hasher.combine(tracking)
         hasher.combine(slewing)
         hasher.combine(trackingRate)
@@ -1384,6 +2329,8 @@ public struct FfiConverterTypeMountStatus: FfiConverterRustBuffer {
                 connected: FfiConverterBool.read(from: &buf), 
                 raHours: FfiConverterDouble.read(from: &buf), 
                 decDeg: FfiConverterDouble.read(from: &buf), 
+                altDeg: FfiConverterDouble.read(from: &buf), 
+                azDeg: FfiConverterDouble.read(from: &buf), 
                 tracking: FfiConverterBool.read(from: &buf), 
                 slewing: FfiConverterBool.read(from: &buf), 
                 trackingRate: FfiConverterUInt8.read(from: &buf), 
@@ -1395,6 +2342,8 @@ public struct FfiConverterTypeMountStatus: FfiConverterRustBuffer {
         FfiConverterBool.write(value.connected, into: &buf)
         FfiConverterDouble.write(value.raHours, into: &buf)
         FfiConverterDouble.write(value.decDeg, into: &buf)
+        FfiConverterDouble.write(value.altDeg, into: &buf)
+        FfiConverterDouble.write(value.azDeg, into: &buf)
         FfiConverterBool.write(value.tracking, into: &buf)
         FfiConverterBool.write(value.slewing, into: &buf)
         FfiConverterUInt8.write(value.trackingRate, into: &buf)
@@ -1792,6 +2741,246 @@ extension AlignmentError: Foundation.LocalizedError {
 
 
 
+public enum CameraError: Swift.Error {
+
+    
+    
+    case NotConnected(message: String)
+    
+    case ConnectionFailed(message: String)
+    
+    case CommunicationError(message: String)
+    
+    case CommandRejected(message: String)
+    
+    case InvalidResponse(message: String)
+    
+    case Timeout(message: String)
+    
+    case ExposureInProgress(message: String)
+    
+    case ImageNotReady(message: String)
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCameraError: FfiConverterRustBuffer {
+    typealias SwiftType = CameraError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CameraError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .NotConnected(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .ConnectionFailed(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .CommunicationError(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .CommandRejected(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .InvalidResponse(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .Timeout(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 7: return .ExposureInProgress(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 8: return .ImageNotReady(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CameraError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        case .NotConnected(_ /* message is ignored*/):
+            writeInt(&buf, Int32(1))
+        case .ConnectionFailed(_ /* message is ignored*/):
+            writeInt(&buf, Int32(2))
+        case .CommunicationError(_ /* message is ignored*/):
+            writeInt(&buf, Int32(3))
+        case .CommandRejected(_ /* message is ignored*/):
+            writeInt(&buf, Int32(4))
+        case .InvalidResponse(_ /* message is ignored*/):
+            writeInt(&buf, Int32(5))
+        case .Timeout(_ /* message is ignored*/):
+            writeInt(&buf, Int32(6))
+        case .ExposureInProgress(_ /* message is ignored*/):
+            writeInt(&buf, Int32(7))
+        case .ImageNotReady(_ /* message is ignored*/):
+            writeInt(&buf, Int32(8))
+
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCameraError_lift(_ buf: RustBuffer) throws -> CameraError {
+    return try FfiConverterTypeCameraError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCameraError_lower(_ value: CameraError) -> RustBuffer {
+    return FfiConverterTypeCameraError.lower(value)
+}
+
+
+extension CameraError: Equatable, Hashable {}
+
+
+
+
+extension CameraError: Foundation.LocalizedError {
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+}
+
+
+
+
+
+public enum FilterWheelError: Swift.Error {
+
+    
+    
+    case NotConnected(message: String)
+    
+    case ConnectionFailed(message: String)
+    
+    case CommunicationError(message: String)
+    
+    case CommandRejected(message: String)
+    
+    case InvalidResponse(message: String)
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFilterWheelError: FfiConverterRustBuffer {
+    typealias SwiftType = FilterWheelError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FilterWheelError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .NotConnected(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .ConnectionFailed(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .CommunicationError(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .CommandRejected(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .InvalidResponse(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: FilterWheelError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        case .NotConnected(_ /* message is ignored*/):
+            writeInt(&buf, Int32(1))
+        case .ConnectionFailed(_ /* message is ignored*/):
+            writeInt(&buf, Int32(2))
+        case .CommunicationError(_ /* message is ignored*/):
+            writeInt(&buf, Int32(3))
+        case .CommandRejected(_ /* message is ignored*/):
+            writeInt(&buf, Int32(4))
+        case .InvalidResponse(_ /* message is ignored*/):
+            writeInt(&buf, Int32(5))
+
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFilterWheelError_lift(_ buf: RustBuffer) throws -> FilterWheelError {
+    return try FfiConverterTypeFilterWheelError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFilterWheelError_lower(_ value: FilterWheelError) -> RustBuffer {
+    return FfiConverterTypeFilterWheelError.lower(value)
+}
+
+
+extension FilterWheelError: Equatable, Hashable {}
+
+
+
+
+extension FilterWheelError: Foundation.LocalizedError {
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+}
+
+
+
+
+
 public enum MountError: Swift.Error {
 
     
@@ -2067,6 +3256,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeAlpacaDeviceInfo: FfiConverterRustBuffer {
+    typealias SwiftType = [AlpacaDeviceInfo]
+
+    public static func write(_ value: [AlpacaDeviceInfo], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAlpacaDeviceInfo.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AlpacaDeviceInfo] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AlpacaDeviceInfo]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAlpacaDeviceInfo.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeCatalogStar: FfiConverterRustBuffer {
     typealias SwiftType = [CatalogStar]
 
@@ -2163,6 +3377,28 @@ public func discoverAlpaca(timeoutMs: UInt32) -> [String]  {
 })
 }
 /**
+ * Discover cameras on an ASCOM Alpaca server (management API).
+ */
+public func discoverAlpacaCameras(host: String, port: UInt16)throws  -> [AlpacaDeviceInfo]  {
+    return try  FfiConverterSequenceTypeAlpacaDeviceInfo.lift(try rustCallWithError(FfiConverterTypeCameraError_lift) {
+    uniffi_polar_core_fn_func_discover_alpaca_cameras(
+        FfiConverterString.lower(host),
+        FfiConverterUInt16.lower(port),$0
+    )
+})
+}
+/**
+ * Discover filter wheels on an ASCOM Alpaca server (management API).
+ */
+public func discoverAlpacaFilterwheels(host: String, port: UInt16)throws  -> [AlpacaDeviceInfo]  {
+    return try  FfiConverterSequenceTypeAlpacaDeviceInfo.lift(try rustCallWithError(FfiConverterTypeFilterWheelError_lift) {
+    uniffi_polar_core_fn_func_discover_alpaca_filterwheels(
+        FfiConverterString.lower(host),
+        FfiConverterUInt16.lower(port),$0
+    )
+})
+}
+/**
  * Compute Julian Date from UTC date/time components.
  */
 public func julianDate(year: Int32, month: UInt32, day: UInt32, hour: UInt32, min: UInt32, sec: Double) -> Double  {
@@ -2234,6 +3470,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_polar_core_checksum_func_discover_alpaca() != 40484) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_polar_core_checksum_func_discover_alpaca_cameras() != 57168) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_func_discover_alpaca_filterwheels() != 17012) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_polar_core_checksum_func_julian_date() != 38302) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2244,6 +3486,60 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_func_polar_core_version() != 23056) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_abort_exposure() != 57509) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_camera_state() != 27095) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_connect() != 31027) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_disconnect() != 39561) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_download_image() != 4140) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_get_temperature() != 12861) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_is_connected() != 30287) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_is_image_ready() != 45171) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_set_binning() != 38228) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_set_cooler() != 57468) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_set_gain() != 26860) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacacameracontroller_start_exposure() != 9897) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacafilterwheelcontroller_connect() != 9021) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacafilterwheelcontroller_disconnect() != 8883) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacafilterwheelcontroller_get_names() != 46378) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacafilterwheelcontroller_get_position() != 43201) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacafilterwheelcontroller_is_connected() != 56731) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_alpacafilterwheelcontroller_set_position() != 7614) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_method_mountcontroller_abort() != 10394) {
@@ -2262,6 +3558,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_method_mountcontroller_disconnect() != 56614) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_find_home() != 5786) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_method_mountcontroller_get_dec_deg() != 22353) {
@@ -2294,6 +3593,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_polar_core_checksum_method_mountcontroller_slew_ra_degrees() != 30042) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_polar_core_checksum_method_mountcontroller_sync_datetime() != 63396) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_sync_position() != 33091) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_polar_core_checksum_method_mountcontroller_unpark() != 20092) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2307,6 +3612,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_method_platesolver_solve() != 27506) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_constructor_alpacacameracontroller_new() != 1431) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_constructor_alpacafilterwheelcontroller_new() != 10168) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_constructor_mountcontroller_new() != 24961) {

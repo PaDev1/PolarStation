@@ -132,29 +132,14 @@ struct MountTabView: View {
                             .font(.system(.body, design: .monospaced))
                     }
 
-                    // Alt/Az computed from RA/Dec
-                    let jd = currentJD()
-                    let lstDeg = localSiderealTime(jd: jd, longitudeDeg: observerLon)
-                    let haDeg = (lstDeg - s.raHours * 15.0).truncatingRemainder(dividingBy: 360.0)
-                    let coord = CelestialCoord(raDeg: s.raHours * 15.0, decDeg: s.decDeg)
-                    let altaz = celestialToAltaz(coord: coord, observerLatDeg: observerLat, observerLonDeg: observerLon, timestampJd: jd)
+                    // Alt/Az read directly from mount
                     HStack {
                         Text("Alt").frame(width: 30, alignment: .trailing).foregroundStyle(.secondary)
-                        Text(String(format: "%+.2f°", altaz.altDeg))
+                        Text(String(format: "%+.2f°", s.altDeg))
                             .font(.system(.body, design: .monospaced))
                         Text("Az").foregroundStyle(.secondary)
-                        Text(String(format: "%.2f°", altaz.azDeg))
+                        Text(String(format: "%.2f°", s.azDeg))
                             .font(.system(.body, design: .monospaced))
-                    }
-                    HStack {
-                        Text("LST").frame(width: 30, alignment: .trailing).foregroundStyle(.secondary)
-                        Text(String(format: "%.2f°", lstDeg))
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                        Text("HA").foregroundStyle(.secondary)
-                        Text(String(format: "%+.2f°", haDeg))
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
                     }
 
                     HStack(spacing: 12) {
@@ -346,29 +331,47 @@ struct MountTabView: View {
     // MARK: - Park Controls
 
     private var parkControls: some View {
-        GroupBox("Park") {
-            HStack(spacing: 12) {
-                Button("Park") {
-                    Task {
-                        do {
-                            try await mountService.park()
-                            mountError = nil
-                        } catch { mountError = error.localizedDescription }
+        GroupBox("Park / Home") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 12) {
+                    Button("Go Home") {
+                        Task {
+                            do {
+                                try await mountService.findHome()
+                                mountError = nil
+                            } catch { mountError = error.localizedDescription }
+                        }
                     }
-                }
-                .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
+                    .help("Alpaca: find home position. LX200: GoTo Polaris.")
 
-                Button("Unpark") {
-                    Task {
-                        do {
-                            try await mountService.unpark()
-                            mountError = nil
-                        } catch { mountError = error.localizedDescription }
+                    Button("Unpark") {
+                        Task {
+                            do {
+                                try await mountService.unpark()
+                                mountError = nil
+                            } catch { mountError = error.localizedDescription }
+                        }
                     }
-                }
-                .buttonStyle(.bordered)
+                    .buttonStyle(.bordered)
 
-                Spacer()
+                    Spacer()
+
+                    Button("Park") {
+                        Task {
+                            do {
+                                try await mountService.park()
+                                mountError = nil
+                            } catch { mountError = error.localizedDescription }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Park mount (west-facing position)")
+                }
+
+                Text("Home = Polaris  •  Park = west position")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
             .padding(.vertical, 4)
         }
@@ -402,13 +405,6 @@ struct MountTabView: View {
         let m = Int(minTotal)
         let s = (minTotal - Double(m)) * 60.0
         return String(format: "%@%02d° %02d' %04.1f\"", sign, d, m, s)
-    }
-
-    private func currentJD() -> Double {
-        // Direct conversion from Swift Date (seconds since 2001-01-01 00:00:00 UTC)
-        // to Julian Date. Avoids calendar/timezone component extraction entirely.
-        // JD of Swift reference date (2001-01-01 00:00 UTC) = 2451910.5
-        Date().timeIntervalSinceReferenceDate / 86400.0 + 2451910.5
     }
 
     private func gotoTarget(raHours: Double, decDeg: Double) {

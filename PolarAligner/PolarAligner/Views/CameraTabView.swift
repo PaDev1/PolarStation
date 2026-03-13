@@ -4,6 +4,11 @@ import SwiftUI
 struct CameraTabView: View {
     @ObservedObject var viewModel: CameraViewModel
 
+    // Camera source (shared with SettingsView)
+    @AppStorage("cameraSource") private var cameraSourceRaw: String = CameraSource.usb.rawValue
+    @AppStorage("cameraAlpacaHost") private var cameraAlpacaHost: String = "192.168.8.30"
+    @AppStorage("cameraAlpacaPort") private var cameraAlpacaPort: Int = 11111
+
     // Camera settings (shared with SettingsView)
     @AppStorage("exposureMs") private var exposureMs: Double = 500
     @AppStorage("gain") private var gain: Double = 300
@@ -15,24 +20,72 @@ struct CameraTabView: View {
     @AppStorage("captureColorMode") private var captureColorMode: String = "rgb"
     @AppStorage("capturePrefix") private var capturePrefix: String = "capture"
 
+    /// Optional overrides for guide camera (when non-nil, these take precedence over @AppStorage)
+    var sourceRawOverride: String?
+    var alpacaHostOverride: String?
+    var alpacaPortOverride: Int?
+    var exposureMsOverride: Double?
+    var gainOverride: Double?
+    var binningOverride: Int?
+    var prefixOverride: String?
+
     @State private var captureCount: Int = 1
+
+    // Resolved settings (override or default)
+    private var effectiveSourceRaw: String { sourceRawOverride ?? cameraSourceRaw }
+    private var effectiveAlpacaHost: String { alpacaHostOverride ?? cameraAlpacaHost }
+    private var effectiveAlpacaPort: Int { alpacaPortOverride ?? cameraAlpacaPort }
+    private var effectiveExposureMs: Double { exposureMsOverride ?? exposureMs }
+    private var effectiveGain: Double { gainOverride ?? gain }
+    private var effectiveBinning: Int { binningOverride ?? binning }
+    private var effectivePrefix: String { prefixOverride ?? capturePrefix }
+
+    private var isAlpaca: Bool { effectiveSourceRaw == CameraSource.alpaca.rawValue }
+    private var canConnect: Bool {
+        isAlpaca ? viewModel.selectedAlpacaDevice >= 0 : viewModel.selectedCamera != nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             // MARK: - Top toolbar
             HStack(spacing: 12) {
-                Picker("Camera", selection: $viewModel.selectedCameraIndex) {
-                    Text("No camera").tag(-1)
-                    ForEach(Array(viewModel.discoveredCameras.enumerated()), id: \.offset) { index, cam in
-                        Text(cam.name).tag(index)
+                if isAlpaca {
+                    // Alpaca: camera picker
+                    Picker("Camera", selection: $viewModel.selectedAlpacaDevice) {
+                        Text("No camera").tag(-1)
+                        ForEach(Array(viewModel.alpacaDevices.enumerated()), id: \.offset) { index, dev in
+                            Text(dev.deviceName).tag(index)
+                        }
                     }
-                }
-                .frame(maxWidth: 250)
+                    .frame(maxWidth: 250)
 
-                Button(action: viewModel.discoverCameras) {
-                    Image(systemName: "arrow.clockwise")
+                    Button {
+                        viewModel.discoverAlpacaCameras(host: effectiveAlpacaHost, port: UInt32(effectiveAlpacaPort))
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .disabled(viewModel.isDiscoveringAlpacaDevices)
+                    .help("Scan for cameras on the Alpaca server")
+
+                    if viewModel.isDiscoveringAlpacaDevices {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                } else {
+                    // USB: camera picker
+                    Picker("Camera", selection: $viewModel.selectedCameraIndex) {
+                        Text("No camera").tag(-1)
+                        ForEach(Array(viewModel.discoveredCameras.enumerated()), id: \.offset) { index, cam in
+                            Text(cam.name).tag(index)
+                        }
+                    }
+                    .frame(maxWidth: 250)
+
+                    Button(action: viewModel.discoverCameras) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("Scan for cameras")
                 }
-                .help("Scan for cameras")
 
                 Divider().frame(height: 20)
 
@@ -43,10 +96,10 @@ struct CameraTabView: View {
                     .buttonStyle(.bordered)
                 } else {
                     Button("Connect") {
-                        viewModel.connect()
+                        connectCamera()
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.selectedCamera == nil)
+                    .disabled(!canConnect)
                 }
 
                 Spacer()
@@ -158,7 +211,7 @@ struct CameraTabView: View {
                         Label("Live", systemImage: "play.fill")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.selectedCamera == nil)
+                    .disabled(!viewModel.isConnected)
                 }
 
                 // Capture with count (saves files)
@@ -178,7 +231,7 @@ struct CameraTabView: View {
                             Label("Capture", systemImage: "camera.shutter.button")
                         }
                         .buttonStyle(.bordered)
-                        .disabled(viewModel.selectedCamera == nil || viewModel.isCapturing)
+                        .disabled(!viewModel.isConnected || viewModel.isCapturing)
 
                         TextField("", value: $captureCount, format: .number)
                             .textFieldStyle(.roundedBorder)
@@ -197,15 +250,15 @@ struct CameraTabView: View {
                 Divider().frame(height: 20)
 
                 // Quick settings readout
-                Text(exposureMs >= 1000
-                     ? String(format: "%.1f s", exposureMs / 1000)
-                     : String(format: "%.0f ms", exposureMs))
+                Text(effectiveExposureMs >= 1000
+                     ? String(format: "%.1f s", effectiveExposureMs / 1000)
+                     : String(format: "%.0f ms", effectiveExposureMs))
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
-                Text(String(format: "G%.0f", gain))
+                Text(String(format: "G%.0f", effectiveGain))
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
-                Text("\(binning)x\(binning)")
+                Text("\(effectiveBinning)x\(effectiveBinning)")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                 Text(captureFormat.uppercased())
@@ -263,17 +316,38 @@ struct CameraTabView: View {
             }
         }
         .onAppear {
-            viewModel.discoverCameras()
+            if isAlpaca {
+                viewModel.discoverAlpacaCameras(host: effectiveAlpacaHost, port: UInt32(effectiveAlpacaPort))
+            } else {
+                viewModel.discoverCameras()
+            }
         }
     }
 
     // MARK: - Helpers
 
+    private func connectCamera() {
+        if isAlpaca {
+            viewModel.cameraSource = .alpaca
+            viewModel.alpacaHost = effectiveAlpacaHost
+            viewModel.alpacaPort = UInt32(effectiveAlpacaPort)
+            let idx = viewModel.selectedAlpacaDevice
+            if idx >= 0, idx < viewModel.alpacaDevices.count {
+                viewModel.alpacaDeviceNumber = viewModel.alpacaDevices[idx].deviceNumber
+            } else {
+                viewModel.alpacaDeviceNumber = 0
+            }
+        } else {
+            viewModel.cameraSource = .usb
+        }
+        viewModel.connect()
+    }
+
     private var currentSettings: CameraSettings {
         CameraSettings(
-            exposureMs: exposureMs,
-            gain: Int(gain),
-            binning: binning
+            exposureMs: effectiveExposureMs,
+            gain: Int(effectiveGain),
+            binning: effectiveBinning
         )
     }
 
@@ -294,7 +368,7 @@ struct CameraTabView: View {
     }
 
     private var totalExposureLabel: String {
-        let totalSec = exposureMs * Double(captureCount) / 1000
+        let totalSec = effectiveExposureMs * Double(captureCount) / 1000
         if totalSec < 60 {
             return String(format: "Σ %.0fs", totalSec)
         } else if totalSec < 3600 {
@@ -316,13 +390,14 @@ struct CameraTabView: View {
     }
 
     private func startCapture() {
+        let prefix = effectivePrefix.isEmpty ? "capture" : effectivePrefix
         viewModel.startCaptureSequence(
             count: captureCount,
             settings: currentSettings,
             format: format,
             colorMode: colorMode,
             folder: captureFolderURL,
-            prefix: capturePrefix.isEmpty ? "capture" : capturePrefix
+            prefix: prefix
         )
     }
 }

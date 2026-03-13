@@ -118,10 +118,15 @@ impl AlpacaClient {
         let tracking_rate = self.get_int("trackingrate").unwrap_or(0) as u8;
         let at_park = self.get_bool("atpark").unwrap_or(false);
 
+        let alt_deg = self.get_float("altitude").unwrap_or(f64::NAN);
+        let az_deg = self.get_float("azimuth").unwrap_or(f64::NAN);
+
         Ok(MountStatus {
             connected: true,
             ra_hours,
             dec_deg,
+            alt_deg,
+            az_deg,
             tracking,
             slewing,
             tracking_rate,
@@ -194,6 +199,10 @@ impl AlpacaClient {
     pub fn abort(&self) -> Result<(), MountError> {
         self.put("abortslew", &[])
     }
+
+    pub fn find_home(&self) -> Result<(), MountError> {
+        self.put("findhome", &[])
+    }
 }
 
 impl super::MountBackendTrait for AlpacaClient {
@@ -240,6 +249,10 @@ impl super::MountBackendTrait for AlpacaClient {
 
     fn unpark(&mut self) -> Result<(), MountError> {
         AlpacaClient::unpark(self)
+    }
+
+    fn find_home(&mut self) -> Result<(), MountError> {
+        AlpacaClient::find_home(self)
     }
 }
 

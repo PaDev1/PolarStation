@@ -70,7 +70,11 @@ final class SkyMapViewModel: ObservableObject {
     }
 
     private func updateLST() {
-        lstRadians = computeLocalSiderealTime()
+        // When a mount is connected, syncToMount() derives LST from the mount's
+        // own coordinates. Only fall back to clock-based LST when no mount.
+        if mountRA == nil {
+            lstRadians = computeLocalSiderealTime()
+        }
     }
 
     func loadCatalog(from solver: PlateSolver) {
@@ -101,9 +105,29 @@ final class SkyMapViewModel: ObservableObject {
     /// so the view stays stable. The mount crosshair and FOV box still draw
     /// at the correct position because they use the actual mount RA/Dec.
     func syncToMount(status: MountStatus?) {
-        guard let s = status, s.connected else { return }
+        guard let s = status, s.connected else {
+            mountRA = nil
+            mountDec = nil
+            return
+        }
         mountRA = s.raHours * 15.0  // hours → degrees
         mountDec = s.decDeg
+
+        // Derive LST from mount's RA/Dec + Alt/Az for accurate horizon overlay.
+        // The mount is the ground truth — its alt/az and RA/Dec are self-consistent,
+        // so computing LST = RA + H from these avoids any clock discrepancy.
+        if !s.altDeg.isNaN && !s.azDeg.isNaN {
+            let lat = observerLatDeg * .pi / 180.0
+            let alt = s.altDeg * .pi / 180.0
+            let az = s.azDeg * .pi / 180.0
+            let sinH = -sin(az) * cos(alt)
+            let cosH = sin(alt) * cos(lat) - cos(alt) * sin(lat) * cos(az)
+            let h = atan2(sinH, cosH)
+            var lst = s.raHours * 15.0 * .pi / 180.0 + h
+            lst = lst.truncatingRemainder(dividingBy: 2.0 * .pi)
+            if lst < 0 { lst += 2.0 * .pi }
+            lstRadians = lst
+        }
 
         guard followMount else { return }
 
@@ -131,8 +155,9 @@ final class SkyMapViewModel: ObservableObject {
     /// Convert horizontal (alt/az) to equatorial (RA/Dec) for the current observer and time.
     ///
     /// Uses the standard astronomical convention: Az 0°=North, 90°=East, 180°=South, 270°=West.
-    /// The conversion depends on observer latitude and current Local Sidereal Time (LST),
-    /// which is computed from the computer's UTC clock and the observer's longitude.
+    /// The conversion depends on observer latitude and current Local Sidereal Time (LST).
+    /// When a mount is connected, LST is derived from the mount's own coordinates for accuracy.
+    /// Otherwise falls back to computing from the computer's UTC clock.
     ///
     /// Formulas (Meeus, Astronomical Algorithms):
     ///   sin(Dec) = sin(Alt)*sin(φ) + cos(Alt)*cos(φ)*cos(Az)
@@ -278,6 +303,7 @@ struct SkyMapView: View {
                     drawCardinals(context: context, size: size)
                     drawAltitudeLines(context: context, size: size)
                     drawLabels(context: context, size: size)
+                    drawCompassIndicator(context: context, size: size)
                 }
                 .gesture(scrollGesture)
                 .gesture(dragGesture(size: geo.size))
@@ -765,6 +791,38 @@ struct SkyMapView: View {
                 ra += raStep
             }
         }
+    }
+
+    private func drawCompassIndicator(context: GraphicsContext, size: CGSize) {
+        // Convert view center RA/Dec → Alt/Az to get the azimuth
+        let lat = viewModel.observerLatDeg * .pi / 180.0
+        let dec = viewModel.centerDec * .pi / 180.0
+        let ra = viewModel.centerRA * .pi / 180.0
+        let h = viewModel.lstRadians - ra  // hour angle
+
+        let sinAlt = sin(dec) * sin(lat) + cos(dec) * cos(lat) * cos(h)
+        let az = atan2(-cos(dec) * sin(h),
+                       sin(dec) * cos(lat) - cos(dec) * sin(lat) * cos(h))
+        var azDeg = az * 180.0 / .pi
+        if azDeg < 0 { azDeg += 360.0 }
+
+        // Triangle: small inverted (tip pointing down) at top center
+        let cx = size.width / 2.0
+        let triSize: CGFloat = 8
+        let topY: CGFloat = 24  // leave room for text above
+
+        var tri = Path()
+        tri.move(to: CGPoint(x: cx, y: topY + triSize))          // tip (bottom)
+        tri.addLine(to: CGPoint(x: cx - triSize, y: topY))       // top-left
+        tri.addLine(to: CGPoint(x: cx + triSize, y: topY))       // top-right
+        tri.closeSubpath()
+        context.fill(tri, with: .color(.red))
+
+        // Azimuth text above triangle
+        let azText = Text(String(format: "%.1f°", azDeg))
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundColor(.red)
+        context.draw(azText, at: CGPoint(x: cx, y: topY - 4), anchor: .bottom)
     }
 
     // MARK: - Gestures

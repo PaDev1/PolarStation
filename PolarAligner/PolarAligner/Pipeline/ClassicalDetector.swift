@@ -305,6 +305,8 @@ final class ClassicalDetector: StarDetectorProtocol {
             mipmapped: false
         )
         desc.usage = [.shaderRead, .shaderWrite]
+        // Must use .shared so CPU can read back via getBytes after GPU writes
+        desc.storageMode = .shared
         luminanceTexture = device.makeTexture(descriptor: desc)
         blurredTexture = device.makeTexture(descriptor: desc)
         subtractedTexture = device.makeTexture(descriptor: desc)

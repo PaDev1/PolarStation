@@ -54,6 +54,8 @@ pub struct MountStatus {
     pub connected: bool,
     pub ra_hours: f64,
     pub dec_deg: f64,
+    pub alt_deg: f64,
+    pub az_deg: f64,
     pub tracking: bool,
     pub slewing: bool,
     pub tracking_rate: u8, // 0=sidereal, 1=lunar, 2=solar, 3=king

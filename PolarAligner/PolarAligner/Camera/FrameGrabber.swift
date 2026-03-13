@@ -4,7 +4,8 @@ import Foundation
 protocol FrameGrabberDelegate: AnyObject {
     /// Called on the capture thread when a new frame is available.
     /// `buffer` contains raw pixel data; `width`/`height` are post-binning dimensions.
-    func frameGrabber(_ grabber: FrameGrabber, didCapture buffer: UnsafeBufferPointer<UInt8>,
+    /// `grabber` is nil when called from AlpacaFrameGrabber.
+    func frameGrabber(_ grabber: FrameGrabber?, didCapture buffer: UnsafeBufferPointer<UInt8>,
                       width: Int, height: Int, bytesPerPixel: Int, frameNumber: UInt64)
 }
 

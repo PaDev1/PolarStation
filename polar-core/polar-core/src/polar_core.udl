@@ -35,6 +35,14 @@ namespace polar_core {
 
     /// List available serial ports for LX200/USB mount connections.
     sequence<string> list_serial_ports();
+
+    /// Discover cameras on an ASCOM Alpaca server (management API).
+    [Throws=CameraError]
+    sequence<AlpacaDeviceInfo> discover_alpaca_cameras(string host, u16 port);
+
+    /// Discover filter wheels on an ASCOM Alpaca server (management API).
+    [Throws=FilterWheelError]
+    sequence<AlpacaDeviceInfo> discover_alpaca_filterwheels(string host, u16 port);
 };
 
 dictionary StarCentroid {
@@ -81,6 +89,8 @@ dictionary MountStatus {
     boolean connected;
     f64 ra_hours;
     f64 dec_deg;
+    f64 alt_deg;
+    f64 az_deg;
     boolean tracking;
     boolean slewing;
     u8 tracking_rate;
@@ -206,4 +216,148 @@ interface MountController {
     /// Unpark the mount.
     [Throws=MountError]
     void unpark();
+
+    /// Slew to home position. Alpaca: native findhome. LX200: GoTo Polaris.
+    [Throws=MountError]
+    void find_home();
+
+    /// Sync mount position: tell the mount "you are pointing here". Needed for GoTo alignment.
+    [Throws=MountError]
+    void sync_position(f64 ra_hours, f64 dec_deg);
+
+    /// Sync mount clock and site location with computer.
+    [Throws=MountError]
+    void sync_datetime(f64 observer_lat_deg, f64 observer_lon_deg, f64 utc_offset_hours);
+};
+
+// ── Alpaca Camera ──
+
+dictionary AlpacaDeviceInfo {
+    string device_name;
+    string device_type;
+    u32 device_number;
+};
+
+dictionary AlpacaCameraInfo {
+    string name;
+    u32 width;
+    u32 height;
+    u8 sensor_type;
+    u8 max_bin;
+    u32 max_adu;
+    boolean has_cooler;
+    f64 pixel_size_x;
+    f64 pixel_size_y;
+    u8 bayer_offset_x;
+    u8 bayer_offset_y;
+    i32 gain_min;
+    i32 gain_max;
+    i32 gain;
+};
+
+[Error]
+enum CameraError {
+    "NotConnected",
+    "ConnectionFailed",
+    "CommunicationError",
+    "CommandRejected",
+    "InvalidResponse",
+    "Timeout",
+    "ExposureInProgress",
+    "ImageNotReady",
+};
+
+interface AlpacaCameraController {
+    constructor();
+
+    /// Connect to an ASCOM Alpaca camera device.
+    [Throws=CameraError]
+    AlpacaCameraInfo connect(string host, u32 port, u32 device_number);
+
+    /// Disconnect from the camera.
+    [Throws=CameraError]
+    void disconnect();
+
+    /// Check if connected.
+    boolean is_connected();
+
+    /// Set binning factor (1, 2, 3, 4).
+    [Throws=CameraError]
+    void set_binning(u8 bin);
+
+    /// Set gain value.
+    [Throws=CameraError]
+    void set_gain(i32 gain);
+
+    /// Start an exposure (duration in seconds).
+    [Throws=CameraError]
+    void start_exposure(f64 duration_secs);
+
+    /// Check if the last exposure image is ready for download.
+    [Throws=CameraError]
+    boolean is_image_ready();
+
+    /// Get camera state (0=idle, 1=waiting, 2=exposing, 3=reading, 4=download, 5=error).
+    [Throws=CameraError]
+    u8 camera_state();
+
+    /// Download the last captured image as raw pixel bytes (16-bit LE).
+    [Throws=CameraError]
+    bytes download_image();
+
+    /// Get sensor temperature in Celsius.
+    [Throws=CameraError]
+    f64 get_temperature();
+
+    /// Set cooler on/off with target temperature.
+    [Throws=CameraError]
+    void set_cooler(boolean enabled, f64 target_celsius);
+
+    /// Abort the current exposure.
+    [Throws=CameraError]
+    void abort_exposure();
+};
+
+// ── Alpaca Filter Wheel ──
+
+dictionary AlpacaFilterWheelInfo {
+    string name;
+    sequence<string> filter_names;
+    i16 position;
+};
+
+[Error]
+enum FilterWheelError {
+    "NotConnected",
+    "ConnectionFailed",
+    "CommunicationError",
+    "CommandRejected",
+    "InvalidResponse",
+};
+
+interface AlpacaFilterWheelController {
+    constructor();
+
+    /// Connect to an ASCOM Alpaca filter wheel device.
+    [Throws=FilterWheelError]
+    AlpacaFilterWheelInfo connect(string host, u32 port, u32 device_number);
+
+    /// Disconnect from the filter wheel.
+    [Throws=FilterWheelError]
+    void disconnect();
+
+    /// Check if connected.
+    boolean is_connected();
+
+    /// Get current filter position (-1 = moving).
+    [Throws=FilterWheelError]
+    i16 get_position();
+
+    /// Set filter position (0-based index).
+    [Throws=FilterWheelError]
+    void set_position(i16 position);
+
+    /// Get filter names.
+    [Throws=FilterWheelError]
+    sequence<string> get_names();
 };

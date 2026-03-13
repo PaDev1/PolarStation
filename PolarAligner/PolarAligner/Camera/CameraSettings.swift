@@ -1,5 +1,11 @@
 import Foundation
 
+/// Identifies which camera role (main imaging vs guide).
+enum CameraRole: String, CaseIterable {
+    case main = "Main Camera"
+    case guide = "Guide Camera"
+}
+
 /// Camera configuration for the alignment workflow.
 struct CameraSettings {
     /// Exposure time in milliseconds.

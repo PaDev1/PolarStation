@@ -162,6 +162,8 @@ final class SkyMapTests: XCTestCase {
             connected: true,
             raHours: 6.0,    // = 90°
             decDeg: 45.0,
+            altDeg: 0,
+            azDeg: 0,
             tracking: true,
             slewing: false,
             trackingRate: 0,
@@ -184,6 +186,8 @@ final class SkyMapTests: XCTestCase {
             connected: false,
             raHours: 12.0,
             decDeg: 60.0,
+            altDeg: 0,
+            azDeg: 0,
             tracking: false,
             slewing: false,
             trackingRate: 0,
