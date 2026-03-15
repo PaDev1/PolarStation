@@ -2,17 +2,18 @@ import Foundation
 import CoreML
 import Metal
 
-/// Star detection using a Core ML ELUNet model (Zhao et al. 2024).
+/// Star detection using a Core ML ELUNet model.
 ///
 /// Hybrid approach:
 /// 1. Crop a square (height×height) from the image center for uniform scaling
-/// 2. Downscale to 512×512, run neural net for robust star detection
-/// 3. Map approximate positions back to full resolution
-/// 4. Refine each position with CPU weighted-centroid on the original pixels
+/// 2. Downscale to 512×512, run neural net → confidence heatmap
+/// 3. Find peaks via threshold + NMS + quadratic sub-pixel refinement
+/// 4. Map positions back to full resolution
+/// 5. Refine each position with CPU weighted-centroid on the original pixels
 ///
 /// Expected model:
-/// - Input:  "image"  — (1, 1, 512, 512) normalized grayscale
-/// - Output: "output" — (1, 2, 512, 512) seg logits + distance map
+/// - Input:  "image"   — (1, 1, 512, 512) float32, 99.9th percentile normalized
+/// - Output: "heatmap" — (1, 1, 512, 512) float16, confidence values in [0,1]
 final class CoreMLDetector: StarDetectorProtocol {
     private let config: StarDetectionConfig
     private var model: MLModel?
@@ -24,13 +25,8 @@ final class CoreMLDetector: StarDetectorProtocol {
     /// Model input resolution.
     static let modelSize = 512
 
-    /// Training normalization parameters (from dataset_512 norm_stats.json).
-    /// Input = (pixel_value_0_255 - mean) / std
-    private let normMean: Float = 21.93
-    private let normStd: Float = 11.91
-
-    /// Trilateration window radius (matching Zhao et al. default).
-    private let trilaterationRadius = 5
+    /// Heatmap confidence threshold for star detection.
+    private let heatmapThreshold: Float = 0.3
 
     /// Half-width of the centroid refinement window (pixels in full-res).
     private let refineHalfWidth = 7
@@ -76,7 +72,7 @@ final class CoreMLDetector: StarDetectorProtocol {
         let cropX0 = (fullW - cropSize) / 2
         let cropY0 = (fullH - cropSize) / 2
 
-        // Step 1: Downscale cropped square to modelSize×modelSize, normalize
+        // Step 1: Downscale cropped square to modelSize×modelSize, percentile normalize
         let inputArray = try prepareModelInput(
             pixelData: pixelData, fullWidth: fullW,
             cropX0: cropX0, cropY0: cropY0, cropSize: cropSize
@@ -86,51 +82,35 @@ final class CoreMLDetector: StarDetectorProtocol {
         let provider = try MLDictionaryFeatureProvider(dictionary: ["image": inputArray])
         let prediction = try model.prediction(from: provider)
 
-        guard let output = prediction.featureValue(for: "output")?.multiArrayValue else {
+        guard let heatmapArray = prediction.featureValue(for: "heatmap")?.multiArrayValue else {
             throw CoreMLDetectorError.invalidOutput
         }
 
         let size = Self.modelSize
         let planeSize = size * size
 
-        // Extract channel 0 (seg logits) and channel 1 (dist map)
-        var segLogits = [Float](repeating: 0, count: planeSize)
-        var distMap = [Float](repeating: 0, count: planeSize)
-
+        // Extract single-channel heatmap
+        var heatmap = [Float](repeating: 0, count: planeSize)
         for i in 0..<planeSize {
-            segLogits[i] = output[i].floatValue
-            distMap[i] = output[planeSize + i].floatValue
+            heatmap[i] = heatmapArray[i].floatValue
         }
 
         // Diagnostics
-        let segMin = segLogits.min() ?? 0
-        let segMax = segLogits.max() ?? 0
-        let distMin = distMap.min() ?? 0
-        let distMax = distMap.max() ?? 0
+        let hmMin = heatmap.min() ?? 0
+        let hmMax = heatmap.max() ?? 0
 
-        // Step 3: Apply sigmoid to segmentation logits
-        var segProb = [Float](repeating: 0, count: planeSize)
-        for i in 0..<planeSize {
-            segProb[i] = 1.0 / (1.0 + exp(-segLogits[i]))
-        }
+        // Step 3: Find peaks via threshold + 5×5 NMS + quadratic sub-pixel refinement
+        let peaks = findHeatmapPeaks(heatmap: heatmap, width: size, height: size)
 
-        // Step 4: Trilateration centroiding in model space
-        let centroids = trilaterationCentroid(
-            distMap: distMap,
-            segProb: segProb,
-            width: size,
-            height: size
-        )
-
-        // Step 5: Map model-space positions back to full image coordinates.
+        // Step 4: Map model-space positions back to full image coordinates.
         // Model pixels map to the cropped square, which starts at (cropX0, cropY0).
         let scale = Double(cropSize) / Double(size)
 
-        let approxPositions = centroids.map { c in
-            (x: c.x * scale + Double(cropX0), y: c.y * scale + Double(cropY0))
+        let approxPositions = peaks.map { p in
+            (x: p.x * scale + Double(cropX0), y: p.y * scale + Double(cropY0))
         }
 
-        // Step 6: Refine each position with weighted centroid on full-res pixels
+        // Step 5: Refine each position with weighted centroid on full-res pixels
         var stars = refinePositions(
             approximate: approxPositions,
             pixelData: pixelData,
@@ -138,17 +118,41 @@ final class CoreMLDetector: StarDetectorProtocol {
             height: fullH
         )
 
-        lastDiagnostic = String(
-            format: "seg=[%.2f,%.2f] dist=[%.1f,%.1f] crop=%dx%d+%d ml=%d refined=%d",
-            segMin, segMax, distMin, distMax, cropSize, cropSize, cropX0, centroids.count, stars.count
-        )
-
+        // Step 6: Remove duplicate detections that refined to nearby positions.
+        // Sort brightest-first so the brighter detection survives.
         stars.sort { $0.brightness > $1.brightness }
+        stars = enforceMinSeparation(stars, minSep: config.minSeparation)
+
+        lastDiagnostic = String(
+            format: "heatmap=[%.3f,%.3f] crop=%dx%d+%d peaks=%d dedup=%d",
+            hmMin, hmMax, cropSize, cropSize, cropX0, peaks.count, stars.count
+        )
+        print("[CoreML] \(lastDiagnostic)")
+
         if stars.count > config.maxStars {
             stars = Array(stars.prefix(config.maxStars))
         }
 
         return stars
+    }
+
+    // MARK: - Deduplication
+
+    /// Remove detections that are too close to a brighter detection (sorted brightest-first).
+    private func enforceMinSeparation(_ stars: [DetectedStar], minSep: Float) -> [DetectedStar] {
+        let minSepSq = Double(minSep * minSep)
+        var kept: [DetectedStar] = []
+        for star in stars {
+            let tooClose = kept.contains { existing in
+                let dx = star.x - existing.x
+                let dy = star.y - existing.y
+                return dx * dx + dy * dy < minSepSq
+            }
+            if !tooClose {
+                kept.append(star)
+            }
+        }
+        return kept
     }
 
     // MARK: - Input Preparation
@@ -163,6 +167,10 @@ final class CoreMLDetector: StarDetectorProtocol {
     }
 
     /// Downscale a square crop of full-res pixel data to modelSize×modelSize with normalization.
+    ///
+    /// Area-average downscale preserves star flux; `max(avg, maxLum*0.5)` prevents faint
+    /// point sources from being averaged below detection threshold.
+    /// 99.9th percentile normalization matches the training pipeline.
     private func prepareModelInput(
         pixelData: [UInt16], fullWidth w: Int,
         cropX0: Int, cropY0: Int, cropSize: Int
@@ -176,7 +184,9 @@ final class CoreMLDetector: StarDetectorProtocol {
 
         let scale = Float(cropSize) / Float(size)
 
-        // Area-average downscale from cropped square + normalize
+        // Step 1: Area-average downscale from cropped square, preserving peak brightness
+        var downscaled = [Float](repeating: 0, count: size * size)
+
         for y in 0..<size {
             let srcY0 = cropY0 + Int(Float(y) * scale)
             let srcY1 = cropY0 + min(Int(Float(y + 1) * scale), cropSize - 1)
@@ -201,22 +211,135 @@ final class CoreMLDetector: StarDetectorProtocol {
                 }
 
                 let avg = count > 0 ? lumSum / count : 0
-                let val = max(avg, maxLum * 0.5)
+                downscaled[y * size + x] = max(avg, maxLum * 0.5)
+            }
+        }
 
-                // Scale to 0-255 range (match training data) then normalize
-                let raw255 = val * 255.0
-                let normalized = (raw255 - normMean) / normStd
-                array[y * size + x] = NSNumber(value: normalized)
+        // Step 1b: Gaussian blur to widen sub-pixel stars into multi-pixel PSFs.
+        // After downscaling from cropSize→512, stars with sigma ~1.5px in the original
+        // become sub-pixel. The model expects stars with FWHM ~2-5px. A small blur
+        // (sigma=1.2px) widens them to detectable size without smearing the background.
+        if scale > 1.5 {
+            let blurSigma: Float = 1.2
+            downscaled = gaussianBlur2D(downscaled, width: size, height: size, sigma: blurSigma)
+        }
+
+        // Step 2: Background subtraction + 99.9th percentile normalization
+        // Subtract background (median) first so stars stand out clearly,
+        // then normalize by 99.9th percentile of the background-subtracted image.
+        // Without background subtraction, sparse star fields have nearly all pixels
+        // at ~0.04, making the 99.9th percentile a noise value that saturates the
+        // entire image to near-white, hiding stars completely.
+        var sorted = downscaled.sorted()
+        let median = sorted[sorted.count / 2]
+
+        for i in 0..<(size * size) {
+            downscaled[i] = max(0, downscaled[i] - median)
+        }
+
+        // Now 99.9th percentile on background-subtracted data
+        var rawMax: Float = 0
+        for v in downscaled { rawMax = max(rawMax, v) }
+
+        if rawMax > 0 {
+            var histogram = [Int](repeating: 0, count: 1000)
+            for v in downscaled {
+                let bin = min(Int(v / rawMax * 999), 999)
+                histogram[bin] += 1
+            }
+            var cumulative = 0
+            let target = Int(Float(size * size) * 0.999)
+            var vmax: Float = rawMax
+            for (bin, cnt) in histogram.enumerated() {
+                cumulative += cnt
+                if cumulative >= target {
+                    vmax = max(Float(bin + 1) / 1000.0 * rawMax, 1e-6)
+                    break
+                }
+            }
+
+            for i in 0..<(size * size) {
+                array[i] = NSNumber(value: min(downscaled[i] / vmax, 1.0))
+            }
+        } else {
+            for i in 0..<(size * size) {
+                array[i] = NSNumber(value: downscaled[i])
             }
         }
 
         return array
     }
 
+    // MARK: - Heatmap Peak Detection
+
+    /// Find star positions from the model's confidence heatmap.
+    ///
+    /// 1. Threshold at `heatmapThreshold`
+    /// 2. 5×5 local maximum (NMS): pixel must be strictly greater than all neighbors
+    /// 3. Quadratic sub-pixel refinement on 3×3 neighborhood
+    private func findHeatmapPeaks(
+        heatmap: [Float], width: Int, height: Int
+    ) -> [(x: Double, y: Double, confidence: Float)] {
+        var peaks: [(x: Double, y: Double, confidence: Float)] = []
+
+        for y in 2..<(height - 2) {
+            for x in 2..<(width - 2) {
+                let val = heatmap[y * width + x]
+                guard val >= heatmapThreshold else { continue }
+
+                // Check if local maximum in 5×5 neighborhood
+                var isMax = true
+                outer: for dy in -2...2 {
+                    for dx in -2...2 {
+                        if dx == 0 && dy == 0 { continue }
+                        if heatmap[(y + dy) * width + (x + dx)] >= val {
+                            isMax = false
+                            break outer
+                        }
+                    }
+                }
+                guard isMax else { continue }
+
+                // Quadratic sub-pixel refinement on 3×3 neighborhood
+                let (subX, subY) = quadraticRefine(heatmap: heatmap, width: width, x: x, y: y)
+                peaks.append((x: subX, y: subY, confidence: val))
+            }
+        }
+
+        return peaks
+    }
+
+    /// Fit a 1D parabola along x and y axes through the 3×3 neighborhood
+    /// to find the sub-pixel peak location.
+    private func quadraticRefine(
+        heatmap: [Float], width: Int, x: Int, y: Int
+    ) -> (Double, Double) {
+        let c = heatmap[y * width + x]
+        let dxVal = (heatmap[y * width + x + 1] - heatmap[y * width + x - 1]) / 2
+        let dyVal = (heatmap[(y + 1) * width + x] - heatmap[(y - 1) * width + x]) / 2
+        let dxx = heatmap[y * width + x + 1] + heatmap[y * width + x - 1] - 2 * c
+        let dyy = heatmap[(y + 1) * width + x] + heatmap[(y - 1) * width + x] - 2 * c
+
+        let subX = dxx != 0 ? Double(x) - Double(dxVal / dxx) : Double(x)
+        let subY = dyy != 0 ? Double(y) - Double(dyVal / dyy) : Double(y)
+        return (subX, subY)
+    }
+
+    // MARK: - Pixel Sampling
+
+    /// Sample luminance at a pixel position from half-float RGBA data.
+    private func sampleLuminance(_ pixelData: [UInt16], _ stride: Int, _ x: Int, _ y: Int) -> Float {
+        let idx = (y * stride + x) * 4
+        let r = halfToFloat(pixelData[idx])
+        let g = halfToFloat(pixelData[idx + 1])
+        let b = halfToFloat(pixelData[idx + 2])
+        return 0.299 * r + 0.587 * g + 0.114 * b
+    }
+
     // MARK: - Centroid Refinement
 
     /// Refine approximate star positions using weighted centroid on full-resolution pixel data.
-    /// This corrects the quantization error from the 256×256 model grid and produces
+    /// This corrects the quantization error from the model grid and produces
     /// accurate FWHM and SNR values.
     private func refinePositions(
         approximate: [(x: Double, y: Double)],
@@ -317,134 +440,51 @@ final class CoreMLDetector: StarDetectorProtocol {
         return results
     }
 
-    // MARK: - Trilateration Centroiding (Zhao et al. 2024)
+    // MARK: - Image Processing
 
-    /// A centroid found via trilateration on the distance map.
-    private struct CentroidResult {
-        let x: Double
-        let y: Double
-        let brightness: Double
-    }
+    /// Apply a separable Gaussian blur to a 2D float array.
+    /// Used to widen sub-pixel stars into multi-pixel PSFs in the model input.
+    private func gaussianBlur2D(_ input: [Float], width: Int, height: Int, sigma: Float) -> [Float] {
+        let radius = Int(ceil(sigma * 3))
+        let kernelSize = 2 * radius + 1
 
-    /// Trilateration-based centroiding from Zhao et al. (2024).
-    ///
-    /// For each candidate pixel (seg probability > 0.5 and distance ≤ threshold),
-    /// collects nearby star pixels within a window and solves the trilateration
-    /// least-squares system to find the sub-pixel centroid position.
-    private func trilaterationCentroid(
-        distMap: [Float],
-        segProb: [Float],
-        width: Int,
-        height: Int
-    ) -> [CentroidResult] {
-        var results: [CentroidResult] = []
-        let threshold: Float = 0.5 * sqrt(2.0)  // ~0.707 pixels
-        let radius = trilaterationRadius
+        // Generate 1D Gaussian kernel
+        var kernel = [Float](repeating: 0, count: kernelSize)
+        var kernelSum: Float = 0
+        for i in 0..<kernelSize {
+            let x = Float(i - radius)
+            kernel[i] = exp(-x * x / (2 * sigma * sigma))
+            kernelSum += kernel[i]
+        }
+        for i in 0..<kernelSize { kernel[i] /= kernelSum }
 
-        // Working copy of seg map — zero out used pixels to avoid duplicates
-        var seg = segProb
-
-        for row in 0..<height {
-            for col in 0..<width {
-                let idx = row * width + col
-                guard distMap[idx] <= threshold && seg[idx] > 0.5 else { continue }
-
-                // Collect neighboring star pixels
-                var xi: [Float] = []
-                var yi: [Float] = []
-                var ri: [Float] = []
-
-                for dRow in -radius...radius {
-                    for dCol in -radius...radius {
-                        let r = row + dRow
-                        let c = col + dCol
-                        guard r >= 0 && r < height && c >= 0 && c < width else { continue }
-                        let nIdx = r * width + c
-                        guard seg[nIdx] > 0.5 else { continue }
-
-                        xi.append(Float(c) + 0.5)
-                        yi.append(Float(r) + 0.5)
-                        ri.append(distMap[nIdx])
-                        seg[nIdx] = 0  // mark as used
-                    }
+        // Horizontal pass
+        var temp = [Float](repeating: 0, count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                var sum: Float = 0
+                for k in 0..<kernelSize {
+                    let sx = min(max(x + k - radius, 0), width - 1)
+                    sum += input[y * width + sx] * kernel[k]
                 }
-
-                let n = xi.count
-                guard n >= 3 else {
-                    // Not enough points — use pixel center
-                    results.append(CentroidResult(
-                        x: Double(col) + 0.5,
-                        y: Double(row) + 0.5,
-                        brightness: Double(1.0 / max(distMap[idx], 0.01))
-                    ))
-                    continue
-                }
-
-                // Trilateration least-squares (Zhao et al.)
-                // Reference point = last collected pixel
-                let xn = xi[n - 1]
-                let yn = yi[n - 1]
-                let rn = ri[n - 1]
-
-                // Build A matrix (n-1 x 2) and B vector (n-1)
-                var aFlat = [Float](repeating: 0, count: (n - 1) * 2)
-                var b = [Float](repeating: 0, count: n - 1)
-
-                for i in 0..<(n - 1) {
-                    aFlat[i * 2 + 0] = 2.0 * (xn - xi[i])
-                    aFlat[i * 2 + 1] = 2.0 * (yn - yi[i])
-                    b[i] = ri[i] * ri[i] - rn * rn
-                        - xi[i] * xi[i] - yi[i] * yi[i]
-                        + xn * xn + yn * yn
-                }
-
-                // Solve via normal equations: x = (A^T A)^-1 A^T b
-                if let solution = solveNormalEquations2x2(a: aFlat, b: b, rows: n - 1) {
-                    let cx = Double(solution.0)
-                    let cy = Double(solution.1)
-                    let minDist = ri.min() ?? 1.0
-                    results.append(CentroidResult(
-                        x: cx, y: cy,
-                        brightness: Double(1.0 / max(minDist, 0.01))
-                    ))
-                } else {
-                    results.append(CentroidResult(
-                        x: Double(col) + 0.5,
-                        y: Double(row) + 0.5,
-                        brightness: Double(1.0 / max(distMap[idx], 0.01))
-                    ))
-                }
+                temp[y * width + x] = sum
             }
         }
 
-        return results
-    }
-
-    /// Solve 2-variable normal equations: (A^T A) x = A^T b
-    /// where A is (rows x 2) and b is (rows).
-    /// Returns (x0, x1) or nil if singular.
-    private func solveNormalEquations2x2(a: [Float], b: [Float], rows: Int) -> (Float, Float)? {
-        var ata00: Float = 0, ata01: Float = 0, ata11: Float = 0
-        var atb0: Float = 0, atb1: Float = 0
-
-        for i in 0..<rows {
-            let a0 = a[i * 2 + 0]
-            let a1 = a[i * 2 + 1]
-            ata00 += a0 * a0
-            ata01 += a0 * a1
-            ata11 += a1 * a1
-            atb0 += a0 * b[i]
-            atb1 += a1 * b[i]
+        // Vertical pass
+        var output = [Float](repeating: 0, count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                var sum: Float = 0
+                for k in 0..<kernelSize {
+                    let sy = min(max(y + k - radius, 0), height - 1)
+                    sum += temp[sy * width + x] * kernel[k]
+                }
+                output[y * width + x] = sum
+            }
         }
 
-        let det = ata00 * ata11 - ata01 * ata01
-        guard abs(det) > 1e-10 else { return nil }
-
-        let invDet = 1.0 / det
-        let x0 = (ata11 * atb0 - ata01 * atb1) * invDet
-        let x1 = (ata00 * atb1 - ata01 * atb0) * invDet
-
-        return (x0, x1)
+        return output
     }
 
     // MARK: - Utilities

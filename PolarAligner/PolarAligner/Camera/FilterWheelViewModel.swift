@@ -22,6 +22,7 @@ final class FilterWheelViewModel: ObservableObject {
 
     private let bridge = AlpacaFilterWheelBridge()
     private var positionTimer: Timer?
+    private var isPolling = false
 
     // MARK: - Discovery
 
@@ -90,12 +91,14 @@ final class FilterWheelViewModel: ObservableObject {
     }
 
     func refreshPosition() {
-        guard isConnected else { return }
+        guard isConnected, !isPolling else { return }
+        isPolling = true
         DispatchQueue.global(qos: .userInitiated).async {
             let pos = (try? self.bridge.getPosition()) ?? -1
             DispatchQueue.main.async {
                 self.currentPosition = Int(pos)
                 self.isMoving = pos == -1
+                self.isPolling = false
             }
         }
     }

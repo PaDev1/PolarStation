@@ -1,5 +1,21 @@
 import SwiftUI
 import PolarCore
+import SwiftAA
+
+// MARK: - Solar System Object
+
+struct SolarSystemObject: Identifiable {
+    let id: String
+    let name: String
+    var raDeg: Double
+    var decDeg: Double
+    var magnitude: Double
+    var extra: String       // e.g. "16% illuminated"
+    let color: Color
+    let symbolSize: CGFloat
+
+    var raHours: Double { raDeg / 15.0 }
+}
 
 // MARK: - View Model
 
@@ -9,9 +25,27 @@ final class SkyMapViewModel: ObservableObject {
     @Published var catalogStars: [CatalogStar] = []
     @Published var catalogLoaded = false
 
+    // Solar system bodies (updated periodically)
+    @Published var solarSystemObjects: [SolarSystemObject] = []
+    @Published var sunAltitude: Double = 0
+    @Published var moonIllumination: Double = 0
+    @Published var twilightStatus: String = ""
+    private var solarSystemTimer: Timer?
+
+    /// Override for planning mode. When non-nil, sky map shows this time instead of live.
+    @Published var referenceDate: Date? {
+        didSet {
+            updateLST()
+            updateSolarSystem()
+        }
+    }
+
+    /// The effective date for all time-dependent calculations.
+    var effectiveDate: Date { referenceDate ?? Date() }
+
     // Projection center (RA/Dec in degrees)
     @Published var centerRA: Double = 0.0
-    @Published var centerDec: Double = 45.0
+    @Published var centerDec: Double = 0.0
 
     // Zoom: field of view shown on the map (degrees)
     @Published var mapFOV: Double = 60.0
@@ -53,13 +87,24 @@ final class SkyMapViewModel: ObservableObject {
     let minFOV: Double = 2.0
     let maxFOV: Double = 180.0
 
+    deinit {
+        lstTimer?.invalidate()
+        solarSystemTimer?.invalidate()
+    }
+
     /// Start periodic LST updates so the horizon overlay stays accurate.
     func startLSTTimer() {
         stopLSTTimer()
         updateLST()
+        updateSolarSystem()
         lstTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.updateLST()
+            }
+        }
+        solarSystemTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updateSolarSystem()
             }
         }
     }
@@ -67,6 +112,77 @@ final class SkyMapViewModel: ObservableObject {
     func stopLSTTimer() {
         lstTimer?.invalidate()
         lstTimer = nil
+        solarSystemTimer?.invalidate()
+        solarSystemTimer = nil
+    }
+
+    /// Update solar system object positions using SwiftAA.
+    func updateSolarSystem() {
+        let geo = GeographicCoordinates(
+            positivelyWestwardLongitude: Degree(-observerLonDeg),
+            latitude: Degree(observerLatDeg)
+        )
+        let jd = JulianDay(effectiveDate)
+        var objects: [SolarSystemObject] = []
+
+        // Sun
+        let sun = Sun(julianDay: jd)
+        let sunEq = sun.equatorialCoordinates
+        let sunHoriz = sun.makeHorizontalCoordinates(with: geo)
+        sunAltitude = sunHoriz.altitude.value
+        objects.append(SolarSystemObject(
+            id: "sun", name: "Sun",
+            raDeg: sunEq.alpha.value * 15.0, decDeg: sunEq.delta.value,
+            magnitude: -26.7, extra: twilightLabel(sunAlt: sunHoriz.altitude.value),
+            color: .yellow, symbolSize: 14
+        ))
+
+        // Moon
+        let moon = Moon(julianDay: jd)
+        let moonEq = moon.equatorialCoordinates
+        let illum = moon.illuminatedFraction()
+        moonIllumination = illum
+        objects.append(SolarSystemObject(
+            id: "moon", name: "Moon",
+            raDeg: moonEq.alpha.value * 15.0, decDeg: moonEq.delta.value,
+            magnitude: -12.0, extra: String(format: "%.0f%%", illum * 100),
+            color: .init(white: 0.85), symbolSize: 12
+        ))
+
+        // Planets
+        let planetDefs: [(Planet, String, Color)] = [
+            (Mercury(julianDay: jd), "Mercury", .gray),
+            (Venus(julianDay: jd), "Venus", .white),
+            (Mars(julianDay: jd), "Mars", .red),
+            (Jupiter(julianDay: jd), "Jupiter", .orange),
+            (Saturn(julianDay: jd), "Saturn", .init(red: 0.9, green: 0.8, blue: 0.4)),
+            (Uranus(julianDay: jd), "Uranus", .cyan),
+            (Neptune(julianDay: jd), "Neptune", .blue),
+        ]
+
+        for (planet, name, color) in planetDefs {
+            let eq = planet.equatorialCoordinates
+            let mag = planet.magnitude.value
+            let displayMag = mag.isNaN ? 99.0 : mag
+            objects.append(SolarSystemObject(
+                id: name.lowercased(), name: name,
+                raDeg: eq.alpha.value * 15.0, decDeg: eq.delta.value,
+                magnitude: displayMag,
+                extra: displayMag < 99 ? String(format: "mag %.1f", displayMag) : "",
+                color: color, symbolSize: 8
+            ))
+        }
+
+        twilightStatus = twilightLabel(sunAlt: sunAltitude)
+        solarSystemObjects = objects
+    }
+
+    private func twilightLabel(sunAlt: Double) -> String {
+        if sunAlt > 0 { return "Daytime" }
+        if sunAlt > -6 { return "Civil twilight" }
+        if sunAlt > -12 { return "Nautical twilight" }
+        if sunAlt > -18 { return "Astronomical twilight" }
+        return "Night"
     }
 
     private func updateLST() {
@@ -208,10 +324,33 @@ final class SkyMapViewModel: ObservableObject {
     private func currentJD() -> Double {
         // Direct conversion — avoids calendar/timezone extraction.
         // JD of Swift reference date (2001-01-01 00:00 UTC) = 2451910.5
-        Date().timeIntervalSinceReferenceDate / 86400.0 + 2451910.5
+        effectiveDate.timeIntervalSinceReferenceDate / 86400.0 + 2451910.5
     }
 
     // MARK: - Stereographic Projection
+
+    /// Cached trig values for the projection center, recomputed when center changes.
+    /// Call `updateProjectionCache()` before a batch of `projectFast()` calls.
+    private(set) var _sinDec0: Double = 0
+    private(set) var _cosDec0: Double = 1
+    private(set) var _ra0Rad: Double = 0
+    private(set) var _projScale: Double = 1
+    private(set) var _sinLat: Double = 0
+    private(set) var _cosLat: Double = 1
+    private(set) var _cachedLST: Double = 0
+
+    /// Call once per render frame before calling projectFast / altazToEquatorialFast.
+    func updateProjectionCache() {
+        let dec0 = centerDec * .pi / 180.0
+        _sinDec0 = sin(dec0)
+        _cosDec0 = cos(dec0)
+        _ra0Rad = centerRA * .pi / 180.0
+        _projScale = 2.0 / (mapFOV * .pi / 180.0)
+        let lat = observerLatDeg * .pi / 180.0
+        _sinLat = sin(lat)
+        _cosLat = cos(lat)
+        _cachedLST = lstRadians
+    }
 
     /// Project RA/Dec (degrees) to normalized coordinates [-1, 1] centered on projection center.
     /// Returns nil if the point is on the back hemisphere.
@@ -237,6 +376,50 @@ final class SkyMapViewModel: ObservableObject {
         // Scale by FOV: mapFOV degrees should span ~2 units
         let scale = 2.0 / (mapFOV * .pi / 180.0)
         return CGPoint(x: -x * scale, y: y * scale)  // flip x so east is left (astronomical convention); y positive = north
+    }
+
+    /// Fast projection using cached center trig values. Call updateProjectionCache() first.
+    func projectFast(raDeg: Double, decDeg: Double) -> CGPoint? {
+        let ra = raDeg * .pi / 180.0
+        let dec = decDeg * .pi / 180.0
+
+        let deltaRA = ra - _ra0Rad
+        let sinDec = sin(dec)
+        let cosDec = cos(dec)
+        let cosDeltaRA = cos(deltaRA)
+        let cosc = _sinDec0 * sinDec + _cosDec0 * cosDec * cosDeltaRA
+
+        if cosc < -0.1 { return nil }
+
+        let kClamped = min(2.0 / (1.0 + cosc), 10.0)
+
+        let x = kClamped * cosDec * sin(deltaRA)
+        let y = kClamped * (_cosDec0 * sinDec - _sinDec0 * cosDec * cosDeltaRA)
+
+        return CGPoint(x: -x * _projScale, y: y * _projScale)
+    }
+
+    /// Fast altaz→equatorial using cached lat trig values. Call updateProjectionCache() first.
+    func altazToEquatorialFast(altDeg: Double, azDeg: Double) -> (raDeg: Double, decDeg: Double) {
+        let alt = altDeg * .pi / 180.0
+        let az = azDeg * .pi / 180.0
+
+        let sinAlt = sin(alt)
+        let cosAlt = cos(alt)
+        let cosAz = cos(az)
+
+        let sinDec = sinAlt * _sinLat + cosAlt * _cosLat * cosAz
+        let dec = asin(max(-1, min(1, sinDec)))
+
+        let sinH = -sin(az) * cosAlt
+        let cosH = sinAlt * _cosLat - cosAlt * _sinLat * cosAz
+        let h = atan2(sinH, cosH)
+
+        var ra = _cachedLST - h
+        ra = ra.truncatingRemainder(dividingBy: 2.0 * .pi)
+        if ra < 0 { ra += 2.0 * .pi }
+
+        return (ra * 180.0 / .pi, dec * 180.0 / .pi)
     }
 
     /// Convert normalized coordinates to screen coordinates.
@@ -294,16 +477,19 @@ struct SkyMapView: View {
                 let _ = viewModel.lstRadians
 
                 Canvas { context, size in
+                    viewModel.updateProjectionCache()
                     drawBackground(context: context, size: size)
                     drawGrid(context: context, size: size)
                     drawStars(context: context, size: size)
                     drawMessierObjects(context: context, size: size)
+                    drawSolarSystem(context: context, size: size)
                     drawCameraFOV(context: context, size: size)
                     drawMountCrosshair(context: context, size: size)
                     drawCardinals(context: context, size: size)
                     drawAltitudeLines(context: context, size: size)
                     drawLabels(context: context, size: size)
                     drawCompassIndicator(context: context, size: size)
+                    drawSkyStatus(context: context, size: size)
                 }
                 .gesture(scrollGesture)
                 .gesture(dragGesture(size: geo.size))
@@ -382,6 +568,9 @@ struct SkyMapView: View {
             return 30.0
         }()
 
+        // Curve resolution: coarser at wide FOV
+        let curveStep: Double = viewModel.mapFOV < 15 ? 1.0 : (viewModel.mapFOV < 60 ? 2.0 : 4.0)
+
         // Draw RA lines
         var ra: Double = 0
         while ra < 360 {
@@ -389,7 +578,7 @@ struct SkyMapView: View {
             var firstPoint = true
             var dec: Double = -90
             while dec <= 90 {
-                if let p = viewModel.project(raDeg: ra, decDeg: dec) {
+                if let p = viewModel.projectFast(raDeg: ra, decDeg: dec) {
                     let sp = viewModel.toScreen(p, size: size)
                     if sp.x >= -50 && sp.x <= size.width + 50 && sp.y >= -50 && sp.y <= size.height + 50 {
                         if firstPoint { path.move(to: sp); firstPoint = false }
@@ -400,7 +589,7 @@ struct SkyMapView: View {
                 } else {
                     firstPoint = true
                 }
-                dec += 1.0
+                dec += curveStep
             }
             context.stroke(path, with: .color(gridColor), lineWidth: 0.5)
             ra += raStep
@@ -413,7 +602,7 @@ struct SkyMapView: View {
             var firstPoint = true
             var raPos: Double = 0
             while raPos <= 360 {
-                if let p = viewModel.project(raDeg: raPos, decDeg: decLine) {
+                if let p = viewModel.projectFast(raDeg: raPos, decDeg: decLine) {
                     let sp = viewModel.toScreen(p, size: size)
                     if sp.x >= -50 && sp.x <= size.width + 50 && sp.y >= -50 && sp.y <= size.height + 50 {
                         if firstPoint { path.move(to: sp); firstPoint = false }
@@ -424,7 +613,7 @@ struct SkyMapView: View {
                 } else {
                     firstPoint = true
                 }
-                raPos += 1.0
+                raPos += curveStep
             }
             context.stroke(path, with: .color(gridColor), lineWidth: 0.5)
             decLine += decStep
@@ -435,7 +624,7 @@ struct SkyMapView: View {
         var firstPoint = true
         var raPos: Double = 0
         while raPos <= 360 {
-            if let p = viewModel.project(raDeg: raPos, decDeg: 0) {
+            if let p = viewModel.projectFast(raDeg: raPos, decDeg: 0) {
                 let sp = viewModel.toScreen(p, size: size)
                 if sp.x >= -50 && sp.x <= size.width + 50 && sp.y >= -50 && sp.y <= size.height + 50 {
                     if firstPoint { eqPath.move(to: sp); firstPoint = false }
@@ -444,7 +633,7 @@ struct SkyMapView: View {
                     firstPoint = true
                 }
             }
-            raPos += 1.0
+            raPos += curveStep
         }
         context.stroke(eqPath, with: .color(Color.blue.opacity(0.3)), lineWidth: 1.0)
     }
@@ -461,7 +650,7 @@ struct SkyMapView: View {
         for star in viewModel.catalogStars {
             if star.magnitude > magLimit { continue }
 
-            guard let p = viewModel.project(raDeg: star.raDeg, decDeg: star.decDeg) else { continue }
+            guard let p = viewModel.projectFast(raDeg: star.raDeg, decDeg: star.decDeg) else { continue }
             let sp = viewModel.toScreen(p, size: size)
 
             // Off-screen culling
@@ -487,7 +676,7 @@ struct SkyMapView: View {
         let showLabels = viewModel.mapFOV < 90
 
         for obj in messierCatalog {
-            guard let p = viewModel.project(raDeg: obj.raDeg, decDeg: obj.decDeg) else { continue }
+            guard let p = viewModel.projectFast(raDeg: obj.raDeg, decDeg: obj.decDeg) else { continue }
             let sp = viewModel.toScreen(p, size: size)
 
             guard sp.x >= -10 && sp.x <= size.width + 10 && sp.y >= -10 && sp.y <= size.height + 10 else { continue }
@@ -540,6 +729,74 @@ struct SkyMapView: View {
                 context.draw(text, at: CGPoint(x: sp.x + symbolSize/2 + 2, y: sp.y - 6), anchor: .leading)
             }
         }
+    }
+
+    private func drawSolarSystem(context: GraphicsContext, size: CGSize) {
+        let showLabels = viewModel.mapFOV < 120
+
+        for obj in viewModel.solarSystemObjects {
+            guard let p = viewModel.projectFast(raDeg: obj.raDeg, decDeg: obj.decDeg) else { continue }
+            let sp = viewModel.toScreen(p, size: size)
+
+            guard sp.x >= -20 && sp.x <= size.width + 20 &&
+                  sp.y >= -20 && sp.y <= size.height + 20 else { continue }
+
+            let r = obj.symbolSize / 2.0
+
+            if obj.id == "sun" {
+                // Sun: filled yellow circle with rays
+                let sunRect = CGRect(x: sp.x - r, y: sp.y - r, width: r * 2, height: r * 2)
+                context.fill(Path(ellipseIn: sunRect), with: .color(obj.color))
+                // Rays
+                for angle in stride(from: 0.0, through: 315.0, by: 45.0) {
+                    let rad = CGFloat(angle * .pi / 180.0)
+                    var ray = Path()
+                    ray.move(to: CGPoint(x: sp.x + CoreGraphics.cos(rad) * (r + 2), y: sp.y + CoreGraphics.sin(rad) * (r + 2)))
+                    ray.addLine(to: CGPoint(x: sp.x + CoreGraphics.cos(rad) * (r + 5), y: sp.y + CoreGraphics.sin(rad) * (r + 5)))
+                    context.stroke(ray, with: .color(obj.color), lineWidth: 1.2)
+                }
+            } else if obj.id == "moon" {
+                // Moon: circle with illumination hint
+                let moonRect = CGRect(x: sp.x - r, y: sp.y - r, width: r * 2, height: r * 2)
+                context.stroke(Path(ellipseIn: moonRect), with: .color(obj.color), lineWidth: 1.5)
+                // Partial fill to show phase
+                let fillRect = CGRect(x: sp.x - r, y: sp.y - r,
+                                      width: r * 2 * viewModel.moonIllumination, height: r * 2)
+                context.fill(Path(ellipseIn: fillRect), with: .color(obj.color.opacity(0.6)))
+            } else {
+                // Planets: colored filled circle
+                let planetRect = CGRect(x: sp.x - r, y: sp.y - r, width: r * 2, height: r * 2)
+                context.fill(Path(ellipseIn: planetRect), with: .color(obj.color))
+                context.stroke(Path(ellipseIn: planetRect), with: .color(obj.color.opacity(0.8)), lineWidth: 0.8)
+            }
+
+            // Label
+            if showLabels {
+                let label: String
+                if obj.id == "moon" {
+                    label = "Moon \(obj.extra)"
+                } else if obj.id == "sun" {
+                    label = "Sun"
+                } else {
+                    label = obj.extra.isEmpty ? obj.name : "\(obj.name) \(obj.extra)"
+                }
+                let text = Text(label)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(obj.color)
+                context.draw(text, at: CGPoint(x: sp.x + r + 4, y: sp.y - 2), anchor: .leading)
+            }
+        }
+    }
+
+    private func drawSkyStatus(context: GraphicsContext, size: CGSize) {
+        // Bottom-left: twilight status + moon info
+        guard !viewModel.twilightStatus.isEmpty else { return }
+        let moonPct = Int(viewModel.moonIllumination * 100)
+        let status = "\(viewModel.twilightStatus)  •  Moon \(moonPct)%"
+        let text = Text(status)
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundColor(.white.opacity(0.5))
+        context.draw(text, at: CGPoint(x: 8, y: size.height - 8), anchor: .bottomLeading)
     }
 
     private func drawCameraFOV(context: GraphicsContext, size: CGSize) {
@@ -608,7 +865,7 @@ struct SkyMapView: View {
                 let cornerRA = ra * 180.0 / .pi
                 let cornerDec = dec * 180.0 / .pi
 
-                guard let p = viewModel.project(raDeg: cornerRA, decDeg: cornerDec) else { continue }
+                guard let p = viewModel.projectFast(raDeg: cornerRA, decDeg: cornerDec) else { continue }
                 let sp = viewModel.toScreen(p, size: size)
 
                 if first { path.move(to: sp); first = false }
@@ -623,7 +880,7 @@ struct SkyMapView: View {
 
     private func drawMountCrosshair(context: GraphicsContext, size: CGSize) {
         guard let mRA = viewModel.mountRA, let mDec = viewModel.mountDec else { return }
-        guard let p = viewModel.project(raDeg: mRA, decDeg: mDec) else { return }
+        guard let p = viewModel.projectFast(raDeg: mRA, decDeg: mDec) else { return }
         let sp = viewModel.toScreen(p, size: size)
 
         let len: CGFloat = 12
@@ -651,8 +908,8 @@ struct SkyMapView: View {
         var horizonPath = Path()
         var firstPoint = true
         for azStep in stride(from: 0.0, through: 360.0, by: 2.0) {
-            let eq = viewModel.altazToEquatorial(altDeg: 0, azDeg: azStep)
-            guard let p = viewModel.project(raDeg: eq.raDeg, decDeg: eq.decDeg) else {
+            let eq = viewModel.altazToEquatorialFast(altDeg: 0, azDeg: azStep)
+            guard let p = viewModel.projectFast(raDeg: eq.raDeg, decDeg: eq.decDeg) else {
                 firstPoint = true
                 continue
             }
@@ -673,8 +930,8 @@ struct SkyMapView: View {
         // Place labels every 10° along the horizon for dense coverage
         for azInt in stride(from: 0, through: 350, by: 10) {
             let az = Double(azInt)
-            let eq = viewModel.altazToEquatorial(altDeg: 0, azDeg: az)
-            guard let p = viewModel.project(raDeg: eq.raDeg, decDeg: eq.decDeg) else { continue }
+            let eq = viewModel.altazToEquatorialFast(altDeg: 0, azDeg: az)
+            guard let p = viewModel.projectFast(raDeg: eq.raDeg, decDeg: eq.decDeg) else { continue }
             let sp = viewModel.toScreen(p, size: size)
 
             guard sp.x >= -10 && sp.x <= size.width + 10 &&
@@ -691,8 +948,8 @@ struct SkyMapView: View {
                 context.draw(text, at: sp, anchor: .center)
             } else {
                 // Degree tick mark for every other 10° step
-                let eq2 = viewModel.altazToEquatorial(altDeg: 1.0, azDeg: az)
-                guard let p2 = viewModel.project(raDeg: eq2.raDeg, decDeg: eq2.decDeg) else { continue }
+                let eq2 = viewModel.altazToEquatorialFast(altDeg: 1.0, azDeg: az)
+                guard let p2 = viewModel.projectFast(raDeg: eq2.raDeg, decDeg: eq2.decDeg) else { continue }
                 let sp2 = viewModel.toScreen(p2, size: size)
 
                 // Short tick perpendicular to horizon (toward zenith)
@@ -726,8 +983,8 @@ struct SkyMapView: View {
             var path = Path()
             var firstPoint = true
             for az in stride(from: 0.0, through: 360.0, by: 2.0) {
-                let eq = viewModel.altazToEquatorial(altDeg: alt, azDeg: az)
-                guard let p = viewModel.project(raDeg: eq.raDeg, decDeg: eq.decDeg) else {
+                let eq = viewModel.altazToEquatorialFast(altDeg: alt, azDeg: az)
+                guard let p = viewModel.projectFast(raDeg: eq.raDeg, decDeg: eq.decDeg) else {
                     firstPoint = true
                     continue
                 }
@@ -751,8 +1008,8 @@ struct SkyMapView: View {
             var path = Path()
             var firstPoint = true
             for alt in stride(from: 0.0, through: 90.0, by: 2.0) {
-                let eq = viewModel.altazToEquatorial(altDeg: alt, azDeg: az)
-                guard let p = viewModel.project(raDeg: eq.raDeg, decDeg: eq.decDeg) else {
+                let eq = viewModel.altazToEquatorialFast(altDeg: alt, azDeg: az)
+                guard let p = viewModel.projectFast(raDeg: eq.raDeg, decDeg: eq.decDeg) else {
                     firstPoint = true
                     continue
                 }
@@ -781,7 +1038,7 @@ struct SkyMapView: View {
             let raStep: Double = viewModel.mapFOV < 90 ? 15.0 : 30.0
             var ra: Double = 0
             while ra < 360 {
-                if let p = viewModel.project(raDeg: ra, decDeg: 0) {
+                if let p = viewModel.projectFast(raDeg: ra, decDeg: 0) {
                     let sp = viewModel.toScreen(p, size: size)
                     if sp.x > 20 && sp.x < size.width - 20 && sp.y > 10 && sp.y < size.height - 10 {
                         let label = Text("\(Int(ra / 15))h").font(.system(size: 9)).foregroundColor(.white.opacity(0.4))
@@ -800,7 +1057,6 @@ struct SkyMapView: View {
         let ra = viewModel.centerRA * .pi / 180.0
         let h = viewModel.lstRadians - ra  // hour angle
 
-        let sinAlt = sin(dec) * sin(lat) + cos(dec) * cos(lat) * cos(h)
         let az = atan2(-cos(dec) * sin(h),
                        sin(dec) * cos(lat) - cos(dec) * sin(lat) * cos(h))
         var azDeg = az * 180.0 / .pi
@@ -847,7 +1103,6 @@ struct SkyMapView: View {
                 let dx = value.translation.width
                 let dy = value.translation.height
                 let halfSize = min(size.width, size.height) / 2.0
-                let scale = viewModel.mapFOV / (2.0 * halfSize / (min(size.width, size.height) / 2.0))
 
                 // RA increases left, so dx>0 means RA increases
                 let deltaRA = dx / halfSize * viewModel.mapFOV / 2.0
@@ -867,9 +1122,22 @@ struct SkyMapView: View {
         SpatialTapGesture()
             .onEnded { value in
                 let point = value.location
-                // Check Messier objects first (within ~15px)
+
+                // Check solar system objects first (planets, sun, moon — within ~20px)
+                for obj in viewModel.solarSystemObjects {
+                    guard let p = viewModel.projectFast(raDeg: obj.raDeg, decDeg: obj.decDeg) else { continue }
+                    let sp = viewModel.toScreen(p, size: size)
+                    let dist = hypot(sp.x - point.x, sp.y - point.y)
+                    if dist < 20 {
+                        viewModel.selectedTarget = (name: obj.name, raHours: obj.raHours, decDeg: obj.decDeg)
+                        viewModel.showGoToConfirm = true
+                        return
+                    }
+                }
+
+                // Check Messier objects (within ~15px)
                 for obj in messierCatalog {
-                    guard let p = viewModel.project(raDeg: obj.raDeg, decDeg: obj.decDeg) else { continue }
+                    guard let p = viewModel.projectFast(raDeg: obj.raDeg, decDeg: obj.decDeg) else { continue }
                     let sp = viewModel.toScreen(p, size: size)
                     let dist = hypot(sp.x - point.x, sp.y - point.y)
                     if dist < 15 {

@@ -93,6 +93,31 @@ kernel void debayer_rggb(
     output.write(half4(half(r), half(g), half(b), 1.0h), gid);
 }
 
+// MARK: - Fullscreen blit (used by CameraPreviewView to render texture to drawable)
+
+struct BlitVertexOut {
+    float4 position [[position]];
+    float2 texCoord;
+};
+
+// Generates a fullscreen triangle (3 vertices, no vertex buffer needed).
+vertex BlitVertexOut blit_vertex(uint vid [[vertex_id]]) {
+    BlitVertexOut out;
+    // Fullscreen triangle covering clip space [-1,1]
+    float2 pos = float2((vid == 1) ? 3.0 : -1.0,
+                        (vid == 2) ? 3.0 : -1.0);
+    out.position = float4(pos, 0.0, 1.0);
+    // Map to UV [0,1], flip Y for Metal texture coordinates
+    out.texCoord = float2((pos.x + 1.0) * 0.5, (1.0 - pos.y) * 0.5);
+    return out;
+}
+
+fragment half4 blit_fragment(BlitVertexOut in [[stage_in]],
+                              texture2d<half> tex [[texture(0)]]) {
+    constexpr sampler s(filter::linear, address::clamp_to_edge);
+    return tex.sample(s, in.texCoord);
+}
+
 /// Auto-stretch: map [blackPoint, whitePoint] to [0, 1] for display.
 /// Applies gamma correction (sRGB approximation).
 kernel void auto_stretch(

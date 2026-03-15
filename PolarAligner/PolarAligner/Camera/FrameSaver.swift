@@ -150,7 +150,7 @@ enum FrameSaver {
         }
 
         // Software
-        records.append(fitsRecord("SWCREATE", string: "PolarAligner", comment: "Software"))
+        records.append(fitsRecord("SWCREATE", string: "PolarStation", comment: "Software"))
 
         // END
         records.append("END".padding(toLength: 80, withPad: " ", startingAt: 0))

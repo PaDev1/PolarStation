@@ -65,6 +65,7 @@ struct GuideTabView: View {
 
                     if cameraViewModel.isConnected {
                         CameraPreviewView(viewModel: cameraViewModel.previewViewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         VStack(spacing: 12) {
                             Image(systemName: "camera")
@@ -119,13 +120,7 @@ struct GuideTabView: View {
                                     .foregroundStyle(.purple)
                                     .clipShape(RoundedRectangle(cornerRadius: 4))
                             } else if cameraViewModel.isCapturing {
-                                Text(String(format: "%.1f fps", cameraViewModel.previewViewModel.frameRate))
-                                    .font(.system(.caption, design: .monospaced))
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(.black.opacity(0.6))
-                                    .foregroundStyle(.green)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                FrameRateView(previewViewModel: cameraViewModel.previewViewModel)
                             }
                         }
                         Spacer()
@@ -201,6 +196,7 @@ struct GuideTabView: View {
             } else {
                 cameraViewModel.discoverCameras()
             }
+            cameraViewModel.resumeLiveView()
         }
         .onDisappear {
             // Persist current guide parameters
@@ -209,6 +205,8 @@ struct GuideTabView: View {
             savedRAHysteresis = session.raHysteresis
             savedMinMove = session.minMoveArcsec
             savedDecMode = session.decMode
+
+            cameraViewModel.pauseLiveView()
         }
     }
 
@@ -791,21 +789,36 @@ struct GuideTabView: View {
 
     /// Find the current position of the guide star by matching nearest detected star.
     /// This makes the crosshair follow the star as it drifts.
+    /// Updates the anchor so subsequent matches search near the last known position,
+    /// preventing jumps to a different star when detections are noisy.
     private var trackedGuideStarPosition: CGPoint? {
         guard let anchor = calibrator.guideStarPosition else { return nil }
         let stars = cameraViewModel.detectedStars
+        guard !stars.isEmpty else { return anchor }
+
         var bestDist = Double.greatestFiniteMagnitude
-        var bestPos: CGPoint?
+        var bestStar: DetectedStar?
         for star in stars {
             let dx = star.x - Double(anchor.x)
             let dy = star.y - Double(anchor.y)
             let dist = sqrt(dx * dx + dy * dy)
-            if dist < 50.0 && dist < bestDist {
+            if dist < bestDist {
                 bestDist = dist
-                bestPos = CGPoint(x: star.x, y: star.y)
+                bestStar = star
             }
         }
-        return bestPos ?? anchor
+
+        // Only follow the star if it's within a tight radius (20 pixels).
+        // This prevents jumping to a distant star if our star is temporarily
+        // not detected in one frame.
+        if let star = bestStar, bestDist < 20.0 {
+            let pos = CGPoint(x: star.x, y: star.y)
+            // Update anchor to track the star's movement frame-to-frame
+            calibrator.guideStarPosition = pos
+            return pos
+        }
+        // Star not found nearby — keep showing the last known position
+        return anchor
     }
 
     /// Select the nearest star to a click location in the preview area.

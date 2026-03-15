@@ -84,6 +84,71 @@ final class PlateSolveService: ObservableObject {
         return result
     }
 
+    /// Robust solve: retry with star subsets and FOV variations.
+    ///
+    /// Tries progressively filtered star lists and FOV adjustments to handle
+    /// marginal conditions (few stars, faint stars, slight FOV mismatch).
+    func solveRobust(centroids: [DetectedStar]) async throws -> SolveResult {
+        let sorted = centroids.sorted { $0.brightness > $1.brightness }
+
+        // Tier 1: All stars
+        if let r = try? await solve(centroids: centroids), r.success {
+            print("[PlateSolve] Solved with all \(centroids.count) stars")
+            return r
+        }
+
+        // Tier 2: Brightest subsets
+        for k in [16, 12, 10, 8] where k < sorted.count {
+            let subset = Array(sorted.prefix(k))
+            if let r = try? await solve(centroids: subset), r.success {
+                print("[PlateSolve] Solved with top-\(k) brightest")
+                return r
+            }
+        }
+
+        // Tier 3: Remove edge stars (within 5% margin), then try brightest subsets
+        let marginX = Double(imageWidth) * 0.05
+        let marginY = Double(imageHeight) * 0.05
+        let interior = sorted.filter {
+            $0.x >= marginX && $0.x < Double(imageWidth) - marginX &&
+            $0.y >= marginY && $0.y < Double(imageHeight) - marginY
+        }
+        if interior.count >= 4 {
+            if let r = try? await solve(centroids: interior), r.success {
+                print("[PlateSolve] Solved with \(interior.count) interior stars")
+                return r
+            }
+        }
+
+        // Tier 4: FOV grid search with brightest stars
+        let bestSubset = Array(sorted.prefix(min(14, sorted.count)))
+        let savedFOV = fovDeg
+        defer { fovDeg = savedFOV }
+
+        for mult in [0.92, 0.96, 1.04, 1.08] {
+            fovDeg = savedFOV * mult
+            if let r = try? await solve(centroids: bestSubset), r.success {
+                print("[PlateSolve] Solved with FOV=\(String(format: "%.2f", fovDeg))° (×\(mult))")
+                return r
+            }
+        }
+
+        // Tier 5: Drop each star one at a time (leave-one-out)
+        fovDeg = savedFOV
+        if sorted.count >= 5 && sorted.count <= 16 {
+            for i in 0..<sorted.count {
+                var subset = sorted
+                subset.remove(at: i)
+                if let r = try? await solve(centroids: subset), r.success {
+                    print("[PlateSolve] Solved by dropping star \(i) (of \(sorted.count))")
+                    return r
+                }
+            }
+        }
+
+        throw PlateSolveServiceError.robustSolveFailed(starCount: centroids.count)
+    }
+
     /// Compute FOV from focal length (mm) and sensor width (mm).
     func setFOV(focalLengthMM: Double, sensorWidthMM: Double = 11.14) {
         fovDeg = 2.0 * atan(sensorWidthMM / (2.0 * focalLengthMM)) * 180.0 / .pi
@@ -102,11 +167,14 @@ final class PlateSolveService: ObservableObject {
 
 enum PlateSolveServiceError: Error, LocalizedError {
     case databaseNotInBundle
+    case robustSolveFailed(starCount: Int)
 
     var errorDescription: String? {
         switch self {
         case .databaseNotInBundle:
             return "star_catalog.rkyv not found in app bundle"
+        case .robustSolveFailed(let count):
+            return "Plate solve failed after all retry strategies (\(count) stars detected)"
         }
     }
 }

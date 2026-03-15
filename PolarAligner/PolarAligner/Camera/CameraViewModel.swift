@@ -41,7 +41,7 @@ final class CameraViewModel: ObservableObject {
 
     // Star detection
     @Published var detectedStars: [DetectedStar] = []
-    @Published var starDetectionEnabled = true
+    @Published var starDetectionEnabled = false
     @Published var starDetectorModelLoaded = false
     @Published var starDetectorStatus = "Model not loaded"
 
@@ -234,7 +234,7 @@ final class CameraViewModel: ObservableObject {
     func startTemperaturePolling() {
         stopTemperaturePolling()
         pollTemperature()
-        tempPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        tempPollTimer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.pollTemperature()
             }
@@ -452,6 +452,7 @@ final class CameraViewModel: ObservableObject {
     // MARK: - Live Preview (no saving)
 
     func startLive(settings: CameraSettings) {
+        lastLiveSettings = settings
         ensureConnected { [weak self] in
             guard let self else { return }
             self.frameForwarder.onSaveFrame = nil
@@ -465,6 +466,26 @@ final class CameraViewModel: ObservableObject {
             self.startCaptureInternal(settings: liveSettings)
         }
     }
+
+    /// Stop live preview when switching tabs. Does nothing if saving frames.
+    func pauseLiveView() {
+        guard isCapturing && !isSaving else { return }
+        wasLiveBeforePause = true
+        stopCapture()
+    }
+
+    /// Restart live preview when switching back to tab.
+    /// Uses the last live settings if none provided.
+    func resumeLiveView(settings: CameraSettings? = nil) {
+        guard wasLiveBeforePause && !isCapturing else { return }
+        wasLiveBeforePause = false
+        if let s = settings ?? lastLiveSettings {
+            startLive(settings: s)
+        }
+    }
+
+    private var wasLiveBeforePause = false
+    private var lastLiveSettings: CameraSettings?
 
     // MARK: - Capture Sequence (with saving)
 

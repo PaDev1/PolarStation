@@ -8,13 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		020B08D0F4145D38C89A3DAE /* AlpacaCameraBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118837AAA56C4DC080CC2BFD /* AlpacaCameraBridge.swift */; };
-		6DB743408EF44AD183A59055 /* AlpacaFilterWheelBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5005D941040F43F5AC587C7F /* AlpacaFilterWheelBridge.swift */; };
-		25055F54C8E346F08B11E81F /* FilterWheelViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94694EC6F10C434BA4562535 /* FilterWheelViewModel.swift */; };
 		056677F71FA0836494040B92 /* CentroidExtractor.metal in Sources */ = {isa = PBXBuildFile; fileRef = 72D42D53989F171AD0E77390 /* CentroidExtractor.metal */; };
 		0670F6D26DEE03B87CBDAE5D /* FrameSaverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77ABA3C380453B9A2B1FE820 /* FrameSaverTests.swift */; };
 		079B926030BDC44E6DC6C87A /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA8FD3B4B00A2E5E066BAA6 /* AppState.swift */; };
+		0EEEA077DFD5B49FE74AE020 /* FilterWheelViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78FB79525F24DBF650C7250E /* FilterWheelViewModel.swift */; };
 		10CE779E9F19BD9B86C2E9B8 /* PlateSolveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CDB4454434C2EE32680E95 /* PlateSolveService.swift */; };
 		13FB1F1136FAC0B8C62848C0 /* MountTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D083431597B495E99C4492C /* MountTabView.swift */; };
+		13FB1F1136FAC0B8C62848C1 /* MountTabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D083431597B495E99C4492D /* MountTabViewModel.swift */; };
+		14C12186A9095643E9CE43EB /* GnomonicProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43E5FDE1C404DE9E2A346149 /* GnomonicProjection.swift */; };
 		1BA4369C97DA27F1CF2191A6 /* PolarAlignerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83FB2261D598CE736A38D07 /* PolarAlignerApp.swift */; };
 		2475155442280D1301D285A2 /* StarDetector.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 6EFA5B9FA485EA81B9C04325 /* StarDetector.mlpackage */; };
 		26185D07EB522E57ED1BE506 /* AlignmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E9A8E5D104B136217EFAC0 /* AlignmentView.swift */; };
@@ -22,17 +23,28 @@
 		3350CF19CEAC4EB07029B9FA /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89FDD03F62D5E9D379BAFBCF /* CameraPreviewView.swift */; };
 		46C81C4A786BDAAFF8201057 /* StarMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2357629857C643B42C61FD /* StarMatcher.swift */; };
 		4AB0B1A3678E084361F4EBCC /* SkyMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2415B2AA600FBE33D227163 /* SkyMapView.swift */; };
+		4AF9DB8A64B0EC5566B78867 /* GuideSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 891EA4F2903AEB56F4525FA4 /* GuideSession.swift */; };
+		53930D8B2EB13ADE4C48726A /* SimulatedAlignmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05956573492084AE57AB3317 /* SimulatedAlignmentView.swift */; };
+		AA000006 /* PolarAlignmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000005 /* PolarAlignmentView.swift */; };
+		545C307E0AAC030BE128D282 /* GuideGraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF047E62D240F991F3F88531 /* GuideGraphView.swift */; };
 		546DBF3A4C04FA63E5E161A0 /* SkyMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F36828616645E56689659781 /* SkyMapTests.swift */; };
+		5A3D8FCE2414960A798CBD18 /* AlpacaFilterWheelBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15272A481E15F7E1B4990D32 /* AlpacaFilterWheelBridge.swift */; };
 		5BD5F05ED32667C0FBE5C94B /* CameraTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85EF55B01D01F2B0E9AA0273 /* CameraTabView.swift */; };
 		5CCABC9CC2F811949C966C45 /* StarDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FAB2166688961D4C68EFDDF /* StarDetectorTests.swift */; };
+		6A1B58795B45289E89E2E7EF /* GuideCalibration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A00EE69DE92745A99E2A641 /* GuideCalibration.swift */; };
 		6A5CBFA210BA59B4FD924EFE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C5165F3B4FE32DA23B94330 /* ContentView.swift */; };
 		880603980433D77FD369FF64 /* Preprocessing.metal in Sources */ = {isa = PBXBuildFile; fileRef = 7A942BA6F5E4F184838080A6 /* Preprocessing.metal */; };
 		8F917F9A32D93D9647DA7C9D /* PolarCore in Frameworks */ = {isa = PBXBuildFile; productRef = 39F4E644735371355925E40E /* PolarCore */; };
 		937DB35232ED08BE23B0964A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D4E85CF213B9098F67B7F6 /* SettingsView.swift */; };
 		9C19EEC55DA98D06F2B366FD /* MessierCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0E9AF5568EBA1F962CBE50A /* MessierCatalog.swift */; };
 		A8DF317619E3CB3E81235535 /* PolarCoreFFITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 128F6D6969FAB0A240C1EF2A /* PolarCoreFFITests.swift */; };
+		AA000002 /* PlateSolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001 /* PlateSolverTests.swift */; };
+		AA000004 /* GnomonicProjectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000003 /* GnomonicProjectionTests.swift */; };
 		B609C83F7FFF8ED7774A5B9D /* MountService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4E82877A64F47BA88252B /* MountService.swift */; };
 		B6D6F9159C02B38265E6E331 /* CoreMLDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A257B2A4BEFB6EDA1109FB /* CoreMLDetector.swift */; };
+		B74C7687B01A9E54DF23EA7D /* GuideCalibrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9893F584A3FEAD595705876 /* GuideCalibrator.swift */; };
+		BC09104BBC6778B63121E36E /* SimulatedAlignmentEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B38427B8FD64DD2B9E55820 /* SimulatedAlignmentEngine.swift */; };
+		BEE42BABF6D89261F2CE7520 /* GuideTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9107D1DC80524BB24B4B05A /* GuideTabView.swift */; };
 		D0856F7FEF8D5AE06A34E116 /* AlignmentCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE48E0174955FBD82C3946DB /* AlignmentCoordinator.swift */; };
 		D0939FD13481E766555672F9 /* FrameGrabber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 209B042AB1812B5E1790130D /* FrameGrabber.swift */; };
 		D1F884FA2F204429C7C04EA3 /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66DDD3E49A40C59A164272C0 /* CameraViewModel.swift */; };
@@ -40,16 +52,53 @@
 		DBFAF240C6786E6D1A893C8C /* ASICameraBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE8647E166C4E5E079F70E22 /* ASICameraBridge.swift */; };
 		DD9EDA67FE9A1DCCD95A9C31 /* MetalPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23B64395D489E6194B8A6985 /* MetalPipeline.swift */; };
 		E5B4922BA0F2843FA91F689B /* ErrorTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 418E9E36E6182A146DDA2788 /* ErrorTracker.swift */; };
+		E693E54F0F676D25E4ABAB21 /* SimulatedGuideEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E22A78F515A1AA64AE5C6F4 /* SimulatedGuideEngine.swift */; };
 		ECBA00D9C3927637ADBDE329 /* CameraSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDE8E447639571186201071D /* CameraSettings.swift */; };
 		F8B39A4CB2E01D0B99D900B9 /* AlpacaFrameGrabber.swift in Sources */ = {isa = PBXBuildFile; fileRef = F91F20912D0811BF8AA3A71C /* AlpacaFrameGrabber.swift */; };
 		F974A20106235FF9D10E4ACF /* ClassicalDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E25F59D55854CE942FAA73A /* ClassicalDetector.swift */; };
 		FDE4F85A924AFE49F4F55336 /* FrameSaver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 690C98F0F4A82574295CD33B /* FrameSaver.swift */; };
-		AA10000000000000000001B1 /* GuideCalibration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000001F1 /* GuideCalibration.swift */; };
-		AA10000000000000000002B2 /* GuideCalibrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000002F2 /* GuideCalibrator.swift */; };
-		AA10000000000000000003B3 /* GuideSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000003F3 /* GuideSession.swift */; };
-		AA10000000000000000004B4 /* GuideGraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000004F4 /* GuideGraphView.swift */; };
-		AA10000000000000000005B5 /* GuideTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000005F5 /* GuideTabView.swift */; };
-		AA10000000000000000007B7 /* SimulatedGuideEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000007F7 /* SimulatedGuideEngine.swift */; };
+		CC000001 /* LLMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000001 /* LLMService.swift */; };
+		CC000SKY1 /* SkyObjectsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000SKY1 /* SkyObjectsService.swift */; };
+
+		CC000002 /* SequenceContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000002 /* SequenceContainer.swift */; };
+		CC000003 /* SequenceDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000003 /* SequenceDocument.swift */; };
+		CC000004 /* SequenceProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000004 /* SequenceProgress.swift */; };
+		CC000005 /* SequenceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000005 /* SequenceEngine.swift */; };
+		CC000006 /* InstructionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000006 /* InstructionExecutor.swift */; };
+		CC000007 /* DeviceResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000007 /* DeviceResolver.swift */; };
+		CC000008 /* ConditionEvaluator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000008 /* ConditionEvaluator.swift */; };
+		CC000009 /* TriggerMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000009 /* TriggerMonitor.swift */; };
+		CC00000A /* WaitExecutors.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000A /* WaitExecutors.swift */; };
+		CC00000B /* MountExecutors.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000B /* MountExecutors.swift */; };
+		CC00000C /* FilterExecutors.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000C /* FilterExecutors.swift */; };
+		CC00000D /* CaptureFramesExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000D /* CaptureFramesExecutor.swift */; };
+		CC000020 /* CameraExecutors.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000020 /* CameraExecutors.swift */; };
+		CC00000E /* GuideExecutors.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000E /* GuideExecutors.swift */; };
+		CC00000F /* PlatesolveExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000F /* PlatesolveExecutor.swift */; };
+		CC000021 /* FocuserExecutors.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000021 /* FocuserExecutors.swift */; };
+		CC000028 /* AutoFocusExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000028 /* AutoFocusExecutor.swift */; };
+		CC000022 /* DomeExecutors.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000022 /* DomeExecutors.swift */; };
+		CC000023 /* RotatorExecutors.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000023 /* RotatorExecutors.swift */; };
+		CC000024 /* SwitchExecutors.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000024 /* SwitchExecutors.swift */; };
+		CC000025 /* CoverCalibratorExecutors.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000025 /* CoverCalibratorExecutors.swift */; };
+		CC000026 /* SafetyWeatherExecutors.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000026 /* SafetyWeatherExecutors.swift */; };
+		CC000010 /* NINAImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000010 /* NINAImporter.swift */; };
+		CC000011 /* NINAExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000011 /* NINAExporter.swift */; };
+		CC000012 /* EkosImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000012 /* EkosImporter.swift */; };
+		CC000013 /* AISequencePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000013 /* AISequencePlanner.swift */; };
+		CC000014 /* SequencerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000014 /* SequencerView.swift */; };
+		FF000001 /* SequenceInstruction.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE000001 /* SequenceInstruction.swift */; };
+		FF000002 /* SequenceCondition.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE000002 /* SequenceCondition.swift */; };
+		FF000003 /* SequenceTrigger.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE000003 /* SequenceTrigger.swift */; };
+		FF000004 /* AnyCodableValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE000004 /* AnyCodableValue.swift */; };
+		FF000005 /* DeviceRole.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE000005 /* DeviceRole.swift */; };
+		DV000101 /* FocuserViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV000001 /* FocuserViewModel.swift */; };
+		DV000102 /* DomeViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV000002 /* DomeViewModel.swift */; };
+		DV000103 /* RotatorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV000003 /* RotatorViewModel.swift */; };
+		DV000104 /* SwitchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV000004 /* SwitchViewModel.swift */; };
+		DV000105 /* SafetyMonitorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV000005 /* SafetyMonitorViewModel.swift */; };
+		DV000106 /* ObservingConditionsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV000006 /* ObservingConditionsViewModel.swift */; };
+		DV000107 /* CoverCalibratorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV000007 /* CoverCalibratorViewModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,52 +113,101 @@
 
 /* Begin PBXFileReference section */
 		04F09AA481B4E158A11F0B33 /* PolarAligner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PolarAligner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		05956573492084AE57AB3317 /* SimulatedAlignmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedAlignmentView.swift; sourceTree = "<group>"; };
+		AA000005 /* PolarAlignmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarAlignmentView.swift; sourceTree = "<group>"; };
 		0A2357629857C643B42C61FD /* StarMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarMatcher.swift; sourceTree = "<group>"; };
 		118837AAA56C4DC080CC2BFD /* AlpacaCameraBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaCameraBridge.swift; sourceTree = "<group>"; };
-		5005D941040F43F5AC587C7F /* AlpacaFilterWheelBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaFilterWheelBridge.swift; sourceTree = "<group>"; };
-		94694EC6F10C434BA4562535 /* FilterWheelViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterWheelViewModel.swift; sourceTree = "<group>"; };
 		128F6D6969FAB0A240C1EF2A /* PolarCoreFFITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarCoreFFITests.swift; sourceTree = "<group>"; };
+		AA000001 /* PlateSolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateSolverTests.swift; sourceTree = "<group>"; };
+		AA000003 /* GnomonicProjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GnomonicProjectionTests.swift; sourceTree = "<group>"; };
 		12A257B2A4BEFB6EDA1109FB /* CoreMLDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreMLDetector.swift; sourceTree = "<group>"; };
+		15272A481E15F7E1B4990D32 /* AlpacaFilterWheelBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaFilterWheelBridge.swift; sourceTree = "<group>"; };
 		1A66F6CD6AE2586730DCB855 /* AdjustmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdjustmentView.swift; sourceTree = "<group>"; };
 		209B042AB1812B5E1790130D /* FrameGrabber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameGrabber.swift; sourceTree = "<group>"; };
 		23B64395D489E6194B8A6985 /* MetalPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalPipeline.swift; sourceTree = "<group>"; };
+		3B38427B8FD64DD2B9E55820 /* SimulatedAlignmentEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedAlignmentEngine.swift; sourceTree = "<group>"; };
 		3BA8FD3B4B00A2E5E066BAA6 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		3DD4E82877A64F47BA88252B /* MountService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountService.swift; sourceTree = "<group>"; };
 		418E9E36E6182A146DDA2788 /* ErrorTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorTracker.swift; sourceTree = "<group>"; };
+		43E5FDE1C404DE9E2A346149 /* GnomonicProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GnomonicProjection.swift; sourceTree = "<group>"; };
 		4E25F59D55854CE942FAA73A /* ClassicalDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassicalDetector.swift; sourceTree = "<group>"; };
 		4FAB2166688961D4C68EFDDF /* StarDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarDetectorTests.swift; sourceTree = "<group>"; };
 		5C5165F3B4FE32DA23B94330 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		66DDD3E49A40C59A164272C0 /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
 		690C98F0F4A82574295CD33B /* FrameSaver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSaver.swift; sourceTree = "<group>"; };
+		6A00EE69DE92745A99E2A641 /* GuideCalibration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideCalibration.swift; sourceTree = "<group>"; };
 		6EFA5B9FA485EA81B9C04325 /* StarDetector.mlpackage */ = {isa = PBXFileReference; path = StarDetector.mlpackage; sourceTree = "<group>"; };
 		70344B4164FAFF67CAAE4FC0 /* ASICameraBridge-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "ASICameraBridge-Bridging-Header.h"; sourceTree = "<group>"; };
 		72D42D53989F171AD0E77390 /* CentroidExtractor.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = CentroidExtractor.metal; sourceTree = "<group>"; };
 		72D4E85CF213B9098F67B7F6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		75CDB4454434C2EE32680E95 /* PlateSolveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateSolveService.swift; sourceTree = "<group>"; };
 		77ABA3C380453B9A2B1FE820 /* FrameSaverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSaverTests.swift; sourceTree = "<group>"; };
+		78FB79525F24DBF650C7250E /* FilterWheelViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterWheelViewModel.swift; sourceTree = "<group>"; };
 		7A942BA6F5E4F184838080A6 /* Preprocessing.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Preprocessing.metal; sourceTree = "<group>"; };
 		7D083431597B495E99C4492C /* MountTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountTabView.swift; sourceTree = "<group>"; };
+		7D083431597B495E99C4492D /* MountTabViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountTabViewModel.swift; sourceTree = "<group>"; };
 		85EF55B01D01F2B0E9AA0273 /* CameraTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraTabView.swift; sourceTree = "<group>"; };
+		891EA4F2903AEB56F4525FA4 /* GuideSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideSession.swift; sourceTree = "<group>"; };
 		89FDD03F62D5E9D379BAFBCF /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
+		8E22A78F515A1AA64AE5C6F4 /* SimulatedGuideEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedGuideEngine.swift; sourceTree = "<group>"; };
 		933B9AD5E58347FB4183514D /* StarDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarDetector.swift; sourceTree = "<group>"; };
 		94188D86E6C7186006540013 /* PolarAlignerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PolarAlignerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7BDC64C5137FFC9D749E777 /* PolarCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PolarCore; path = ../PolarCore; sourceTree = SOURCE_ROOT; };
 		A83FB2261D598CE736A38D07 /* PolarAlignerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarAlignerApp.swift; sourceTree = "<group>"; };
+		B9893F584A3FEAD595705876 /* GuideCalibrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideCalibrator.swift; sourceTree = "<group>"; };
 		BDE8E447639571186201071D /* CameraSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraSettings.swift; sourceTree = "<group>"; };
 		C1E9A8E5D104B136217EFAC0 /* AlignmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlignmentView.swift; sourceTree = "<group>"; };
 		C2415B2AA600FBE33D227163 /* SkyMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyMapView.swift; sourceTree = "<group>"; };
 		C886D4F7CB8232B4F0A94CF7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		DF047E62D240F991F3F88531 /* GuideGraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideGraphView.swift; sourceTree = "<group>"; };
+		E9107D1DC80524BB24B4B05A /* GuideTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideTabView.swift; sourceTree = "<group>"; };
 		EE48E0174955FBD82C3946DB /* AlignmentCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlignmentCoordinator.swift; sourceTree = "<group>"; };
 		EE8647E166C4E5E079F70E22 /* ASICameraBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASICameraBridge.swift; sourceTree = "<group>"; };
 		F0E9AF5568EBA1F962CBE50A /* MessierCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessierCatalog.swift; sourceTree = "<group>"; };
 		F36828616645E56689659781 /* SkyMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyMapTests.swift; sourceTree = "<group>"; };
 		F91F20912D0811BF8AA3A71C /* AlpacaFrameGrabber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaFrameGrabber.swift; sourceTree = "<group>"; };
-		AA10000000000000000001F1 /* GuideCalibration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideCalibration.swift; sourceTree = "<group>"; };
-		AA10000000000000000002F2 /* GuideCalibrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideCalibrator.swift; sourceTree = "<group>"; };
-		AA10000000000000000003F3 /* GuideSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideSession.swift; sourceTree = "<group>"; };
-		AA10000000000000000004F4 /* GuideGraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideGraphView.swift; sourceTree = "<group>"; };
-		AA10000000000000000005F5 /* GuideTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideTabView.swift; sourceTree = "<group>"; };
-		AA10000000000000000007F7 /* SimulatedGuideEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedGuideEngine.swift; sourceTree = "<group>"; };
+		BB000001 /* LLMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMService.swift; sourceTree = "<group>"; };
+		BB000SKY1 /* SkyObjectsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyObjectsService.swift; sourceTree = "<group>"; };
+
+		BB000002 /* SequenceContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SequenceContainer.swift; sourceTree = "<group>"; };
+		BB000003 /* SequenceDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SequenceDocument.swift; sourceTree = "<group>"; };
+		BB000004 /* SequenceProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SequenceProgress.swift; sourceTree = "<group>"; };
+		BB000005 /* SequenceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SequenceEngine.swift; sourceTree = "<group>"; };
+		BB000006 /* InstructionExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstructionExecutor.swift; sourceTree = "<group>"; };
+		BB000007 /* DeviceResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceResolver.swift; sourceTree = "<group>"; };
+		BB000008 /* ConditionEvaluator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConditionEvaluator.swift; sourceTree = "<group>"; };
+		BB000009 /* TriggerMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriggerMonitor.swift; sourceTree = "<group>"; };
+		BB00000A /* WaitExecutors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaitExecutors.swift; sourceTree = "<group>"; };
+		BB00000B /* MountExecutors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountExecutors.swift; sourceTree = "<group>"; };
+		BB00000C /* FilterExecutors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterExecutors.swift; sourceTree = "<group>"; };
+		BB00000D /* CaptureFramesExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureFramesExecutor.swift; sourceTree = "<group>"; };
+		BB000020 /* CameraExecutors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraExecutors.swift; sourceTree = "<group>"; };
+		BB00000E /* GuideExecutors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideExecutors.swift; sourceTree = "<group>"; };
+		BB00000F /* PlatesolveExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatesolveExecutor.swift; sourceTree = "<group>"; };
+		BB000021 /* FocuserExecutors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocuserExecutors.swift; sourceTree = "<group>"; };
+		BB000028 /* AutoFocusExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoFocusExecutor.swift; sourceTree = "<group>"; };
+		BB000022 /* DomeExecutors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomeExecutors.swift; sourceTree = "<group>"; };
+		BB000023 /* RotatorExecutors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RotatorExecutors.swift; sourceTree = "<group>"; };
+		BB000024 /* SwitchExecutors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitchExecutors.swift; sourceTree = "<group>"; };
+		BB000025 /* CoverCalibratorExecutors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverCalibratorExecutors.swift; sourceTree = "<group>"; };
+		BB000026 /* SafetyWeatherExecutors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafetyWeatherExecutors.swift; sourceTree = "<group>"; };
+		BB000010 /* NINAImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NINAImporter.swift; sourceTree = "<group>"; };
+		BB000011 /* NINAExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NINAExporter.swift; sourceTree = "<group>"; };
+		BB000012 /* EkosImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EkosImporter.swift; sourceTree = "<group>"; };
+		BB000013 /* AISequencePlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISequencePlanner.swift; sourceTree = "<group>"; };
+		BB000014 /* SequencerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SequencerView.swift; sourceTree = "<group>"; };
+		EE000001 /* SequenceInstruction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SequenceInstruction.swift; sourceTree = "<group>"; };
+		EE000002 /* SequenceCondition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SequenceCondition.swift; sourceTree = "<group>"; };
+		EE000003 /* SequenceTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SequenceTrigger.swift; sourceTree = "<group>"; };
+		EE000004 /* AnyCodableValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnyCodableValue.swift; sourceTree = "<group>"; };
+		EE000005 /* DeviceRole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRole.swift; sourceTree = "<group>"; };
+		DV000001 /* FocuserViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocuserViewModel.swift; sourceTree = "<group>"; };
+		DV000002 /* DomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomeViewModel.swift; sourceTree = "<group>"; };
+		DV000003 /* RotatorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RotatorViewModel.swift; sourceTree = "<group>"; };
+		DV000004 /* SwitchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitchViewModel.swift; sourceTree = "<group>"; };
+		DV000005 /* SafetyMonitorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafetyMonitorViewModel.swift; sourceTree = "<group>"; };
+		DV000006 /* ObservingConditionsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObservingConditionsViewModel.swift; sourceTree = "<group>"; };
+		DV000007 /* CoverCalibratorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverCalibratorViewModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -134,15 +232,28 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		2CA6AA3CC3A79433D1896730 /* Guiding */ = {
+			isa = PBXGroup;
+			children = (
+				6A00EE69DE92745A99E2A641 /* GuideCalibration.swift */,
+				B9893F584A3FEAD595705876 /* GuideCalibrator.swift */,
+				891EA4F2903AEB56F4525FA4 /* GuideSession.swift */,
+				8E22A78F515A1AA64AE5C6F4 /* SimulatedGuideEngine.swift */,
+			);
+			path = Guiding;
+			sourceTree = "<group>";
+		};
 		6EB0F22CF8DC07A0EB98F61F /* PolarAligner */ = {
 			isa = PBXGroup;
 			children = (
 				8FBDFA25E1CE134C4296F6C2 /* Alignment */,
 				1C351A6029375A2040449995 /* App */,
 				8F83EF6C219FD3B1D6501CA8 /* Camera */,
-				AA10000000000000000006A6 /* Guiding */,
+				DV000000 /* Devices */,
+				2CA6AA3CC3A79433D1896730 /* Guiding */,
 				CD865166DE05ADB2C6D85390 /* Pipeline */,
 				F693F7C395B6BC2B592E5002 /* Resources */,
+				DD000001 /* Sequencer */,
 				8DD49CC3A6F4D47AB78F4A22 /* Services */,
 				F7C52D998CD58A35324B0796 /* Views */,
 			);
@@ -162,8 +273,10 @@
 		8DD49CC3A6F4D47AB78F4A22 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				BB000001 /* LLMService.swift */,
 				3DD4E82877A64F47BA88252B /* MountService.swift */,
 				75CDB4454434C2EE32680E95 /* PlateSolveService.swift */,
+				BB000SKY1 /* SkyObjectsService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -172,13 +285,13 @@
 			isa = PBXGroup;
 			children = (
 				118837AAA56C4DC080CC2BFD /* AlpacaCameraBridge.swift */,
-				5005D941040F43F5AC587C7F /* AlpacaFilterWheelBridge.swift */,
+				15272A481E15F7E1B4990D32 /* AlpacaFilterWheelBridge.swift */,
 				F91F20912D0811BF8AA3A71C /* AlpacaFrameGrabber.swift */,
-				94694EC6F10C434BA4562535 /* FilterWheelViewModel.swift */,
 				70344B4164FAFF67CAAE4FC0 /* ASICameraBridge-Bridging-Header.h */,
 				EE8647E166C4E5E079F70E22 /* ASICameraBridge.swift */,
 				BDE8E447639571186201071D /* CameraSettings.swift */,
 				66DDD3E49A40C59A164272C0 /* CameraViewModel.swift */,
+				78FB79525F24DBF650C7250E /* FilterWheelViewModel.swift */,
 				209B042AB1812B5E1790130D /* FrameGrabber.swift */,
 				690C98F0F4A82574295CD33B /* FrameSaver.swift */,
 			);
@@ -190,6 +303,8 @@
 			children = (
 				EE48E0174955FBD82C3946DB /* AlignmentCoordinator.swift */,
 				418E9E36E6182A146DDA2788 /* ErrorTracker.swift */,
+				43E5FDE1C404DE9E2A346149 /* GnomonicProjection.swift */,
+				3B38427B8FD64DD2B9E55820 /* SimulatedAlignmentEngine.swift */,
 				0A2357629857C643B42C61FD /* StarMatcher.swift */,
 			);
 			path = Alignment;
@@ -230,6 +345,8 @@
 			children = (
 				77ABA3C380453B9A2B1FE820 /* FrameSaverTests.swift */,
 				128F6D6969FAB0A240C1EF2A /* PolarCoreFFITests.swift */,
+				AA000003 /* GnomonicProjectionTests.swift */,
+				AA000001 /* PlateSolverTests.swift */,
 				F36828616645E56689659781 /* SkyMapTests.swift */,
 				4FAB2166688961D4C68EFDDF /* StarDetectorTests.swift */,
 			);
@@ -244,17 +361,6 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
-		AA10000000000000000006A6 /* Guiding */ = {
-			isa = PBXGroup;
-			children = (
-				AA10000000000000000001F1 /* GuideCalibration.swift */,
-				AA10000000000000000002F2 /* GuideCalibrator.swift */,
-				AA10000000000000000003F3 /* GuideSession.swift */,
-				AA10000000000000000007F7 /* SimulatedGuideEngine.swift */,
-			);
-			path = Guiding;
-			sourceTree = "<group>";
-		};
 		F7C52D998CD58A35324B0796 /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -263,14 +369,119 @@
 				89FDD03F62D5E9D379BAFBCF /* CameraPreviewView.swift */,
 				85EF55B01D01F2B0E9AA0273 /* CameraTabView.swift */,
 				5C5165F3B4FE32DA23B94330 /* ContentView.swift */,
-				AA10000000000000000004F4 /* GuideGraphView.swift */,
-				AA10000000000000000005F5 /* GuideTabView.swift */,
+				DF047E62D240F991F3F88531 /* GuideGraphView.swift */,
+				E9107D1DC80524BB24B4B05A /* GuideTabView.swift */,
 				F0E9AF5568EBA1F962CBE50A /* MessierCatalog.swift */,
 				7D083431597B495E99C4492C /* MountTabView.swift */,
+				7D083431597B495E99C4492D /* MountTabViewModel.swift */,
 				72D4E85CF213B9098F67B7F6 /* SettingsView.swift */,
+				05956573492084AE57AB3317 /* SimulatedAlignmentView.swift */,
+				AA000005 /* PolarAlignmentView.swift */,
 				C2415B2AA600FBE33D227163 /* SkyMapView.swift */,
+
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		DD000001 /* Sequencer */ = {
+			isa = PBXGroup;
+			children = (
+				DD000006 /* AI */,
+				DD000003 /* Engine */,
+				DD000004 /* Executors */,
+				DD000005 /* Import */,
+				DD000002 /* Model */,
+				DD000007 /* Views */,
+			);
+			path = Sequencer;
+			sourceTree = "<group>";
+		};
+		DD000002 /* Model */ = {
+			isa = PBXGroup;
+			children = (
+				BB000002 /* SequenceContainer.swift */,
+				BB000003 /* SequenceDocument.swift */,
+				BB000004 /* SequenceProgress.swift */,
+				EE000001 /* SequenceInstruction.swift */,
+				EE000002 /* SequenceCondition.swift */,
+				EE000003 /* SequenceTrigger.swift */,
+				EE000004 /* AnyCodableValue.swift */,
+				EE000005 /* DeviceRole.swift */,
+			);
+			path = Model;
+			sourceTree = "<group>";
+		};
+		DD000003 /* Engine */ = {
+			isa = PBXGroup;
+			children = (
+				BB000008 /* ConditionEvaluator.swift */,
+				BB000007 /* DeviceResolver.swift */,
+				BB000006 /* InstructionExecutor.swift */,
+				BB000005 /* SequenceEngine.swift */,
+				BB000009 /* TriggerMonitor.swift */,
+			);
+			path = Engine;
+			sourceTree = "<group>";
+		};
+		DD000004 /* Executors */ = {
+			isa = PBXGroup;
+			children = (
+				BB000020 /* CameraExecutors.swift */,
+				BB00000D /* CaptureFramesExecutor.swift */,
+				BB000025 /* CoverCalibratorExecutors.swift */,
+				BB000022 /* DomeExecutors.swift */,
+				BB00000C /* FilterExecutors.swift */,
+				BB000021 /* FocuserExecutors.swift */,
+				BB000028 /* AutoFocusExecutor.swift */,
+				BB00000E /* GuideExecutors.swift */,
+				BB00000B /* MountExecutors.swift */,
+				BB00000F /* PlatesolveExecutor.swift */,
+				BB000023 /* RotatorExecutors.swift */,
+				BB000026 /* SafetyWeatherExecutors.swift */,
+				BB000024 /* SwitchExecutors.swift */,
+				BB00000A /* WaitExecutors.swift */,
+			);
+			path = Executors;
+			sourceTree = "<group>";
+		};
+		DD000005 /* Import */ = {
+			isa = PBXGroup;
+			children = (
+				BB000012 /* EkosImporter.swift */,
+				BB000011 /* NINAExporter.swift */,
+				BB000010 /* NINAImporter.swift */,
+			);
+			path = Import;
+			sourceTree = "<group>";
+		};
+		DD000006 /* AI */ = {
+			isa = PBXGroup;
+			children = (
+				BB000013 /* AISequencePlanner.swift */,
+			);
+			path = AI;
+			sourceTree = "<group>";
+		};
+		DD000007 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				BB000014 /* SequencerView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		DV000000 /* Devices */ = {
+			isa = PBXGroup;
+			children = (
+				DV000001 /* FocuserViewModel.swift */,
+				DV000002 /* DomeViewModel.swift */,
+				DV000003 /* RotatorViewModel.swift */,
+				DV000004 /* SwitchViewModel.swift */,
+				DV000005 /* SafetyMonitorViewModel.swift */,
+				DV000006 /* ObservingConditionsViewModel.swift */,
+				DV000007 /* CoverCalibratorViewModel.swift */,
+			);
+			path = Devices;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -309,6 +520,7 @@
 			name = PolarAligner;
 			packageProductDependencies = (
 				39F4E644735371355925E40E /* PolarCore */,
+				AA0001SWIFTAA000000000002 /* SwiftAA */,
 			);
 			productName = PolarAligner;
 			productReference = 04F09AA481B4E158A11F0B33 /* PolarAligner.app */;
@@ -340,6 +552,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				E3EEFFC86079084F9BDE8C39 /* XCLocalSwiftPackageReference "../PolarCore" */,
+				AA0001SWIFTAA000000000001 /* XCRemoteSwiftPackageReference "SwiftAA" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CDD3AB2E0713149B8AEE826F /* Products */;
@@ -381,6 +594,8 @@
 			files = (
 				0670F6D26DEE03B87CBDAE5D /* FrameSaverTests.swift in Sources */,
 				A8DF317619E3CB3E81235535 /* PolarCoreFFITests.swift in Sources */,
+				AA000004 /* GnomonicProjectionTests.swift in Sources */,
+				AA000002 /* PlateSolverTests.swift in Sources */,
 				546DBF3A4C04FA63E5E161A0 /* SkyMapTests.swift in Sources */,
 				5CCABC9CC2F811949C966C45 /* StarDetectorTests.swift in Sources */,
 			);
@@ -395,8 +610,7 @@
 				D0856F7FEF8D5AE06A34E116 /* AlignmentCoordinator.swift in Sources */,
 				26185D07EB522E57ED1BE506 /* AlignmentView.swift in Sources */,
 				020B08D0F4145D38C89A3DAE /* AlpacaCameraBridge.swift in Sources */,
-				6DB743408EF44AD183A59055 /* AlpacaFilterWheelBridge.swift in Sources */,
-				25055F54C8E346F08B11E81F /* FilterWheelViewModel.swift in Sources */,
+				5A3D8FCE2414960A798CBD18 /* AlpacaFilterWheelBridge.swift in Sources */,
 				F8B39A4CB2E01D0B99D900B9 /* AlpacaFrameGrabber.swift in Sources */,
 				079B926030BDC44E6DC6C87A /* AppState.swift in Sources */,
 				3350CF19CEAC4EB07029B9FA /* CameraPreviewView.swift in Sources */,
@@ -408,26 +622,74 @@
 				6A5CBFA210BA59B4FD924EFE /* ContentView.swift in Sources */,
 				B6D6F9159C02B38265E6E331 /* CoreMLDetector.swift in Sources */,
 				E5B4922BA0F2843FA91F689B /* ErrorTracker.swift in Sources */,
+				0EEEA077DFD5B49FE74AE020 /* FilterWheelViewModel.swift in Sources */,
 				D0939FD13481E766555672F9 /* FrameGrabber.swift in Sources */,
 				FDE4F85A924AFE49F4F55336 /* FrameSaver.swift in Sources */,
-				AA10000000000000000001B1 /* GuideCalibration.swift in Sources */,
-				AA10000000000000000002B2 /* GuideCalibrator.swift in Sources */,
-				AA10000000000000000003B3 /* GuideSession.swift in Sources */,
-				AA10000000000000000004B4 /* GuideGraphView.swift in Sources */,
-				AA10000000000000000005B5 /* GuideTabView.swift in Sources */,
-				AA10000000000000000007B7 /* SimulatedGuideEngine.swift in Sources */,
+				14C12186A9095643E9CE43EB /* GnomonicProjection.swift in Sources */,
+				6A1B58795B45289E89E2E7EF /* GuideCalibration.swift in Sources */,
+				B74C7687B01A9E54DF23EA7D /* GuideCalibrator.swift in Sources */,
+				545C307E0AAC030BE128D282 /* GuideGraphView.swift in Sources */,
+				4AF9DB8A64B0EC5566B78867 /* GuideSession.swift in Sources */,
+				BEE42BABF6D89261F2CE7520 /* GuideTabView.swift in Sources */,
 				9C19EEC55DA98D06F2B366FD /* MessierCatalog.swift in Sources */,
 				DD9EDA67FE9A1DCCD95A9C31 /* MetalPipeline.swift in Sources */,
 				B609C83F7FFF8ED7774A5B9D /* MountService.swift in Sources */,
 				13FB1F1136FAC0B8C62848C0 /* MountTabView.swift in Sources */,
+				13FB1F1136FAC0B8C62848C1 /* MountTabViewModel.swift in Sources */,
 				10CE779E9F19BD9B86C2E9B8 /* PlateSolveService.swift in Sources */,
 				1BA4369C97DA27F1CF2191A6 /* PolarAlignerApp.swift in Sources */,
 				880603980433D77FD369FF64 /* Preprocessing.metal in Sources */,
 				937DB35232ED08BE23B0964A /* SettingsView.swift in Sources */,
+				BC09104BBC6778B63121E36E /* SimulatedAlignmentEngine.swift in Sources */,
+				53930D8B2EB13ADE4C48726A /* SimulatedAlignmentView.swift in Sources */,
+				AA000006 /* PolarAlignmentView.swift in Sources */,
+				E693E54F0F676D25E4ABAB21 /* SimulatedGuideEngine.swift in Sources */,
 				4AB0B1A3678E084361F4EBCC /* SkyMapView.swift in Sources */,
 				2475155442280D1301D285A2 /* StarDetector.mlpackage in Sources */,
 				D88AD67AC06EA0008D7357E6 /* StarDetector.swift in Sources */,
 				46C81C4A786BDAAFF8201057 /* StarMatcher.swift in Sources */,
+				CC000001 /* LLMService.swift in Sources */,
+				CC000SKY1 /* SkyObjectsService.swift in Sources */,
+
+				CC000002 /* SequenceContainer.swift in Sources */,
+				CC000003 /* SequenceDocument.swift in Sources */,
+				CC000004 /* SequenceProgress.swift in Sources */,
+				CC000005 /* SequenceEngine.swift in Sources */,
+				CC000006 /* InstructionExecutor.swift in Sources */,
+				CC000007 /* DeviceResolver.swift in Sources */,
+				CC000008 /* ConditionEvaluator.swift in Sources */,
+				CC000009 /* TriggerMonitor.swift in Sources */,
+				CC00000A /* WaitExecutors.swift in Sources */,
+				CC00000B /* MountExecutors.swift in Sources */,
+				CC00000C /* FilterExecutors.swift in Sources */,
+				CC000020 /* CameraExecutors.swift in Sources */,
+				CC00000D /* CaptureFramesExecutor.swift in Sources */,
+				CC00000E /* GuideExecutors.swift in Sources */,
+				CC00000F /* PlatesolveExecutor.swift in Sources */,
+				CC000021 /* FocuserExecutors.swift in Sources */,
+				CC000028 /* AutoFocusExecutor.swift in Sources */,
+				CC000022 /* DomeExecutors.swift in Sources */,
+				CC000023 /* RotatorExecutors.swift in Sources */,
+				CC000024 /* SwitchExecutors.swift in Sources */,
+				CC000025 /* CoverCalibratorExecutors.swift in Sources */,
+				CC000026 /* SafetyWeatherExecutors.swift in Sources */,
+				CC000010 /* NINAImporter.swift in Sources */,
+				CC000011 /* NINAExporter.swift in Sources */,
+				CC000012 /* EkosImporter.swift in Sources */,
+				CC000013 /* AISequencePlanner.swift in Sources */,
+				CC000014 /* SequencerView.swift in Sources */,
+				FF000001 /* SequenceInstruction.swift in Sources */,
+				FF000002 /* SequenceCondition.swift in Sources */,
+				FF000003 /* SequenceTrigger.swift in Sources */,
+				FF000004 /* AnyCodableValue.swift in Sources */,
+				FF000005 /* DeviceRole.swift in Sources */,
+				DV000101 /* FocuserViewModel.swift in Sources */,
+				DV000102 /* DomeViewModel.swift in Sources */,
+				DV000103 /* RotatorViewModel.swift in Sources */,
+				DV000104 /* SwitchViewModel.swift in Sources */,
+				DV000105 /* SafetyMonitorViewModel.swift in Sources */,
+				DV000106 /* ObservingConditionsViewModel.swift in Sources */,
+				DV000107 /* CoverCalibratorViewModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -555,7 +817,7 @@
 					"-lASICamera2",
 					"-lusb-1.0",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.polaraligner.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.polarstation.app;
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "PolarAligner/Camera/ASICameraBridge-Bridging-Header.h";
 				SWIFT_VERSION = 5.9;
@@ -646,7 +908,7 @@
 					"-lASICamera2",
 					"-lusb-1.0",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.polaraligner.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.polarstation.app;
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "PolarAligner/Camera/ASICameraBridge-Bridging-Header.h";
 				SWIFT_VERSION = 5.9;
@@ -714,10 +976,26 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		AA0001SWIFTAA000000000001 /* XCRemoteSwiftPackageReference "SwiftAA" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/onekiloparsec/SwiftAA.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		39F4E644735371355925E40E /* PolarCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PolarCore;
+		};
+		AA0001SWIFTAA000000000002 /* SwiftAA */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0001SWIFTAA000000000001 /* XCRemoteSwiftPackageReference "SwiftAA" */;
+			productName = SwiftAA;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

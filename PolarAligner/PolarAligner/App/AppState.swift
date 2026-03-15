@@ -11,9 +11,22 @@ final class AppState: ObservableObject {
     let cameraViewModel = CameraViewModel()
     let guideCameraViewModel = CameraViewModel()
     let filterWheelViewModel = FilterWheelViewModel()
+    let focuserViewModel = FocuserViewModel()
+    let domeViewModel = DomeViewModel()
+    let rotatorViewModel = RotatorViewModel()
+    let switchViewModel = SwitchViewModel()
+    let safetyMonitorViewModel = SafetyMonitorViewModel()
+    let observingConditionsViewModel = ObservingConditionsViewModel()
+    let coverCalibratorViewModel = CoverCalibratorViewModel()
     let errorTracker = ErrorTracker()
+    let skyMapViewModel = SkyMapViewModel()
+    let mountTabViewModel = MountTabViewModel()
     let guideSession = GuideSession()
     let simulatedGuideEngine = SimulatedGuideEngine()
+    let simulatedAlignmentEngine = SimulatedAlignmentEngine()
+    let sequenceEngine = SequenceEngine()
+    @Published var sequenceDocument = SequenceDocument(name: "New Sequence")
+    @Published var sequenceSelectedItemId: UUID?
     lazy var guideCalibrator: GuideCalibrator = {
         GuideCalibrator(mountService: mountService, cameraViewModel: guideCameraViewModel)
     }()
@@ -28,6 +41,21 @@ final class AppState: ObservableObject {
 
     init() {
         coreVersion = PolarCore.polarCoreVersion()
+        sequenceEngine.deviceResolver.configure(
+            mount: mountService,
+            camera: cameraViewModel,
+            guideCamera: guideCameraViewModel,
+            filterWheel: filterWheelViewModel,
+            plateSolve: plateSolveService,
+            guide: guideSession,
+            focuser: focuserViewModel,
+            dome: domeViewModel,
+            rotator: rotatorViewModel,
+            switchDev: switchViewModel,
+            safetyMonitor: safetyMonitorViewModel,
+            observingConditions: observingConditionsViewModel,
+            coverCalibrator: coverCalibratorViewModel
+        )
     }
 
     /// Quick sanity check: compute Julian Date for a known epoch

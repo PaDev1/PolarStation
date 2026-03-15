@@ -8,19 +8,38 @@ struct SettingsView: View {
     @ObservedObject var cameraViewModel: CameraViewModel
     @ObservedObject var guideCameraViewModel: CameraViewModel
     @ObservedObject var filterWheelViewModel: FilterWheelViewModel
+    @ObservedObject var focuserViewModel: FocuserViewModel
+    @ObservedObject var domeViewModel: DomeViewModel
+    @ObservedObject var rotatorViewModel: RotatorViewModel
+    @ObservedObject var switchViewModel: SwitchViewModel
+    @ObservedObject var safetyMonitorViewModel: SafetyMonitorViewModel
+    @ObservedObject var observingConditionsViewModel: ObservingConditionsViewModel
+    @ObservedObject var coverCalibratorViewModel: CoverCalibratorViewModel
 
     // Mount connection
-    @State private var mountProtocol: MountProtocolChoice = .lx200
-    @State private var serialPort: String = ""
-    @State private var baudRate: UInt32 = 9600
-    @State private var lx200TcpHost: String = "192.168.4.1"
-    @State private var lx200TcpPort: UInt32 = 4030
-    @State private var alpacaHost: String = "192.168.1.1"
-    @State private var alpacaPort: UInt32 = 11111
+    @AppStorage("mountProtocol") private var mountProtocolRaw: String = MountProtocolChoice.lx200.rawValue
+    @AppStorage("mountSerialPort") private var serialPort: String = ""
+    @AppStorage("mountBaudRate") private var baudRateStored: Int = 9600
+    @AppStorage("mountLx200TcpHost") private var lx200TcpHost: String = "192.168.4.1"
+    @AppStorage("mountLx200TcpPort") private var lx200TcpPortStored: Int = 4030
+    @AppStorage("mountAlpacaHost") private var alpacaHost: String = "192.168.1.1"
+    @AppStorage("mountAlpacaPort") private var alpacaPortStored: Int = 11111
     @State private var availablePorts: [String] = []
-    @State private var discoveredAlpaca: [String] = []
     @State private var mountError: String?
-    @State private var isDiscovering = false
+
+    private var mountProtocol: MountProtocolChoice {
+        MountProtocolChoice(rawValue: mountProtocolRaw) ?? .lx200
+    }
+    private var baudRate: UInt32 { UInt32(baudRateStored) }
+    private var lx200TcpPort: UInt32 { UInt32(lx200TcpPortStored) }
+    private var alpacaPort: UInt32 { UInt32(alpacaPortStored) }
+
+    private var mountProtocolBinding: Binding<MountProtocolChoice> {
+        Binding(
+            get: { MountProtocolChoice(rawValue: mountProtocolRaw) ?? .lx200 },
+            set: { mountProtocolRaw = $0.rawValue }
+        )
+    }
 
     // Observer location
     @AppStorage("observerLat") private var observerLat: Double = 60.17
@@ -56,10 +75,45 @@ struct SettingsView: View {
     @AppStorage("filterWheelAlpacaHost") private var filterWheelAlpacaHost: String = "192.168.8.30"
     @AppStorage("filterWheelAlpacaPort") private var filterWheelAlpacaPort: Int = 11111
 
+    // Focuser
+    @AppStorage("focuserAlpacaHost") private var focuserAlpacaHost: String = "192.168.8.30"
+    @AppStorage("focuserAlpacaPort") private var focuserAlpacaPort: Int = 11111
+
+    // Dome
+    @AppStorage("domeAlpacaHost") private var domeAlpacaHost: String = "192.168.8.30"
+    @AppStorage("domeAlpacaPort") private var domeAlpacaPort: Int = 11111
+
+    // Rotator
+    @AppStorage("rotatorAlpacaHost") private var rotatorAlpacaHost: String = "192.168.8.30"
+    @AppStorage("rotatorAlpacaPort") private var rotatorAlpacaPort: Int = 11111
+
+    // Switch
+    @AppStorage("switchAlpacaHost") private var switchAlpacaHost: String = "192.168.8.30"
+    @AppStorage("switchAlpacaPort") private var switchAlpacaPort: Int = 11111
+
+    // Safety Monitor
+    @AppStorage("safetyMonitorAlpacaHost") private var safetyMonitorAlpacaHost: String = "192.168.8.30"
+    @AppStorage("safetyMonitorAlpacaPort") private var safetyMonitorAlpacaPort: Int = 11111
+
+    // Observing Conditions
+    @AppStorage("observingConditionsAlpacaHost") private var observingConditionsAlpacaHost: String = "192.168.8.30"
+    @AppStorage("observingConditionsAlpacaPort") private var observingConditionsAlpacaPort: Int = 11111
+
+    // Cover Calibrator
+    @AppStorage("coverCalibratorAlpacaHost") private var coverCalibratorAlpacaHost: String = "192.168.8.30"
+    @AppStorage("coverCalibratorAlpacaPort") private var coverCalibratorAlpacaPort: Int = 11111
+
     // Star catalog
     @AppStorage("starCatalogPath") private var starCatalogPath: String = ""
     @State private var catalogLoadError: String?
     @State private var isLoadingCatalog = false
+
+    // Auto-connect flags
+    @AppStorage("autoConnectMount") private var autoConnectMount: Bool = false
+    @AppStorage("autoConnectCamera") private var autoConnectCamera: Bool = false
+    @AppStorage("autoConnectGuideCamera") private var autoConnectGuideCamera: Bool = false
+    @AppStorage("autoConnectFilterWheel") private var autoConnectFilterWheel: Bool = false
+    @AppStorage("autoConnectFocuser") private var autoConnectFocuser: Bool = false
 
     // Cooling
     @State private var coolerTarget: Int = -10
@@ -69,6 +123,13 @@ struct SettingsView: View {
     @AppStorage("captureFormat") private var captureFormat: String = "fits"
     @AppStorage("captureColorMode") private var captureColorMode: String = "rgb"
     @AppStorage("capturePrefix") private var capturePrefix: String = "capture"
+
+    // AI Assistant
+    @AppStorage("llmProvider") private var llmProviderRaw: String = LLMProvider.claude.rawValue
+    @AppStorage("llmApiEndpoint") private var llmApiEndpoint: String = LLMProvider.claude.defaultEndpoint
+    @AppStorage("llmApiKey") private var llmApiKey: String = ""
+    @AppStorage("llmModel") private var llmModel: String = LLMProvider.claude.defaultModel
+    @StateObject private var llmService = LLMService()
 
     enum MountProtocolChoice: String, CaseIterable {
         case lx200 = "LX200 Serial (USB)"
@@ -85,7 +146,7 @@ struct SettingsView: View {
                 // MARK: - Mount Connection
                 GroupBox("Mount Connection") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Picker("Protocol", selection: $mountProtocol) {
+                        Picker("Protocol", selection: mountProtocolBinding) {
                             ForEach(MountProtocolChoice.allCases, id: \.self) { p in
                                 Text(p.rawValue).tag(p)
                             }
@@ -120,6 +181,7 @@ struct SettingsView: View {
                                 .help("Send computer time and observer location to mount")
 
                                 Button("Disconnect") {
+                                    autoConnectMount = false
                                     Task {
                                         try? await mountService.disconnect()
                                     }
@@ -130,6 +192,7 @@ struct SettingsView: View {
                                     connectMount()
                                 }
                                 .buttonStyle(.borderedProminent)
+                                .disabled(mountProtocol == .alpaca && mountService.selectedAlpacaDevice < 0)
                             }
                         }
 
@@ -329,6 +392,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                                 Spacer()
                                 Button("Disconnect") {
+                                    autoConnectCamera = false
                                     cameraViewModel.disconnect()
                                 }
                                 .buttonStyle(.bordered)
@@ -558,6 +622,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                                 Spacer()
                                 Button("Disconnect") {
+                                    autoConnectGuideCamera = false
                                     guideCameraViewModel.disconnect()
                                 }
                                 .buttonStyle(.bordered)
@@ -683,6 +748,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                                 Spacer()
                                 Button("Disconnect") {
+                                    autoConnectFilterWheel = false
                                     filterWheelViewModel.disconnect()
                                 }
                                 .buttonStyle(.bordered)
@@ -743,6 +809,150 @@ struct SettingsView: View {
                     .padding(.vertical, 4)
                 }
 
+                // MARK: - Focuser
+                alpacaDeviceSection(
+                    title: "Focuser",
+                    host: $focuserAlpacaHost,
+                    port: $focuserAlpacaPort,
+                    devices: focuserViewModel.alpacaDevices,
+                    selectedDevice: $focuserViewModel.selectedAlpacaDevice,
+                    isDiscovering: focuserViewModel.isDiscoveringDevices,
+                    isConnected: focuserViewModel.isConnected,
+                    statusMessage: focuserViewModel.statusMessage,
+                    onDiscover: { focuserViewModel.discoverDevices(host: focuserAlpacaHost, port: UInt32(focuserAlpacaPort)) },
+                    onConnect: {
+                        let idx = focuserViewModel.selectedAlpacaDevice
+                        let devNum: UInt32 = (idx >= 0 && idx < focuserViewModel.alpacaDevices.count)
+                            ? focuserViewModel.alpacaDevices[idx].deviceNumber : 0
+                        focuserViewModel.connect(host: focuserAlpacaHost, port: UInt32(focuserAlpacaPort), deviceNumber: devNum)
+                        autoConnectFocuser = true
+                    },
+                    onDisconnect: {
+                        focuserViewModel.disconnect()
+                        autoConnectFocuser = false
+                    }
+                )
+
+                // MARK: - Rotator
+                alpacaDeviceSection(
+                    title: "Rotator",
+                    host: $rotatorAlpacaHost,
+                    port: $rotatorAlpacaPort,
+                    devices: rotatorViewModel.alpacaDevices,
+                    selectedDevice: $rotatorViewModel.selectedAlpacaDevice,
+                    isDiscovering: rotatorViewModel.isDiscoveringDevices,
+                    isConnected: rotatorViewModel.isConnected,
+                    statusMessage: rotatorViewModel.statusMessage,
+                    onDiscover: { rotatorViewModel.discoverDevices(host: rotatorAlpacaHost, port: UInt32(rotatorAlpacaPort)) },
+                    onConnect: {
+                        let idx = rotatorViewModel.selectedAlpacaDevice
+                        let devNum: UInt32 = (idx >= 0 && idx < rotatorViewModel.alpacaDevices.count)
+                            ? rotatorViewModel.alpacaDevices[idx].deviceNumber : 0
+                        rotatorViewModel.connect(host: rotatorAlpacaHost, port: UInt32(rotatorAlpacaPort), deviceNumber: devNum)
+                    },
+                    onDisconnect: { rotatorViewModel.disconnect() }
+                )
+
+                // MARK: - Dome
+                alpacaDeviceSection(
+                    title: "Dome",
+                    host: $domeAlpacaHost,
+                    port: $domeAlpacaPort,
+                    devices: domeViewModel.alpacaDevices,
+                    selectedDevice: $domeViewModel.selectedAlpacaDevice,
+                    isDiscovering: domeViewModel.isDiscoveringDevices,
+                    isConnected: domeViewModel.isConnected,
+                    statusMessage: domeViewModel.statusMessage,
+                    onDiscover: { domeViewModel.discoverDevices(host: domeAlpacaHost, port: UInt32(domeAlpacaPort)) },
+                    onConnect: {
+                        let idx = domeViewModel.selectedAlpacaDevice
+                        let devNum: UInt32 = (idx >= 0 && idx < domeViewModel.alpacaDevices.count)
+                            ? domeViewModel.alpacaDevices[idx].deviceNumber : 0
+                        domeViewModel.connect(host: domeAlpacaHost, port: UInt32(domeAlpacaPort), deviceNumber: devNum)
+                    },
+                    onDisconnect: { domeViewModel.disconnect() }
+                )
+
+                // MARK: - Switch
+                alpacaDeviceSection(
+                    title: "Switch",
+                    host: $switchAlpacaHost,
+                    port: $switchAlpacaPort,
+                    devices: switchViewModel.alpacaDevices,
+                    selectedDevice: $switchViewModel.selectedAlpacaDevice,
+                    isDiscovering: switchViewModel.isDiscoveringDevices,
+                    isConnected: switchViewModel.isConnected,
+                    statusMessage: switchViewModel.statusMessage,
+                    onDiscover: { switchViewModel.discoverDevices(host: switchAlpacaHost, port: UInt32(switchAlpacaPort)) },
+                    onConnect: {
+                        let idx = switchViewModel.selectedAlpacaDevice
+                        let devNum: UInt32 = (idx >= 0 && idx < switchViewModel.alpacaDevices.count)
+                            ? switchViewModel.alpacaDevices[idx].deviceNumber : 0
+                        switchViewModel.connect(host: switchAlpacaHost, port: UInt32(switchAlpacaPort), deviceNumber: devNum)
+                    },
+                    onDisconnect: { switchViewModel.disconnect() }
+                )
+
+                // MARK: - Safety Monitor
+                alpacaDeviceSection(
+                    title: "Safety Monitor",
+                    host: $safetyMonitorAlpacaHost,
+                    port: $safetyMonitorAlpacaPort,
+                    devices: safetyMonitorViewModel.alpacaDevices,
+                    selectedDevice: $safetyMonitorViewModel.selectedAlpacaDevice,
+                    isDiscovering: safetyMonitorViewModel.isDiscoveringDevices,
+                    isConnected: safetyMonitorViewModel.isConnected,
+                    statusMessage: safetyMonitorViewModel.statusMessage,
+                    onDiscover: { safetyMonitorViewModel.discoverDevices(host: safetyMonitorAlpacaHost, port: UInt32(safetyMonitorAlpacaPort)) },
+                    onConnect: {
+                        let idx = safetyMonitorViewModel.selectedAlpacaDevice
+                        let devNum: UInt32 = (idx >= 0 && idx < safetyMonitorViewModel.alpacaDevices.count)
+                            ? safetyMonitorViewModel.alpacaDevices[idx].deviceNumber : 0
+                        safetyMonitorViewModel.connect(host: safetyMonitorAlpacaHost, port: UInt32(safetyMonitorAlpacaPort), deviceNumber: devNum)
+                    },
+                    onDisconnect: { safetyMonitorViewModel.disconnect() }
+                )
+
+                // MARK: - Observing Conditions
+                alpacaDeviceSection(
+                    title: "Observing Conditions",
+                    host: $observingConditionsAlpacaHost,
+                    port: $observingConditionsAlpacaPort,
+                    devices: observingConditionsViewModel.alpacaDevices,
+                    selectedDevice: $observingConditionsViewModel.selectedAlpacaDevice,
+                    isDiscovering: observingConditionsViewModel.isDiscoveringDevices,
+                    isConnected: observingConditionsViewModel.isConnected,
+                    statusMessage: observingConditionsViewModel.statusMessage,
+                    onDiscover: { observingConditionsViewModel.discoverDevices(host: observingConditionsAlpacaHost, port: UInt32(observingConditionsAlpacaPort)) },
+                    onConnect: {
+                        let idx = observingConditionsViewModel.selectedAlpacaDevice
+                        let devNum: UInt32 = (idx >= 0 && idx < observingConditionsViewModel.alpacaDevices.count)
+                            ? observingConditionsViewModel.alpacaDevices[idx].deviceNumber : 0
+                        observingConditionsViewModel.connect(host: observingConditionsAlpacaHost, port: UInt32(observingConditionsAlpacaPort), deviceNumber: devNum)
+                    },
+                    onDisconnect: { observingConditionsViewModel.disconnect() }
+                )
+
+                // MARK: - Cover Calibrator
+                alpacaDeviceSection(
+                    title: "Cover Calibrator",
+                    host: $coverCalibratorAlpacaHost,
+                    port: $coverCalibratorAlpacaPort,
+                    devices: coverCalibratorViewModel.alpacaDevices,
+                    selectedDevice: $coverCalibratorViewModel.selectedAlpacaDevice,
+                    isDiscovering: coverCalibratorViewModel.isDiscoveringDevices,
+                    isConnected: coverCalibratorViewModel.isConnected,
+                    statusMessage: coverCalibratorViewModel.statusMessage,
+                    onDiscover: { coverCalibratorViewModel.discoverDevices(host: coverCalibratorAlpacaHost, port: UInt32(coverCalibratorAlpacaPort)) },
+                    onConnect: {
+                        let idx = coverCalibratorViewModel.selectedAlpacaDevice
+                        let devNum: UInt32 = (idx >= 0 && idx < coverCalibratorViewModel.alpacaDevices.count)
+                            ? coverCalibratorViewModel.alpacaDevices[idx].deviceNumber : 0
+                        coverCalibratorViewModel.connect(host: coverCalibratorAlpacaHost, port: UInt32(coverCalibratorAlpacaPort), deviceNumber: devNum)
+                    },
+                    onDisconnect: { coverCalibratorViewModel.disconnect() }
+                )
+
                 // MARK: - Capture Output
                 GroupBox("Capture Output") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -756,7 +966,7 @@ struct SettingsView: View {
                             }
                         }
                         if captureFolder.isEmpty {
-                            Text("Default: ~/Pictures/PolarAligner/")
+                            Text("Default: ~/Pictures/PolarStation/")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .padding(.leading, 88)
@@ -803,6 +1013,97 @@ struct SettingsView: View {
                 }
 
                 // MARK: - Info
+                // MARK: - AI Assistant
+                GroupBox("AI Assistant") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Picker("Provider", selection: Binding(
+                            get: { LLMProvider(rawValue: llmProviderRaw) ?? .claude },
+                            set: { newProvider in
+                                llmProviderRaw = newProvider.rawValue
+                                llmApiEndpoint = newProvider.defaultEndpoint
+                                llmModel = newProvider.defaultModel
+                                llmService.connectionStatus = .notConfigured
+                            }
+                        )) {
+                            ForEach(LLMProvider.allCases) { provider in
+                                Text(provider.rawValue).tag(provider)
+                            }
+                        }
+                        .frame(maxWidth: 300)
+
+                        HStack {
+                            Text("Endpoint")
+                                .frame(width: 60, alignment: .trailing)
+                            TextField("API endpoint URL", text: $llmApiEndpoint)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        HStack {
+                            Text("API Key")
+                                .frame(width: 60, alignment: .trailing)
+                            SecureField("API key", text: $llmApiKey)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        HStack {
+                            Text("Model")
+                                .frame(width: 60, alignment: .trailing)
+                            TextField("Model name", text: $llmModel)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 300)
+                        }
+
+                        HStack {
+                            Button("Test Connection") {
+                                let provider = LLMProvider(rawValue: llmProviderRaw) ?? .claude
+                                let endpoint = llmApiEndpoint.isEmpty ? provider.defaultEndpoint : llmApiEndpoint
+                                let model = llmModel.isEmpty ? provider.defaultModel : llmModel
+                                let key = llmApiKey
+                                llmService.isTestingConnection = true
+                                Task {
+                                    let status = await llmService.testConnection(
+                                        provider: provider,
+                                        endpoint: endpoint,
+                                        apiKey: key,
+                                        model: model
+                                    )
+                                    llmService.connectionStatus = status
+                                    llmService.isTestingConnection = false
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(llmService.isTestingConnection || llmApiKey.isEmpty)
+
+                            if llmService.isTestingConnection {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+
+                            Spacer()
+
+                            Circle()
+                                .fill(llmStatusColor)
+                                .frame(width: 10, height: 10)
+                            Text(llmStatusLabel)
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                        }
+
+                        // Show full error message below button row
+                        if case .failed(let msg) = llmService.connectionStatus {
+                            Text(msg)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(8)
+                                .background(.red.opacity(0.08))
+                                .cornerRadius(6)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
                 GroupBox("About") {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("PolarCore v\(PolarCore.polarCoreVersion())")
@@ -848,11 +1149,11 @@ struct SettingsView: View {
                 .help("Refresh serial ports")
             }
 
-            Picker("Baud Rate", selection: $baudRate) {
-                Text("9600").tag(UInt32(9600))
-                Text("19200").tag(UInt32(19200))
-                Text("38400").tag(UInt32(38400))
-                Text("115200").tag(UInt32(115200))
+            Picker("Baud Rate", selection: $baudRateStored) {
+                Text("9600").tag(9600)
+                Text("19200").tag(19200)
+                Text("38400").tag(38400)
+                Text("115200").tag(115200)
             }
             .frame(maxWidth: 200)
         }
@@ -869,7 +1170,7 @@ struct SettingsView: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 160)
                 Text("Port")
-                TextField("Port", value: $lx200TcpPort, format: .number)
+                TextField("Port", value: $lx200TcpPortStored, format: .number)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 70)
             }
@@ -891,32 +1192,29 @@ struct SettingsView: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 160)
                 Text("Port")
-                TextField("Port", value: $alpacaPort, format: .number)
+                TextField("Port", value: $alpacaPortStored, format: .number)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 70)
             }
 
             HStack {
-                Button("Discover") {
-                    discoverAlpacaDevices()
+                Picker("Device", selection: $mountService.selectedAlpacaDevice) {
+                    Text("No mount found").tag(-1)
+                    ForEach(Array(mountService.alpacaDevices.enumerated()), id: \.offset) { index, dev in
+                        Text("\(dev.deviceName) (#\(dev.deviceNumber))").tag(index)
+                    }
                 }
-                .disabled(isDiscovering)
+                .frame(maxWidth: 300)
 
-                if isDiscovering {
+                Button(action: discoverAlpacaMounts) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(mountService.isDiscoveringDevices)
+                .help("Scan for mounts on the Alpaca server")
+
+                if mountService.isDiscoveringDevices {
                     ProgressView()
                         .controlSize(.small)
-                }
-
-                ForEach(discoveredAlpaca, id: \.self) { device in
-                    Button(device) {
-                        let parts = device.split(separator: ":")
-                        if parts.count == 2 {
-                            alpacaHost = String(parts[0])
-                            alpacaPort = UInt32(parts[1]) ?? 11111
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
             }
         }
@@ -932,6 +1230,22 @@ struct SettingsView: View {
     private var selectedGuideCamera: ASICameraInfo? {
         guard guideSelectedCameraIndex >= 0, guideSelectedCameraIndex < guideDiscoveredCameras.count else { return nil }
         return guideDiscoveredCameras[guideSelectedCameraIndex]
+    }
+
+    private var llmStatusColor: Color {
+        switch llmService.connectionStatus {
+        case .notConfigured: return .gray
+        case .connected: return .green
+        case .failed: return .red
+        }
+    }
+
+    private var llmStatusLabel: String {
+        switch llmService.connectionStatus {
+        case .notConfigured: return "Not configured"
+        case .connected: return "Connected"
+        case .failed: return "Failed"
+        }
     }
 
     /// Clamp exposure to valid range: 1 ms – 600,000 ms (10 min).
@@ -960,6 +1274,7 @@ struct SettingsView: View {
             cameraViewModel.selectedCameraIndex = selectedCameraIndex
             cameraViewModel.connect()
         }
+        autoConnectCamera = true
     }
 
     private func connectGuideCamera() {
@@ -980,6 +1295,7 @@ struct SettingsView: View {
             guideCameraViewModel.selectedCameraIndex = guideSelectedCameraIndex
             guideCameraViewModel.connect()
         }
+        autoConnectGuideCamera = true
     }
 
     private func discoverGuideAlpacaCameras() {
@@ -1017,6 +1333,7 @@ struct SettingsView: View {
             port: UInt32(filterWheelAlpacaPort),
             deviceNumber: deviceNumber
         )
+        autoConnectFilterWheel = true
     }
 
     private func discoverAlpacaCameras() {
@@ -1044,12 +1361,8 @@ struct SettingsView: View {
         }
     }
 
-    private func discoverAlpacaDevices() {
-        isDiscovering = true
-        Task {
-            discoveredAlpaca = await mountService.discoverAlpaca(timeoutMs: 3000)
-            isDiscovering = false
-        }
+    private func discoverAlpacaMounts() {
+        mountService.discoverMounts(host: alpacaHost, port: alpacaPort)
     }
 
     private func connectMount() {
@@ -1066,8 +1379,16 @@ struct SettingsView: View {
                 case .lx200tcp:
                     try await mountService.connectLx200Tcp(host: lx200TcpHost, port: lx200TcpPort)
                 case .alpaca:
-                    try await mountService.connectAlpaca(host: alpacaHost, port: alpacaPort)
+                    let idx = mountService.selectedAlpacaDevice
+                    let deviceNumber: UInt32
+                    if idx >= 0, idx < mountService.alpacaDevices.count {
+                        deviceNumber = mountService.alpacaDevices[idx].deviceNumber
+                    } else {
+                        deviceNumber = 0
+                    }
+                    try await mountService.connectAlpaca(host: alpacaHost, port: alpacaPort, deviceNumber: deviceNumber)
                 }
+                autoConnectMount = true
             } catch {
                 mountError = error.localizedDescription
             }
@@ -1131,5 +1452,82 @@ struct SettingsView: View {
     private func syncLocationToCoordinator() {
         coordinator.observerLatDeg = observerLat
         coordinator.observerLonDeg = observerLon
+    }
+
+    // MARK: - Reusable Alpaca Device Section
+
+    @ViewBuilder
+    private func alpacaDeviceSection(
+        title: String,
+        host: Binding<String>,
+        port: Binding<Int>,
+        devices: [AlpacaDeviceInfo],
+        selectedDevice: Binding<Int>,
+        isDiscovering: Bool,
+        isConnected: Bool,
+        statusMessage: String,
+        onDiscover: @escaping () -> Void,
+        onConnect: @escaping () -> Void,
+        onDisconnect: @escaping () -> Void
+    ) -> some View {
+        GroupBox(title) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Host")
+                        .frame(width: 40, alignment: .trailing)
+                    TextField("IP address", text: host)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 160)
+                    Text("Port")
+                    TextField("Port", value: port, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 70)
+                }
+
+                HStack {
+                    Picker("Device", selection: selectedDevice) {
+                        Text("No \(title.lowercased()) found").tag(-1)
+                        ForEach(Array(devices.enumerated()), id: \.offset) { index, dev in
+                            Text("\(dev.deviceName) (#\(dev.deviceNumber))").tag(index)
+                        }
+                    }
+                    .frame(maxWidth: 300)
+
+                    Button(action: onDiscover) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .disabled(isDiscovering)
+
+                    if isDiscovering {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+
+                HStack {
+                    if isConnected {
+                        Circle()
+                            .fill(.green)
+                            .frame(width: 10, height: 10)
+                        Text(statusMessage)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Disconnect", action: onDisconnect)
+                            .buttonStyle(.bordered)
+                    } else {
+                        Circle()
+                            .fill(.red)
+                            .frame(width: 10, height: 10)
+                        Text("Not connected")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Connect", action: onConnect)
+                            .buttonStyle(.borderedProminent)
+                            .disabled(selectedDevice.wrappedValue < 0)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
     }
 }

@@ -1,10 +1,14 @@
 import SwiftUI
 import PolarCore
+import SwiftAA
 
 struct MountTabView: View {
     @ObservedObject var mountService: MountService
     @ObservedObject var plateSolveService: PlateSolveService
-    @StateObject private var skyMapVM = SkyMapViewModel()
+    @Binding var sequenceDocument: SequenceDocument
+    var onSwitchToSequencer: (() -> Void)?
+    @ObservedObject var skyMapVM: SkyMapViewModel
+    @ObservedObject var vm: MountTabViewModel
 
     @AppStorage("observerLat") private var observerLat: Double = 60.17
     @AppStorage("observerLon") private var observerLon: Double = 24.94
@@ -22,6 +26,15 @@ struct MountTabView: View {
     // Plate solve
     @State private var solveStatus: String?
     @State private var isSolving = false
+
+    // Ephemeral UI state
+    @State private var showObsWindowPopover = false
+    // Observation window (persisted via AppStorage)
+    @AppStorage("obsWindowEnabled") private var obsWindowEnabled = false
+    @AppStorage("obsWindowMinAlt") private var obsWindowMinAlt: Double = 10
+    @AppStorage("obsWindowMaxAlt") private var obsWindowMaxAlt: Double = 90
+    @AppStorage("obsWindowAzFrom") private var obsWindowAzFrom: Double = 0
+    @AppStorage("obsWindowAzTo") private var obsWindowAzTo: Double = 360
 
     enum ManualSpeed: String, CaseIterable {
         case guide = "Guide"
@@ -71,21 +84,65 @@ struct MountTabView: View {
             }
             .frame(minWidth: 280, idealWidth: 320, maxWidth: 380)
 
-            // Right panel: sky map
-            VStack(spacing: 0) {
-                SkyMapView(viewModel: skyMapVM) { raHours, decDeg in
-                    gotoTarget(raHours: raHours, decDeg: decDeg)
+            // Right panel: sky map + catalog (resizable split)
+            if vm.showCatalog {
+                VSplitView {
+                    ZStack(alignment: .topLeading) {
+                        SkyMapView(viewModel: skyMapVM) { raHours, decDeg in
+                            if vm.isLiveTime { gotoTarget(raHours: raHours, decDeg: decDeg) }
+                        }
+                        catalogToggleButton
+                        // Planning mode indicator on map
+                        if !vm.isLiveTime {
+                            Text("Planning mode — GoTo disabled")
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.orange.opacity(0.7))
+                                .foregroundStyle(.white)
+                                .cornerRadius(4)
+                                .padding(.leading, 40)
+                                .padding(.top, 6)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .frame(minHeight: 200)
+
+                    catalogPanel
+                        .frame(minHeight: 150, idealHeight: 250)
                 }
+                .frame(minWidth: 400)
+            } else {
+                ZStack(alignment: .topLeading) {
+                    SkyMapView(viewModel: skyMapVM) { raHours, decDeg in
+                        gotoTarget(raHours: raHours, decDeg: decDeg)
+                    }
+                    catalogToggleButton
+                }
+                .frame(minWidth: 400)
             }
-            .frame(minWidth: 400)
         }
         .onAppear {
             loadStarCatalog()
             updateCameraFOV()
             skyMapVM.observerLatDeg = observerLat
             skyMapVM.observerLonDeg = observerLon
+            // Initialize map center to observer's latitude so the visible pole is near top
+            if skyMapVM.mountRA == nil {
+                skyMapVM.centerDec = observerLat
+            }
         }
-        .onChange(of: mountService.status) { _, newStatus in
+        .onChange(of: mountService.status) { oldStatus, newStatus in
+            // Light polling returns NaN for altDeg/azDeg which breaks
+            // Equatable (NaN != NaN), causing onChange to fire on every
+            // poll even when nothing changed. Compare the fields we care about.
+            if let old = oldStatus, let new = newStatus,
+               old.raHours == new.raHours,
+               old.decDeg == new.decDeg,
+               old.tracking == new.tracking,
+               old.slewing == new.slewing {
+                return
+            }
             skyMapVM.syncToMount(status: newStatus)
         }
         .onChange(of: plateSolveService.isLoaded) { _, loaded in
@@ -94,6 +151,48 @@ struct MountTabView: View {
         .onChange(of: focalLengthMM) { updateCameraFOV() }
         .onChange(of: observerLat) { skyMapVM.observerLatDeg = observerLat }
         .onChange(of: observerLon) { skyMapVM.observerLonDeg = observerLon }
+        .onChange(of: vm.planningDate) {
+            skyMapVM.referenceDate = vm.isLiveTime ? nil : vm.planningDate
+            recomputeCatalog()
+        }
+        .onChange(of: vm.isLiveTime) {
+            skyMapVM.referenceDate = vm.isLiveTime ? nil : vm.planningDate
+            recomputeCatalog()
+        }
+        .onChange(of: vm.showCatalog) {
+            if vm.showCatalog {
+                recomputeCatalog()
+            } else if !vm.isLiveTime {
+                // Closing catalog reverts to live time
+                vm.isLiveTime = true
+                vm.planningDate = Date()
+            }
+        }
+        .onChange(of: vm.catalogFilter) { recomputeCatalog() }
+        .onChange(of: vm.catalogSearch) { recomputeCatalog() }
+        .onChange(of: obsWindowEnabled) { recomputeCatalog() }
+        .onChange(of: obsWindowMinAlt) { recomputeCatalog() }
+        .onChange(of: obsWindowMaxAlt) { recomputeCatalog() }
+        .onChange(of: obsWindowAzFrom) { recomputeCatalog() }
+        .onChange(of: obsWindowAzTo) { recomputeCatalog() }
+    }
+
+    private var catalogToggleButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                vm.showCatalog.toggle()
+            }
+        } label: {
+            Image(systemName: vm.showCatalog ? "list.bullet.circle.fill" : "list.bullet.circle")
+                .font(.system(size: 16))
+                .padding(8)
+                .background(.black.opacity(0.6))
+                .clipShape(Circle())
+                .foregroundStyle(.white)
+        }
+        .buttonStyle(.plain)
+        .padding(8)
+        .help("Toggle object catalog")
     }
 
     // MARK: - Not Connected
@@ -194,7 +293,7 @@ struct MountTabView: View {
                     Text("Solar").tag(UInt8(2))
                     Text("King").tag(UInt8(3))
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
                 .onChange(of: trackingRate) { _, newRate in
                     Task {
                         do {
@@ -218,7 +317,7 @@ struct MountTabView: View {
                         Text(s.rawValue).tag(s)
                     }
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
 
                 // NSEW pad
                 VStack(spacing: 4) {
@@ -377,6 +476,421 @@ struct MountTabView: View {
         }
     }
 
+    // MARK: - Catalog Panel
+
+    private var catalogPanel: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search objects...", text: $vm.catalogSearch)
+                    .textFieldStyle(.plain)
+
+                Divider()
+                    .frame(height: 16)
+
+                // Date/time picker for planning
+                if vm.isLiveTime {
+                    Button {
+                        vm.planningDate = Date()
+                        vm.isLiveTime = false
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "clock")
+                            Text("Now")
+                        }
+                        .font(.system(size: 11))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Switch to planning mode to view a different date/time")
+                } else {
+                    DatePicker("", selection: $vm.planningDate)
+                        .labelsHidden()
+                        .frame(width: 170)
+
+                    Button {
+                        vm.isLiveTime = true
+                        vm.planningDate = Date()
+                    } label: {
+                        Image(systemName: "clock.badge.checkmark")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(.orange)
+                    .help("Return to live time")
+                }
+
+                Divider()
+                    .frame(height: 16)
+
+                // Observation window
+                Button {
+                    showObsWindowPopover.toggle()
+                } label: {
+                    Image(systemName: obsWindowEnabled ? "camera.viewfinder" : "viewfinder")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(obsWindowEnabled ? .cyan : nil)
+                .help("Observation window — limit by altitude and azimuth")
+                .popover(isPresented: $showObsWindowPopover) {
+                    observationWindowPopover
+                }
+
+                Picker("", selection: $vm.catalogFilter) {
+                    ForEach(MountTabViewModel.CatalogFilter.allCases, id: \.self) { f in
+                        Text(f.rawValue).tag(f)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 120)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(vm.isLiveTime ? Color(nsColor: .controlBackgroundColor) : Color.orange.opacity(0.08))
+
+            if vm.isCatalogLoading && vm.cachedCatalogEntries.isEmpty {
+                VStack {
+                    Spacer()
+                    ProgressView("Computing catalog...")
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            List(vm.cachedCatalogEntries, id: \.id) { entry in
+                HStack(spacing: 8) {
+                    // Type indicator
+                    Circle()
+                        .fill(entry.color)
+                        .frame(width: 8, height: 8)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.name)
+                            .font(.system(size: 12, weight: .medium))
+                        Text(entry.detail)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    // Altitude sparkline
+                    AltitudeSparkline(
+                        visibility: entry.visibility, color: entry.color,
+                        referenceDate: vm.catalogReferenceDate,
+                        obsWindow: obsWindowEnabled ? (minAlt: obsWindowMinAlt, maxAlt: obsWindowMaxAlt, azFrom: obsWindowAzFrom, azTo: obsWindowAzTo) : nil
+                    )
+                        .frame(width: 110, height: 30)
+
+                    // Visibility summary
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(String(format: "Alt %+.1f°  Az %.0f°", entry.altDeg, entry.azDeg))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(entry.altDeg > 0 ? .green : .red)
+                        Text(vm.visibilitySummary(entry.visibility))
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    HStack(spacing: 4) {
+                        Button("GoTo") {
+                            gotoTarget(raHours: entry.raHours, decDeg: entry.decDeg)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!mountService.isConnected || !vm.isLiveTime || entry.altDeg <= 0)
+
+                        Button {
+                            centerOnObject(raHours: entry.raHours, decDeg: entry.decDeg)
+                        } label: {
+                            Image(systemName: "scope")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help("Center map on object")
+
+                        Button {
+                            addToSequencer(entry: entry)
+                        } label: {
+                            Image(systemName: "text.badge.plus")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(obsWindowEnabled && !entry.visibility.isVisibleInWindow(
+                            minAlt: obsWindowMinAlt, maxAlt: obsWindowMaxAlt,
+                            azFrom: obsWindowAzFrom, azTo: obsWindowAzTo
+                        ))
+                        .help(obsWindowEnabled && !entry.visibility.isVisibleInWindow(
+                            minAlt: obsWindowMinAlt, maxAlt: obsWindowMaxAlt,
+                            azFrom: obsWindowAzFrom, azTo: obsWindowAzTo
+                        ) ? "No observable time in window" : "Add to sequencer")
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .listStyle(.plain)
+        }
+    }
+
+    // Types are defined in MountTabViewModel
+
+    /// Trigger async catalog recomputation via the view model.
+    private func recomputeCatalog() {
+        vm.recomputeCatalog(
+            observerLat: observerLat,
+            observerLon: observerLon,
+            obsWindowEnabled: obsWindowEnabled,
+            obsWindowMinAlt: obsWindowMinAlt,
+            obsWindowMaxAlt: obsWindowMaxAlt,
+            obsWindowAzFrom: obsWindowAzFrom,
+            obsWindowAzTo: obsWindowAzTo
+        )
+    }
+
+    private func addToSequencer(entry: MountTabViewModel.CatalogEntry) {
+        let target = TargetInfo(
+            name: entry.name,
+            ra: entry.raHours,
+            dec: entry.decDeg,
+            trackingRate: trackingRateFor(entry.category)
+        )
+
+        var items = defaultInstructions(for: entry.category)
+        var conditions: [SequenceCondition] = []
+
+        // When observation window is active, add timing constraints
+        if obsWindowEnabled,
+           let interval = entry.visibility.windowInterval(
+               minAlt: obsWindowMinAlt, maxAlt: obsWindowMaxAlt, azFrom: obsWindowAzFrom, azTo: obsWindowAzTo
+           ) {
+            let refDate = vm.catalogReferenceDate
+
+            // Wait until the object enters the window
+            if interval.start > 0.1 {
+                let startDate = refDate.addingTimeInterval(interval.start * 3600)
+                let cal = Calendar.current
+                let startHour = cal.component(.hour, from: startDate)
+                let startMinute = cal.component(.minute, from: startDate)
+                items.insert(.instruction(SequenceInstruction(
+                    type: SequenceInstruction.waitUntilLocalTime,
+                    params: ["hour": .int(startHour), "minute": .int(startMinute)]
+                )), at: 0)
+            }
+
+            // Stop looping when the object leaves the window
+            let endDate = refDate.addingTimeInterval(interval.end * 3600)
+            let cal = Calendar.current
+            let endHour = cal.component(.hour, from: endDate)
+            let endMinute = cal.component(.minute, from: endDate)
+            conditions.append(SequenceCondition(
+                type: SequenceCondition.loopUntilLocalTime,
+                params: ["hour": .int(endHour), "minute": .int(endMinute)]
+            ))
+        }
+
+        let container = SequenceContainer(
+            name: entry.name,
+            type: .deepSkyObject,
+            target: target,
+            items: items,
+            conditions: conditions
+        )
+
+        sequenceDocument.rootContainer.items.append(.container(container))
+        onSwitchToSequencer?()
+    }
+
+    private func trackingRateFor(_ category: MountTabViewModel.CatalogCategory) -> TrackingRate? {
+        switch category {
+        case .deepSky: return nil  // sidereal (default)
+        case .planet: return nil   // sidereal — planetary imaging uses ms exposures, drift is negligible
+        case .moon: return .lunar
+        case .sun: return .solar
+        }
+    }
+
+    /// Create default instruction set based on object category.
+    private func defaultInstructions(for category: MountTabViewModel.CatalogCategory) -> [SequenceItem] {
+        var items: [SequenceItem] = []
+
+        // Slew to target
+        items.append(.instruction(SequenceInstruction(
+            type: SequenceInstruction.slewToTarget,
+            deviceRole: "mount"
+        )))
+
+        // Set tracking rate (always — uses target's trackingRate)
+        items.append(.instruction(SequenceInstruction(
+            type: SequenceInstruction.startTracking,
+            deviceRole: "mount"
+        )))
+
+        switch category {
+        case .deepSky:
+            // DSO: center target, start guiding, capture
+            items.append(.instruction(SequenceInstruction(
+                type: SequenceInstruction.centerTarget,
+                deviceRole: "mount",
+                params: ["attempts": .int(3)]
+            )))
+            items.append(.instruction(SequenceInstruction(
+                type: SequenceInstruction.startGuiding,
+                deviceRole: "guide_camera"
+            )))
+            items.append(.instruction(SequenceInstruction(
+                type: SequenceInstruction.captureFrames,
+                deviceRole: "imaging_camera",
+                params: [
+                    "exposure_sec": .double(120),
+                    "count": .int(10),
+                    "dither_enabled": .bool(true),
+                    "dither_every_n": .int(3),
+                    "dither_pixels": .double(5.0)
+                ]
+            )))
+            items.append(.instruction(SequenceInstruction(
+                type: SequenceInstruction.stopGuiding,
+                deviceRole: "guide_camera"
+            )))
+
+        case .planet:
+            // Planets: short exposures, no guiding needed
+            items.append(.instruction(SequenceInstruction(
+                type: SequenceInstruction.captureFrames,
+                deviceRole: "imaging_camera",
+                params: [
+                    "exposure_sec": .double(0.05),
+                    "count": .int(1000),
+                    "frame_type": .string("Light")
+                ]
+            )))
+
+        case .moon:
+            // Moon: short exposures, lunar tracking
+            items.append(.instruction(SequenceInstruction(
+                type: SequenceInstruction.captureFrames,
+                deviceRole: "imaging_camera",
+                params: [
+                    "exposure_sec": .double(0.01),
+                    "count": .int(500),
+                    "frame_type": .string("Light")
+                ]
+            )))
+
+        case .sun:
+            // Sun: very short exposures, solar tracking, solar filter assumed
+            items.append(.instruction(SequenceInstruction(
+                type: SequenceInstruction.captureFrames,
+                deviceRole: "imaging_camera",
+                params: [
+                    "exposure_sec": .double(0.001),
+                    "count": .int(500),
+                    "frame_type": .string("Light")
+                ]
+            )))
+        }
+
+        return items
+    }
+
+    // MARK: - Observation Window Popover
+
+    private var observationWindowPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("Observation Window", isOn: $obsWindowEnabled)
+                .font(.headline)
+
+            if obsWindowEnabled {
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Min altitude")
+                                .frame(width: 90, alignment: .trailing)
+                            Slider(value: $obsWindowMinAlt, in: 0...60, step: 5)
+                                .frame(width: 120)
+                            Text(String(format: "%.0f°", obsWindowMinAlt))
+                                .font(.system(size: 11, design: .monospaced))
+                                .frame(width: 30)
+                        }
+
+                        HStack {
+                            Text("Max altitude")
+                                .frame(width: 90, alignment: .trailing)
+                            Slider(value: $obsWindowMaxAlt, in: 10...90, step: 5)
+                                .frame(width: 120)
+                            Text(String(format: "%.0f°", obsWindowMaxAlt))
+                                .font(.system(size: 11, design: .monospaced))
+                                .frame(width: 30)
+                        }
+
+                        HStack {
+                            Text("Azimuth from")
+                                .frame(width: 90, alignment: .trailing)
+                            Slider(value: $obsWindowAzFrom, in: 0...359, step: 5)
+                                .frame(width: 120)
+                            Text(String(format: "%.0f°", obsWindowAzFrom))
+                                .font(.system(size: 11, design: .monospaced))
+                                .frame(width: 30)
+                        }
+
+                        HStack {
+                            Text("Azimuth to")
+                                .frame(width: 90, alignment: .trailing)
+                            Slider(value: $obsWindowAzTo, in: 0...360, step: 5)
+                                .frame(width: 120)
+                            Text(String(format: "%.0f°", obsWindowAzTo))
+                                .font(.system(size: 11, design: .monospaced))
+                                .frame(width: 30)
+                        }
+
+                        // Compass reference
+                        HStack(spacing: 0) {
+                            Spacer()
+                            Text("N=0°  E=90°  S=180°  W=270°")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+
+                        // Summary
+                        Text(obsWindowSummary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding()
+        .frame(width: 320)
+    }
+
+    private var obsWindowSummary: String {
+        let altStr = obsWindowMaxAlt < 90
+            ? String(format: "%.0f°–%.0f° altitude", obsWindowMinAlt, obsWindowMaxAlt)
+            : String(format: "Above %.0f°", obsWindowMinAlt)
+        if obsWindowAzFrom == 0 && obsWindowAzTo == 360 {
+            return "\(altStr), all directions"
+        }
+        let dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        func dirName(_ az: Double) -> String {
+            let idx = Int((az + 22.5).truncatingRemainder(dividingBy: 360) / 45.0)
+            return dirs[idx % 8]
+        }
+        return "\(altStr), \(dirName(obsWindowAzFrom)) → \(dirName(obsWindowAzTo))"
+    }
+
+    private func centerOnObject(raHours: Double, decDeg: Double) {
+        skyMapVM.followMount = false
+        skyMapVM.centerRA = raHours * 15.0
+        skyMapVM.centerDec = decDeg
+    }
+
     // MARK: - Helpers
 
     private func statusBadge(_ text: String, color: Color) -> some View {
@@ -523,5 +1037,293 @@ struct MoveButton: View {
         pressStart = nil
         rampProgress = 0
         onMove(0)
+    }
+}
+
+// MARK: - Altitude Sparkline
+
+/// Tiny altitude-over-time chart for catalog entries.
+/// Dark sky periods shaded, solid line above horizon, dashed below.
+private struct AltitudeSparkline: View {
+    let visibility: MountTabViewModel.VisibilityInfo
+    let color: Color
+    var referenceDate: Date = Date()
+    var obsWindow: (minAlt: Double, maxAlt: Double, azFrom: Double, azTo: Double)?
+
+    var body: some View {
+        Canvas { context, size in
+            let samples = visibility.altitudeSamples
+            let sunSamples = visibility.sunAltSamples
+            guard samples.count > 1 else { return }
+
+            let w = size.width
+            let h = size.height
+            let n = CGFloat(samples.count - 1)
+            let maxAlt = max(visibility.peakAltDeg, 10)
+            let minAlt = min(samples.min() ?? 0, -5)
+            let range = maxAlt - minAlt
+
+            func yFor(_ alt: Double) -> CGFloat {
+                h * (1.0 - (alt - minAlt) / range)
+            }
+            func xFor(_ i: Int) -> CGFloat {
+                w * CGFloat(i) / n
+            }
+
+            // --- Dark sky background (sun < -18°, astronomical night) ---
+            // Find dark intervals and draw shaded rectangles
+            if sunSamples.count == samples.count {
+                var darkStart: Int?
+                for i in 0...samples.count {
+                    let isDark = i < samples.count && sunSamples[i] < -18
+                    if isDark && darkStart == nil {
+                        darkStart = i
+                    } else if !isDark, let start = darkStart {
+                        // Draw dark region from start to i-1
+                        let x0 = xFor(start)
+                        let x1 = xFor(i - 1)
+                        let rect = CGRect(x: x0, y: 0, width: x1 - x0, height: h)
+                        context.fill(Path(rect), with: .color(.indigo.opacity(0.2)))
+                        darkStart = nil
+                    }
+                }
+
+                // Twilight zones (sun between -18° and -6°): lighter shade
+                var twilightStart: Int?
+                for i in 0...samples.count {
+                    let isTwilight = i < samples.count && sunSamples[i] >= -18 && sunSamples[i] < -6
+                    if isTwilight && twilightStart == nil {
+                        twilightStart = i
+                    } else if !isTwilight, let start = twilightStart {
+                        let x0 = xFor(start)
+                        let x1 = xFor(i - 1)
+                        let rect = CGRect(x: x0, y: 0, width: x1 - x0, height: h)
+                        context.fill(Path(rect), with: .color(.blue.opacity(0.08)))
+                        twilightStart = nil
+                    }
+                }
+            }
+
+            // --- Observation window: green fill for in-window periods ---
+            if let win = obsWindow {
+                let azSamples = visibility.azimuthSamples
+
+                // Min altitude line
+                let effectiveMinAlt = max(win.minAlt, 0)
+                if effectiveMinAlt > minAlt && effectiveMinAlt < maxAlt {
+                    let minAltY = yFor(effectiveMinAlt)
+                    var minAltPath = Path()
+                    minAltPath.move(to: CGPoint(x: 0, y: minAltY))
+                    minAltPath.addLine(to: CGPoint(x: w, y: minAltY))
+                    context.stroke(minAltPath, with: .color(.green.opacity(0.3)),
+                                  style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
+                }
+
+                // Max altitude line
+                if win.maxAlt < 90 && win.maxAlt > minAlt && win.maxAlt < maxAlt {
+                    let maxAltY = yFor(win.maxAlt)
+                    var maxAltPath = Path()
+                    maxAltPath.move(to: CGPoint(x: 0, y: maxAltY))
+                    maxAltPath.addLine(to: CGPoint(x: w, y: maxAltY))
+                    context.stroke(maxAltPath, with: .color(.green.opacity(0.3)),
+                                  style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
+                }
+
+                func inWindow(_ az: Double) -> Bool {
+                    if win.azFrom <= win.azTo {
+                        return az >= win.azFrom && az <= win.azTo
+                    } else {
+                        return az >= win.azFrom || az <= win.azTo
+                    }
+                }
+
+                // Green filled area under the curve where object is in the window
+                var greenPath = Path()
+                var greenStarted = false
+                let floorY = yFor(effectiveMinAlt)
+                for i in 0..<samples.count {
+                    let x = xFor(i)
+                    let isDark = i < sunSamples.count && sunSamples[i] < -18
+                    let isIn = isDark && samples[i] >= win.minAlt && samples[i] <= win.maxAlt && inWindow(azSamples[i])
+                    if isIn {
+                        let y = yFor(samples[i])
+                        if !greenStarted {
+                            greenPath.move(to: CGPoint(x: x, y: floorY))
+                            greenPath.addLine(to: CGPoint(x: x, y: y))
+                            greenStarted = true
+                        } else {
+                            greenPath.addLine(to: CGPoint(x: x, y: y))
+                        }
+                    } else if greenStarted {
+                        greenPath.addLine(to: CGPoint(x: xFor(i - 1), y: floorY))
+                        greenPath.closeSubpath()
+                        greenStarted = false
+                    }
+                }
+                if greenStarted {
+                    greenPath.addLine(to: CGPoint(x: xFor(samples.count - 1), y: floorY))
+                    greenPath.closeSubpath()
+                }
+                context.fill(greenPath, with: .color(.green.opacity(0.18)))
+            }
+
+            // --- Horizon line (alt = 0) ---
+            let horizonY = yFor(0)
+            var horizPath = Path()
+            horizPath.move(to: CGPoint(x: 0, y: horizonY))
+            horizPath.addLine(to: CGPoint(x: w, y: horizonY))
+            context.stroke(horizPath, with: .color(.white.opacity(0.2)), lineWidth: 0.5)
+
+            // --- Fill under the above-horizon curve ---
+            var fillPath = Path()
+            var fillStarted = false
+            for i in 0..<samples.count {
+                let x = xFor(i)
+                let alt = max(samples[i], 0)
+                let y = yFor(alt)
+                if samples[i] > 0 {
+                    if !fillStarted {
+                        fillPath.move(to: CGPoint(x: x, y: horizonY))
+                        fillPath.addLine(to: CGPoint(x: x, y: y))
+                        fillStarted = true
+                    } else {
+                        fillPath.addLine(to: CGPoint(x: x, y: y))
+                    }
+                } else if fillStarted {
+                    fillPath.addLine(to: CGPoint(x: x, y: horizonY))
+                    fillPath.closeSubpath()
+                    fillStarted = false
+                }
+            }
+            if fillStarted {
+                fillPath.addLine(to: CGPoint(x: xFor(samples.count - 1), y: horizonY))
+                fillPath.closeSubpath()
+            }
+            context.fill(fillPath, with: .color(color.opacity(0.12)))
+
+            // --- Altitude curve ---
+            var curvePath = Path()
+            for i in 0..<samples.count {
+                let x = xFor(i)
+                let y = yFor(samples[i])
+                if i == 0 { curvePath.move(to: CGPoint(x: x, y: y)) }
+                else { curvePath.addLine(to: CGPoint(x: x, y: y)) }
+            }
+
+            // Below-horizon portions dashed, above solid — draw full curve then clip
+            // Simple approach: draw dashed for all, then overdraw solid for above parts
+            context.stroke(curvePath, with: .color(color.opacity(0.25)),
+                          style: StrokeStyle(lineWidth: 1.0, dash: [2, 2]))
+
+            // Solid segments where above horizon
+            var solidPath = Path()
+            var solidStarted = false
+            for i in 0..<samples.count {
+                let x = xFor(i)
+                let y = yFor(samples[i])
+                if samples[i] > 0 {
+                    if !solidStarted { solidPath.move(to: CGPoint(x: x, y: y)); solidStarted = true }
+                    else { solidPath.addLine(to: CGPoint(x: x, y: y)) }
+                } else {
+                    solidStarted = false
+                }
+            }
+            context.stroke(solidPath, with: .color(color), lineWidth: 1.5)
+
+            // --- "Now" marker ---
+            let nowY = yFor(samples[0])
+            let dotRect = CGRect(x: 0, y: nowY - 2.5, width: 5, height: 5)
+            context.fill(Path(ellipseIn: dotRect), with: .color(.white))
+
+            // --- Peak marker with altitude label ---
+            let peakX = w * CGFloat(visibility.peakHoursFromNow / 18.0)
+            let peakY = yFor(visibility.peakAltDeg)
+            let peakRect = CGRect(x: peakX - 2, y: peakY - 2, width: 4, height: 4)
+            context.fill(Path(ellipseIn: peakRect), with: .color(color))
+
+            // Peak altitude label
+            if visibility.peakAltDeg > 5 {
+                let label = Text(String(format: "%.0f°", visibility.peakAltDeg))
+                    .font(.system(size: 7, design: .monospaced))
+                    .foregroundColor(color.opacity(0.8))
+                context.draw(label, at: CGPoint(x: peakX, y: peakY - 5), anchor: .bottom)
+            }
+
+            // --- Event markers with local times ---
+            let fmt = DateFormatter()
+            fmt.dateFormat = "HH:mm"
+
+            // Collect events: (hours, label, color)
+            var events: [(hours: Double, label: String, color: Color)] = []
+
+            let hasRiseSet = visibility.riseHoursFromNow != nil || visibility.setHoursFromNow != nil
+
+            if let rise = visibility.riseHoursFromNow, rise > 0.2 && rise < 17.5 {
+                let t = fmt.string(from: referenceDate.addingTimeInterval(rise * 3600))
+                events.append((rise, "↑" + t, color))
+            }
+            if let set = visibility.setHoursFromNow, set > 0.2 && set < 17.5 {
+                let t = fmt.string(from: referenceDate.addingTimeInterval(set * 3600))
+                events.append((set, "↓" + t, color))
+            }
+
+            // Only show darkness markers when the object also has rise/set events,
+            // otherwise every circumpolar row shows identical sun-only times
+            if hasRiseSet {
+                if let ds = visibility.darkStartHours, ds > 0.2 && ds < 17.5 {
+                    let t = fmt.string(from: referenceDate.addingTimeInterval(ds * 3600))
+                    events.append((ds, t, .indigo))
+                }
+                if let de = visibility.darkEndHours, de > 0.2 && de < 17.5 {
+                    let t = fmt.string(from: referenceDate.addingTimeInterval(de * 3600))
+                    events.append((de, t, .indigo))
+                }
+            }
+
+            // For circumpolar objects, show peak time instead
+            if !hasRiseSet && visibility.peakHoursFromNow > 0.5 && visibility.peakHoursFromNow < 17.5 {
+                let t = fmt.string(from: referenceDate.addingTimeInterval(visibility.peakHoursFromNow * 3600))
+                events.append((visibility.peakHoursFromNow, "⬆" + t, color.opacity(0.8)))
+            }
+
+            // Remove events too close together (< 1.5h apart) — keep the first
+            events.sort { $0.hours < $1.hours }
+            var filtered: [(hours: Double, label: String, color: Color)] = []
+            for ev in events {
+                if let last = filtered.last, abs(ev.hours - last.hours) < 1.5 { continue }
+                filtered.append(ev)
+            }
+
+            for ev in filtered {
+                let tx = w * CGFloat(ev.hours / 18.0)
+                var tick = Path()
+                tick.move(to: CGPoint(x: tx, y: 0))
+                tick.addLine(to: CGPoint(x: tx, y: h))
+                context.stroke(tick, with: .color(ev.color.opacity(0.4)),
+                              style: StrokeStyle(lineWidth: 0.5, dash: [2, 2]))
+
+                let label = Text(ev.label)
+                    .font(.system(size: 7, design: .monospaced))
+                    .foregroundColor(ev.color.opacity(0.7))
+                context.draw(label, at: CGPoint(x: tx, y: h), anchor: .bottom)
+            }
+        }
+        .help(sparklineTooltip)
+    }
+
+    private var sparklineTooltip: String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm"
+        func timeStr(_ h: Double) -> String {
+            fmt.string(from: referenceDate.addingTimeInterval(h * 3600))
+        }
+        if visibility.neverRises { return "Below horizon for next 18h" }
+        if visibility.isCircumpolar {
+            return String(format: "Circumpolar — peak %.0f° at %@", visibility.peakAltDeg, timeStr(visibility.peakHoursFromNow))
+        }
+        var s = String(format: "Peak %.0f° at %@", visibility.peakAltDeg, timeStr(visibility.peakHoursFromNow))
+        if let rise = visibility.riseHoursFromNow { s += "  Rises \(timeStr(rise))" }
+        if let set = visibility.setHoursFromNow { s += "  Sets \(timeStr(set))" }
+        return s
     }
 }

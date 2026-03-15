@@ -1,18 +1,55 @@
 import SwiftUI
 
-/// Camera tab: live preview, capture sequences with file saving.
-struct CameraTabView: View {
-    @ObservedObject var viewModel: CameraViewModel
+/// Which camera feed to display in the Camera tab.
+enum CameraViewSource: String, CaseIterable {
+    case main = "Main Camera"
+    case guide = "Guide Camera"
+}
 
-    // Camera source (shared with SettingsView)
-    @AppStorage("cameraSource") private var cameraSourceRaw: String = CameraSource.usb.rawValue
-    @AppStorage("cameraAlpacaHost") private var cameraAlpacaHost: String = "192.168.8.30"
-    @AppStorage("cameraAlpacaPort") private var cameraAlpacaPort: Int = 11111
+/// Camera tab: live preview viewer for connected cameras, with capture support.
+/// Connections are managed in Settings — this tab just displays the selected camera's feed.
+///
+/// Outer shell does NOT observe either camera to avoid layout storms from @Published changes
+/// on both cameras simultaneously. Only the inner CameraViewerContent observes the active camera.
+struct CameraTabView: View {
+    let mainCamera: CameraViewModel
+    let guideCamera: CameraViewModel
+
+    @State private var selectedSource: CameraViewSource = .main
+
+    var body: some View {
+        CameraViewerContent(
+            viewModel: selectedSource == .main ? mainCamera : guideCamera,
+            selectedSource: $selectedSource,
+            pauseAll: {
+                mainCamera.pauseLiveView()
+                guideCamera.pauseLiveView()
+            },
+            switchCamera: { oldSource, newSource in
+                let oldVM = oldSource == .main ? mainCamera : guideCamera
+                oldVM.pauseLiveView()
+            }
+        )
+    }
+}
+
+/// Inner content that observes only the active camera.
+private struct CameraViewerContent: View {
+    @ObservedObject var viewModel: CameraViewModel
+    @Binding var selectedSource: CameraViewSource
+
+    var pauseAll: () -> Void
+    var switchCamera: (CameraViewSource, CameraViewSource) -> Void
 
     // Camera settings (shared with SettingsView)
     @AppStorage("exposureMs") private var exposureMs: Double = 500
     @AppStorage("gain") private var gain: Double = 300
     @AppStorage("binning") private var binning: Int = 2
+
+    // Guide camera settings
+    @AppStorage("guideExposureMs") private var guideExposureMs: Double = 500
+    @AppStorage("guideGain") private var guideGain: Double = 300
+    @AppStorage("guideBinning") private var guideBinning: Int = 2
 
     // Capture settings (shared with SettingsView)
     @AppStorage("captureFolder") private var captureFolder: String = ""
@@ -20,87 +57,31 @@ struct CameraTabView: View {
     @AppStorage("captureColorMode") private var captureColorMode: String = "rgb"
     @AppStorage("capturePrefix") private var capturePrefix: String = "capture"
 
-    /// Optional overrides for guide camera (when non-nil, these take precedence over @AppStorage)
-    var sourceRawOverride: String?
-    var alpacaHostOverride: String?
-    var alpacaPortOverride: Int?
-    var exposureMsOverride: Double?
-    var gainOverride: Double?
-    var binningOverride: Int?
-    var prefixOverride: String?
-
     @State private var captureCount: Int = 1
 
-    // Resolved settings (override or default)
-    private var effectiveSourceRaw: String { sourceRawOverride ?? cameraSourceRaw }
-    private var effectiveAlpacaHost: String { alpacaHostOverride ?? cameraAlpacaHost }
-    private var effectiveAlpacaPort: Int { alpacaPortOverride ?? cameraAlpacaPort }
-    private var effectiveExposureMs: Double { exposureMsOverride ?? exposureMs }
-    private var effectiveGain: Double { gainOverride ?? gain }
-    private var effectiveBinning: Int { binningOverride ?? binning }
-    private var effectivePrefix: String { prefixOverride ?? capturePrefix }
+    private var effectiveExposureMs: Double {
+        selectedSource == .main ? exposureMs : guideExposureMs
+    }
 
-    private var isAlpaca: Bool { effectiveSourceRaw == CameraSource.alpaca.rawValue }
-    private var canConnect: Bool {
-        isAlpaca ? viewModel.selectedAlpacaDevice >= 0 : viewModel.selectedCamera != nil
+    private var effectiveGain: Double {
+        selectedSource == .main ? gain : guideGain
+    }
+
+    private var effectiveBinning: Int {
+        selectedSource == .main ? binning : guideBinning
     }
 
     var body: some View {
         VStack(spacing: 0) {
             // MARK: - Top toolbar
             HStack(spacing: 12) {
-                if isAlpaca {
-                    // Alpaca: camera picker
-                    Picker("Camera", selection: $viewModel.selectedAlpacaDevice) {
-                        Text("No camera").tag(-1)
-                        ForEach(Array(viewModel.alpacaDevices.enumerated()), id: \.offset) { index, dev in
-                            Text(dev.deviceName).tag(index)
-                        }
+                Picker("Source", selection: $selectedSource) {
+                    ForEach(CameraViewSource.allCases, id: \.self) { source in
+                        Text(source.rawValue).tag(source)
                     }
-                    .frame(maxWidth: 250)
-
-                    Button {
-                        viewModel.discoverAlpacaCameras(host: effectiveAlpacaHost, port: UInt32(effectiveAlpacaPort))
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(viewModel.isDiscoveringAlpacaDevices)
-                    .help("Scan for cameras on the Alpaca server")
-
-                    if viewModel.isDiscoveringAlpacaDevices {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                } else {
-                    // USB: camera picker
-                    Picker("Camera", selection: $viewModel.selectedCameraIndex) {
-                        Text("No camera").tag(-1)
-                        ForEach(Array(viewModel.discoveredCameras.enumerated()), id: \.offset) { index, cam in
-                            Text(cam.name).tag(index)
-                        }
-                    }
-                    .frame(maxWidth: 250)
-
-                    Button(action: viewModel.discoverCameras) {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .help("Scan for cameras")
                 }
-
-                Divider().frame(height: 20)
-
-                if viewModel.isConnected {
-                    Button("Disconnect") {
-                        viewModel.disconnect()
-                    }
-                    .buttonStyle(.bordered)
-                } else {
-                    Button("Connect") {
-                        connectCamera()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!canConnect)
-                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 280)
 
                 Spacer()
 
@@ -127,46 +108,25 @@ struct CameraTabView: View {
 
                 if viewModel.isConnected {
                     CameraPreviewView(viewModel: viewModel.previewViewModel)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "camera")
                             .font(.system(size: 48))
                             .foregroundStyle(.tertiary)
-                        Text("Connect a camera to start")
+                        Text("Connect \(selectedSource.rawValue.lowercased()) in Settings")
                             .foregroundStyle(.secondary)
                     }
                 }
 
-                // Overlay: fps + star count + capture progress
+                // Overlay: fps + capture progress
                 VStack {
                     HStack {
-                        // Star detection info (top-left)
-                        if viewModel.isCapturing && viewModel.starDetectionEnabled {
-                            HStack(spacing: 6) {
-                                Image(systemName: "star.fill")
-                                    .foregroundStyle(.yellow)
-                                    .font(.caption2)
-                                Text("\(viewModel.detectedStars.count) stars")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.yellow)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.black.opacity(0.6))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-
                         Spacer()
 
-                        // FPS (top-right)
+                        // FPS + frame activity (top-right)
                         if viewModel.isCapturing {
-                            Text(String(format: "%.1f fps", viewModel.previewViewModel.frameRate))
-                                .font(.system(.caption, design: .monospaced))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(.black.opacity(0.6))
-                                .foregroundStyle(.green)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                            FrameRateView(previewViewModel: viewModel.previewViewModel)
                         }
                     }
                     Spacer()
@@ -272,20 +232,6 @@ struct CameraTabView: View {
 
                 Spacer()
 
-                // Star detection toggle + status
-                Divider().frame(height: 20)
-                Toggle(isOn: $viewModel.starDetectionEnabled) {
-                    HStack(spacing: 4) {
-                        Image(systemName: viewModel.starDetectorModelLoaded ? "brain" : "brain.fill")
-                            .foregroundStyle(viewModel.starDetectorModelLoaded ? .green : .red)
-                        Text(viewModel.starDetectorModelLoaded ? "ML" : "No ML")
-                            .font(.system(.caption, design: .monospaced))
-                    }
-                }
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .help(viewModel.starDetectorStatus)
-
                 if viewModel.captureWidth > 0 && viewModel.isConnected {
                     Text("\(viewModel.captureWidth)x\(viewModel.captureHeight)")
                         .font(.system(.caption, design: .monospaced))
@@ -316,32 +262,18 @@ struct CameraTabView: View {
             }
         }
         .onAppear {
-            if isAlpaca {
-                viewModel.discoverAlpacaCameras(host: effectiveAlpacaHost, port: UInt32(effectiveAlpacaPort))
-            } else {
-                viewModel.discoverCameras()
-            }
+            viewModel.resumeLiveView(settings: currentSettings)
+        }
+        .onDisappear {
+            pauseAll()
+        }
+        .onChange(of: selectedSource) { oldValue, newValue in
+            switchCamera(oldValue, newValue)
+            viewModel.resumeLiveView(settings: currentSettings)
         }
     }
 
     // MARK: - Helpers
-
-    private func connectCamera() {
-        if isAlpaca {
-            viewModel.cameraSource = .alpaca
-            viewModel.alpacaHost = effectiveAlpacaHost
-            viewModel.alpacaPort = UInt32(effectiveAlpacaPort)
-            let idx = viewModel.selectedAlpacaDevice
-            if idx >= 0, idx < viewModel.alpacaDevices.count {
-                viewModel.alpacaDeviceNumber = viewModel.alpacaDevices[idx].deviceNumber
-            } else {
-                viewModel.alpacaDeviceNumber = 0
-            }
-        } else {
-            viewModel.cameraSource = .usb
-        }
-        viewModel.connect()
-    }
 
     private var currentSettings: CameraSettings {
         CameraSettings(
@@ -354,7 +286,7 @@ struct CameraTabView: View {
     private var captureFolderURL: URL {
         if captureFolder.isEmpty {
             return FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Pictures/PolarAligner")
+                .appendingPathComponent("Pictures/PolarStation")
         }
         return URL(fileURLWithPath: captureFolder)
     }
@@ -390,7 +322,7 @@ struct CameraTabView: View {
     }
 
     private func startCapture() {
-        let prefix = effectivePrefix.isEmpty ? "capture" : effectivePrefix
+        let prefix = capturePrefix.isEmpty ? "capture" : capturePrefix
         viewModel.startCaptureSequence(
             count: captureCount,
             settings: currentSettings,

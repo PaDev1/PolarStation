@@ -97,23 +97,21 @@ impl PlateSolver {
 
         match result.status {
             tetra3::SolveStatus::MatchFound => {
-                // Extract boresight RA/Dec from the quaternion
-                let q = result.qicrs2cam.unwrap();
-                // The boresight is the +Z axis in camera frame, mapped back to ICRS
-                let boresight_icrs = q.inverse() * nalgebra::Vector3::new(0.0_f32, 0.0, 1.0);
-                let dec_rad = (boresight_icrs.z as f64).asin();
-                let ra_rad = (boresight_icrs.y as f64).atan2(boresight_icrs.x as f64);
-                let ra_deg = ra_rad.to_degrees().rem_euclid(360.0);
-                let dec_deg = dec_rad.to_degrees();
+                // Use tetra3's WCS solution directly (more reliable than quaternion decomposition)
+                let (ra_deg, dec_deg) = if let Some(crval) = result.crval_rad {
+                    (crval[0].to_degrees().rem_euclid(360.0), crval[1].to_degrees())
+                } else {
+                    // Fallback: extract from quaternion
+                    let q = result.qicrs2cam.unwrap();
+                    let boresight = q.inverse() * nalgebra::Vector3::new(0.0_f32, 0.0, 1.0);
+                    let dec = (boresight.z as f64).asin().to_degrees();
+                    let ra = (boresight.y as f64).atan2(boresight.x as f64).to_degrees().rem_euclid(360.0);
+                    (ra, dec)
+                };
 
-                // Roll angle: camera +X axis projected onto sky
-                let cam_x_icrs = q.inverse() * nalgebra::Vector3::new(1.0_f32, 0.0, 0.0);
-                // Project onto plane perpendicular to boresight
-                let north = nalgebra::Vector3::new(0.0_f32, 0.0, 1.0); // celestial north
-                let east = north.cross(&boresight_icrs).normalize();
-                let up = boresight_icrs.cross(&east).normalize();
-                let roll_rad = (cam_x_icrs.dot(&east) as f64)
-                    .atan2(cam_x_icrs.dot(&up) as f64);
+                let roll_deg = result.theta_rad
+                    .map(|t| t.to_degrees())
+                    .unwrap_or(0.0);
 
                 let fov_result = result.fov_rad.map(|f| (f as f64).to_degrees());
 
@@ -121,7 +119,7 @@ impl PlateSolver {
                     success: true,
                     ra_deg,
                     dec_deg,
-                    roll_deg: roll_rad.to_degrees(),
+                    roll_deg,
                     fov_deg: fov_result.unwrap_or(fov_deg),
                     matched_stars: result.num_matches.unwrap_or(0),
                     solve_time_ms: result.solve_time_ms as f64,
@@ -202,5 +200,119 @@ mod tests {
     fn test_database_info_none() {
         let solver = PlateSolver::new();
         assert!(solver.database_info().is_none());
+    }
+
+    /// Integration test: project catalog stars at a known RA/Dec using gnomonic projection,
+    /// then solve and verify the result matches.
+    /// Run with: cargo test -p polar-core test_solve_synthetic -- --nocapture
+    #[test]
+    fn test_solve_synthetic() {
+        // Data lives one level up from the crate (in the workspace root)
+        let db_path = format!("{}/../data/star_catalog.rkyv", env!("CARGO_MANIFEST_DIR"));
+        if !std::path::Path::new(&db_path).exists() {
+            eprintln!("Skipping: {} not found", db_path);
+            return;
+        }
+
+        let db = tetra3::SolverDatabase::load_from_file(&db_path).expect("load db");
+        let catalog: Vec<_> = db.star_catalog.stars().to_vec();
+        println!("Catalog: {} stars", catalog.len());
+
+        let target_ra_deg = 180.0_f64;
+        let target_dec_deg = 45.0_f64;
+        let fov_deg = 3.2_f64;
+        let image_width: u32 = 1920;
+        let image_height: u32 = 1080;
+
+        let ra0 = target_ra_deg.to_radians();
+        let dec0 = target_dec_deg.to_radians();
+        let plate_scale = fov_deg.to_radians() / image_width as f64;
+        let half_w = image_width as f32 / 2.0;
+        let half_h = image_height as f32 / 2.0;
+
+        // Project catalog stars using gnomonic projection (same as Swift GnomonicProjection)
+        let mut centroids: Vec<tetra3::Centroid> = Vec::new();
+        let mut star_count = 0;
+
+        for star in &catalog {
+            if star.mag > 10.0 { continue; }
+
+            let ra = star.ra_rad as f64;
+            let dec = star.dec_rad as f64;
+            let delta_ra = ra - ra0;
+
+            // Gnomonic projection
+            let cosc = dec0.sin() * dec.sin() + dec0.cos() * dec.cos() * delta_ra.cos();
+            if cosc <= 0.001 { continue; } // behind camera
+
+            let xi = dec.cos() * delta_ra.sin() / cosc;
+            let eta = (dec0.cos() * dec.sin() - dec0.sin() * dec.cos() * delta_ra.cos()) / cosc;
+
+            // To pixel coords (top-left origin), roll=0
+            let px = (image_width as f64) / 2.0 + xi / plate_scale;
+            let py = (image_height as f64) / 2.0 - eta / plate_scale;
+
+            // Check bounds
+            if px < 0.0 || px >= image_width as f64 || py < 0.0 || py >= image_height as f64 {
+                continue;
+            }
+
+            // Convert to center-origin for tetra3
+            centroids.push(tetra3::Centroid {
+                x: px as f32 - half_w,
+                y: py as f32 - half_h,
+                mass: Some(1.0),
+                cov: None,
+            });
+            star_count += 1;
+        }
+
+        println!("Projected {} stars in FOV", star_count);
+        assert!(star_count >= 4, "Need at least 4 stars");
+
+        // Solve directly with tetra3
+        let fov_rad = (fov_deg as f32).to_radians();
+        let mut config = tetra3::SolveConfig::new(fov_rad, image_width, image_height);
+        config.fov_max_error_rad = Some((1.0_f32).to_radians());
+        config.solve_timeout_ms = Some(5000);
+
+        let result = db.solve_from_centroids(&centroids, &config);
+
+        println!("Status: {:?}", result.status);
+        println!("Matched: {:?}", result.num_matches);
+        println!("RMSE rad: {:?}", result.rmse_rad);
+        println!("FOV rad: {:?}", result.fov_rad);
+        println!("Parity flip: {}", result.parity_flip);
+
+        if let Some(crval) = result.crval_rad {
+            let ra = crval[0].to_degrees().rem_euclid(360.0);
+            let dec = crval[1].to_degrees();
+            println!("crval: RA={:.4}° Dec={:.4}°", ra, dec);
+            let ra_err = (ra - target_ra_deg).abs().min((ra - target_ra_deg + 360.0).abs().min((ra - target_ra_deg - 360.0).abs()));
+            let dec_err = (dec - target_dec_deg).abs();
+            println!("Error: RA={:.4}° Dec={:.4}°", ra_err, dec_err);
+        }
+
+        if let Some(q) = result.qicrs2cam {
+            let boresight = q.inverse() * nalgebra::Vector3::new(0.0_f32, 0.0, 1.0);
+            let dec = (boresight.z as f64).asin().to_degrees();
+            let ra = (boresight.y as f64).atan2(boresight.x as f64).to_degrees().rem_euclid(360.0);
+            println!("quaternion: RA={:.4}° Dec={:.4}°", ra, dec);
+        }
+
+        if let Some(theta) = result.theta_rad {
+            println!("theta (roll): {:.4}°", theta.to_degrees());
+        }
+
+        assert_eq!(result.status, tetra3::SolveStatus::MatchFound, "Should find a match");
+
+        if let Some(crval) = result.crval_rad {
+            let ra = crval[0].to_degrees().rem_euclid(360.0);
+            let dec = crval[1].to_degrees();
+            let mut ra_err = (ra - target_ra_deg).abs();
+            if ra_err > 180.0 { ra_err = 360.0 - ra_err; }
+            assert!(ra_err < 0.5, "RA error {:.3}° should be < 0.5°", ra_err);
+            assert!((dec - target_dec_deg).abs() < 0.5, "Dec error {:.3}° should be < 0.5°", (dec - target_dec_deg).abs());
+        }
     }
 }

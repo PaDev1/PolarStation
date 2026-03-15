@@ -76,6 +76,7 @@ struct AlignmentView: View {
                 if cameraViewModel.isCapturing {
                     ZStack {
                         CameraPreviewView(viewModel: cameraViewModel.previewViewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                         // Star count overlay
                         VStack {
@@ -249,7 +250,8 @@ struct AlignmentView: View {
         case .waitingForSolve(let n): return n
         case .slewing(let n): return n
         case .computing: return 3
-        case .complete: return 3
+        case .complete: return 4
+        case .correcting: return 4
         case .error: return 0
         }
     }
@@ -297,7 +299,11 @@ struct StepIndicatorRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ForEach(1...totalSteps, id: \.self) { i in
-                StepCircle(number: i, state: state(for: i))
+                StepCircle(
+                    number: i,
+                    state: state(for: i),
+                    icon: i == totalSteps && totalSteps == 4 ? "wrench.adjustable" : nil
+                )
 
                 if i < totalSteps {
                     Rectangle()
@@ -324,6 +330,9 @@ struct StepCircle: View {
         case pending, active, complete
     }
 
+    /// Optional icon name to show instead of the number.
+    var icon: String?
+
     var body: some View {
         ZStack {
             Circle()
@@ -333,6 +342,10 @@ struct StepCircle: View {
                 Image(systemName: "checkmark")
                     .foregroundStyle(.white)
                     .font(.system(size: 14, weight: .bold))
+            } else if let icon {
+                Image(systemName: icon)
+                    .foregroundStyle(state == .active ? .white : .secondary)
+                    .font(.system(size: 14, weight: .semibold))
             } else {
                 Text("\(number)")
                     .foregroundStyle(state == .active ? .white : .secondary)

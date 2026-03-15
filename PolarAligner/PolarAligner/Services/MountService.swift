@@ -12,16 +12,24 @@ final class MountService: ObservableObject {
     @Published var status: MountStatus?
     @Published var error: String?
 
+    // Alpaca device discovery (same pattern as CameraViewModel / FilterWheelViewModel)
+    @Published var alpacaDevices: [AlpacaDeviceInfo] = []
+    @Published var selectedAlpacaDevice: Int = -1
+    @Published var isDiscoveringDevices = false
+
     private let controller = MountController()
     private let mountQueue = DispatchQueue(label: "com.polaraligner.mount", qos: .userInitiated)
     private var statusTimer: Timer?
+    private var isPolling = false
+    /// Current polling interval — 1s during slew, 2s when idle.
+    private var currentPollInterval: TimeInterval = 2.0
 
     /// Connect to an ASCOM Alpaca mount over HTTP.
-    func connectAlpaca(host: String, port: UInt32) async throws {
+    func connectAlpaca(host: String, port: UInt32, deviceNumber: UInt32 = 0) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             mountQueue.async { [controller] in
                 do {
-                    try controller.connectAlpaca(host: host, port: port)
+                    try controller.connectAlpaca(host: host, port: port, deviceNumber: deviceNumber)
                     continuation.resume()
                 } catch {
                     continuation.resume(throwing: error)
@@ -118,11 +126,15 @@ final class MountService: ObservableObject {
     }
 
     /// Refresh mount status (position, tracking, slewing).
-    func refreshStatus() async throws {
+    /// When `light` is true, only fetches RA/Dec/tracking/slewing (4 GETs instead of 8).
+    func refreshStatus(light: Bool = false) async throws {
+        guard !isPolling else { return }
+        isPolling = true
+        defer { isPolling = false }
         let newStatus: MountStatus = try await withCheckedThrowingContinuation { continuation in
             mountQueue.async { [controller] in
                 do {
-                    let s = try controller.getStatus()
+                    let s = light ? try controller.getStatusLight() : try controller.getStatus()
                     continuation.resume(returning: s)
                 } catch {
                     continuation.resume(throwing: error)
@@ -130,9 +142,17 @@ final class MountService: ObservableObject {
             }
         }
         status = newStatus
+
+        // Adapt polling rate: 1s during slew, 2s when idle
+        let desiredInterval: TimeInterval = newStatus.slewing ? 1.0 : 2.0
+        if desiredInterval != currentPollInterval {
+            currentPollInterval = desiredInterval
+            startStatusPolling()
+        }
     }
 
     /// Slew RA axis by given degrees. Positive = east.
+    /// Non-blocking: starts the slew and returns. Polling detects completion.
     func slewRA(degrees: Double) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             mountQueue.async { [controller] in
@@ -144,7 +164,9 @@ final class MountService: ObservableObject {
                 }
             }
         }
-        try await refreshStatus()
+        // Switch to fast polling to track the slew
+        currentPollInterval = 1.0
+        startStatusPolling()
     }
 
     /// Start or stop sidereal tracking.
@@ -289,13 +311,15 @@ final class MountService: ObservableObject {
         }
     }
 
-    /// Start auto-refreshing mount status every second.
+    /// Start auto-refreshing mount status. Uses adaptive interval and light polling when idle.
     func startStatusPolling() {
         stopStatusPolling()
-        statusTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        statusTimer = Timer.scheduledTimer(withTimeInterval: currentPollInterval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.isConnected else { return }
-                try? await self.refreshStatus()
+                // Use light status (4 GETs) when not slewing; full status (8 GETs) during slew
+                let useLight = !(self.status?.slewing ?? false)
+                try? await self.refreshStatus(light: useLight)
             }
         }
     }
@@ -306,12 +330,29 @@ final class MountService: ObservableObject {
         statusTimer = nil
     }
 
-    /// Discover Alpaca devices on local network.
+    /// Discover Alpaca devices on local network (UDP broadcast).
     func discoverAlpaca(timeoutMs: UInt32 = 3000) async -> [String] {
         await withCheckedContinuation { continuation in
             mountQueue.async {
                 let results = PolarCore.discoverAlpaca(timeoutMs: timeoutMs)
                 continuation.resume(returning: results)
+            }
+        }
+    }
+
+    /// Discover mount (telescope) devices on an ASCOM Alpaca server.
+    func discoverMounts(host: String, port: UInt32) {
+        isDiscoveringDevices = true
+        let h = host
+        let p = port
+        DispatchQueue.global(qos: .userInitiated).async {
+            let devices = (try? PolarCore.discoverAlpacaMounts(host: h, port: UInt16(p))) ?? []
+            DispatchQueue.main.async {
+                self.alpacaDevices = devices
+                if self.selectedAlpacaDevice < 0, !devices.isEmpty {
+                    self.selectedAlpacaDevice = 0
+                }
+                self.isDiscoveringDevices = false
             }
         }
     }

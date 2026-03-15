@@ -24,10 +24,18 @@ ml-model/.venv/
 ml-model/data/
 ml-model/checkpoints/
 ml-model/__pycache__/
+ml-model copy/
+
+# Training data & checkpoints (large)
+PolarAligner/Training/
 
 # Python
 __pycache__/
 *.pyc
+*.pt
+
+# Xcode SPM workspace data
+*.xcworkspace/xcshareddata/swiftpm/
 
 # Claude
 .claude/

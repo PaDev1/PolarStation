@@ -35,7 +35,7 @@ fn main() -> Result<()> {
         max_fov_deg: 15.0,
         min_fov_deg: Some(1.0),
         epoch_proper_motion_year: Some(2026.0),
-        star_max_magnitude: Some(8.0),
+        star_max_magnitude: Some(10.0),
         ..Default::default()
     };
 

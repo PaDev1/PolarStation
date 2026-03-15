@@ -43,6 +43,38 @@ namespace polar_core {
     /// Discover filter wheels on an ASCOM Alpaca server (management API).
     [Throws=FilterWheelError]
     sequence<AlpacaDeviceInfo> discover_alpaca_filterwheels(string host, u16 port);
+
+    /// Discover telescope (mount) devices on an ASCOM Alpaca server (management API).
+    [Throws=MountError]
+    sequence<AlpacaDeviceInfo> discover_alpaca_mounts(string host, u16 port);
+
+    /// Discover focuser devices on an ASCOM Alpaca server.
+    [Throws=FocuserError]
+    sequence<AlpacaDeviceInfo> discover_alpaca_focusers(string host, u16 port);
+
+    /// Discover dome devices on an ASCOM Alpaca server.
+    [Throws=DomeError]
+    sequence<AlpacaDeviceInfo> discover_alpaca_domes(string host, u16 port);
+
+    /// Discover rotator devices on an ASCOM Alpaca server.
+    [Throws=RotatorError]
+    sequence<AlpacaDeviceInfo> discover_alpaca_rotators(string host, u16 port);
+
+    /// Discover switch devices on an ASCOM Alpaca server.
+    [Throws=SwitchError]
+    sequence<AlpacaDeviceInfo> discover_alpaca_switches(string host, u16 port);
+
+    /// Discover safety monitor devices on an ASCOM Alpaca server.
+    [Throws=SafetyMonitorError]
+    sequence<AlpacaDeviceInfo> discover_alpaca_safetymonitors(string host, u16 port);
+
+    /// Discover observing conditions devices on an ASCOM Alpaca server.
+    [Throws=ObservingConditionsError]
+    sequence<AlpacaDeviceInfo> discover_alpaca_observingconditions(string host, u16 port);
+
+    /// Discover cover calibrator devices on an ASCOM Alpaca server.
+    [Throws=CoverCalibratorError]
+    sequence<AlpacaDeviceInfo> discover_alpaca_covercalibrators(string host, u16 port);
 };
 
 dictionary StarCentroid {
@@ -152,7 +184,7 @@ interface MountController {
 
     /// Connect to an ASCOM Alpaca mount over HTTP.
     [Throws=MountError]
-    void connect_alpaca(string host, u32 port);
+    void connect_alpaca(string host, u32 port, u32 device_number);
 
     /// Connect to a mount via LX200 serial protocol.
     [Throws=MountError]
@@ -176,6 +208,10 @@ interface MountController {
     /// Get current mount status.
     [Throws=MountError]
     MountStatus get_status();
+
+    /// Lightweight status: only RA, Dec, tracking, slewing (fewer HTTP calls).
+    [Throws=MountError]
+    MountStatus get_status_light();
 
     /// Get current RA in hours.
     [Throws=MountError]
@@ -360,4 +396,350 @@ interface AlpacaFilterWheelController {
     /// Get filter names.
     [Throws=FilterWheelError]
     sequence<string> get_names();
+};
+
+// ── Alpaca Focuser ──
+
+dictionary AlpacaFocuserInfo {
+    string name;
+    i32 position;
+    i32 max_step;
+    f64 temperature;
+    boolean temp_comp;
+};
+
+[Error]
+enum FocuserError {
+    "NotConnected",
+    "ConnectionFailed",
+    "CommunicationError",
+    "CommandRejected",
+    "InvalidResponse",
+};
+
+interface AlpacaFocuserController {
+    constructor();
+
+    [Throws=FocuserError]
+    AlpacaFocuserInfo connect(string host, u32 port, u32 device_number);
+
+    [Throws=FocuserError]
+    void disconnect();
+
+    boolean is_connected();
+
+    [Throws=FocuserError]
+    i32 get_position();
+
+    [Throws=FocuserError]
+    i32 get_max_step();
+
+    [Throws=FocuserError]
+    boolean is_moving();
+
+    [Throws=FocuserError]
+    f64 get_temperature();
+
+    [Throws=FocuserError]
+    boolean get_temp_comp();
+
+    [Throws=FocuserError]
+    void set_temp_comp(boolean enabled);
+
+    [Throws=FocuserError]
+    void move_to(i32 position);
+
+    [Throws=FocuserError]
+    void halt();
+};
+
+// ── Alpaca Dome ──
+
+dictionary AlpacaDomeInfo {
+    string name;
+    f64 azimuth;
+    i32 shutter_status;
+    boolean at_home;
+    boolean at_park;
+};
+
+[Error]
+enum DomeError {
+    "NotConnected",
+    "ConnectionFailed",
+    "CommunicationError",
+    "CommandRejected",
+    "InvalidResponse",
+};
+
+interface AlpacaDomeController {
+    constructor();
+
+    [Throws=DomeError]
+    AlpacaDomeInfo connect(string host, u32 port, u32 device_number);
+
+    [Throws=DomeError]
+    void disconnect();
+
+    boolean is_connected();
+
+    [Throws=DomeError]
+    f64 get_azimuth();
+
+    [Throws=DomeError]
+    i32 get_shutter_status();
+
+    [Throws=DomeError]
+    boolean is_slewing();
+
+    [Throws=DomeError]
+    boolean at_home();
+
+    [Throws=DomeError]
+    boolean at_park();
+
+    [Throws=DomeError]
+    void slew_to_azimuth(f64 azimuth);
+
+    [Throws=DomeError]
+    void open_shutter();
+
+    [Throws=DomeError]
+    void close_shutter();
+
+    [Throws=DomeError]
+    void park();
+
+    [Throws=DomeError]
+    void find_home();
+
+    [Throws=DomeError]
+    void abort_slew();
+};
+
+// ── Alpaca Rotator ──
+
+dictionary AlpacaRotatorInfo {
+    string name;
+    f64 position;
+    f64 mechanical_position;
+    boolean is_moving;
+};
+
+[Error]
+enum RotatorError {
+    "NotConnected",
+    "ConnectionFailed",
+    "CommunicationError",
+    "CommandRejected",
+    "InvalidResponse",
+};
+
+interface AlpacaRotatorController {
+    constructor();
+
+    [Throws=RotatorError]
+    AlpacaRotatorInfo connect(string host, u32 port, u32 device_number);
+
+    [Throws=RotatorError]
+    void disconnect();
+
+    boolean is_connected();
+
+    [Throws=RotatorError]
+    f64 get_position();
+
+    [Throws=RotatorError]
+    f64 get_mechanical_position();
+
+    [Throws=RotatorError]
+    boolean is_moving();
+
+    [Throws=RotatorError]
+    void move_relative(f64 position);
+
+    [Throws=RotatorError]
+    void move_absolute(f64 position);
+
+    [Throws=RotatorError]
+    void halt();
+};
+
+// ── Alpaca Switch ──
+
+dictionary AlpacaSwitchInfo {
+    string name;
+    i32 max_switch;
+};
+
+[Error]
+enum SwitchError {
+    "NotConnected",
+    "ConnectionFailed",
+    "CommunicationError",
+    "CommandRejected",
+    "InvalidResponse",
+};
+
+interface AlpacaSwitchController {
+    constructor();
+
+    [Throws=SwitchError]
+    AlpacaSwitchInfo connect(string host, u32 port, u32 device_number);
+
+    [Throws=SwitchError]
+    void disconnect();
+
+    boolean is_connected();
+
+    [Throws=SwitchError]
+    i32 get_max_switch();
+
+    [Throws=SwitchError]
+    string get_switch_name(i32 id);
+
+    [Throws=SwitchError]
+    boolean get_switch(i32 id);
+
+    [Throws=SwitchError]
+    f64 get_switch_value(i32 id);
+
+    [Throws=SwitchError]
+    void set_switch(i32 id, boolean state);
+
+    [Throws=SwitchError]
+    void set_switch_value(i32 id, f64 value);
+
+    [Throws=SwitchError]
+    f64 get_min_switch_value(i32 id);
+
+    [Throws=SwitchError]
+    f64 get_max_switch_value(i32 id);
+};
+
+// ── Alpaca Safety Monitor ──
+
+dictionary AlpacaSafetyMonitorInfo {
+    string name;
+    boolean is_safe;
+};
+
+[Error]
+enum SafetyMonitorError {
+    "NotConnected",
+    "ConnectionFailed",
+    "CommunicationError",
+    "CommandRejected",
+    "InvalidResponse",
+};
+
+interface AlpacaSafetyMonitorController {
+    constructor();
+
+    [Throws=SafetyMonitorError]
+    AlpacaSafetyMonitorInfo connect(string host, u32 port, u32 device_number);
+
+    [Throws=SafetyMonitorError]
+    void disconnect();
+
+    boolean is_connected();
+
+    [Throws=SafetyMonitorError]
+    boolean is_safe();
+};
+
+// ── Alpaca Observing Conditions ──
+
+dictionary AlpacaObservingConditionsInfo {
+    string name;
+};
+
+[Error]
+enum ObservingConditionsError {
+    "NotConnected",
+    "ConnectionFailed",
+    "CommunicationError",
+    "CommandRejected",
+    "InvalidResponse",
+};
+
+interface AlpacaObservingConditionsController {
+    constructor();
+
+    [Throws=ObservingConditionsError]
+    AlpacaObservingConditionsInfo connect(string host, u32 port, u32 device_number);
+
+    [Throws=ObservingConditionsError]
+    void disconnect();
+
+    boolean is_connected();
+
+    f64 get_temperature();
+    f64 get_humidity();
+    f64 get_dewpoint();
+    f64 get_pressure();
+    f64 get_wind_speed();
+    f64 get_wind_direction();
+    f64 get_cloud_cover();
+    f64 get_sky_brightness();
+    f64 get_sky_temperature();
+    f64 get_star_fwhm();
+};
+
+// ── Alpaca Cover Calibrator ──
+
+dictionary AlpacaCoverCalibratorInfo {
+    string name;
+    i32 cover_state;
+    i32 calibrator_state;
+    i32 brightness;
+    i32 max_brightness;
+};
+
+[Error]
+enum CoverCalibratorError {
+    "NotConnected",
+    "ConnectionFailed",
+    "CommunicationError",
+    "CommandRejected",
+    "InvalidResponse",
+};
+
+interface AlpacaCoverCalibratorController {
+    constructor();
+
+    [Throws=CoverCalibratorError]
+    AlpacaCoverCalibratorInfo connect(string host, u32 port, u32 device_number);
+
+    [Throws=CoverCalibratorError]
+    void disconnect();
+
+    boolean is_connected();
+
+    [Throws=CoverCalibratorError]
+    i32 get_cover_state();
+
+    [Throws=CoverCalibratorError]
+    i32 get_calibrator_state();
+
+    [Throws=CoverCalibratorError]
+    i32 get_brightness();
+
+    [Throws=CoverCalibratorError]
+    i32 get_max_brightness();
+
+    [Throws=CoverCalibratorError]
+    void open_cover();
+
+    [Throws=CoverCalibratorError]
+    void close_cover();
+
+    [Throws=CoverCalibratorError]
+    void halt_cover();
+
+    [Throws=CoverCalibratorError]
+    void calibrator_on(i32 brightness);
+
+    [Throws=CoverCalibratorError]
+    void calibrator_off();
 };

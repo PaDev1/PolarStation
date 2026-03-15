@@ -378,6 +378,7 @@ final class SimulatedGuideEngine: ObservableObject {
         let x1 = min(width - 1, Int(cx) + radius)
         let y0 = max(0, Int(cy) - radius)
         let y1 = min(height - 1, Int(cy) + radius)
+        guard x0 <= x1 && y0 <= y1 else { return }
         let twoSigmaSq = 2.0 * sigma * sigma
 
         for y in y0...y1 {

@@ -58,6 +58,10 @@ impl TrackingRate {
 /// All methods take `&mut self` since serial/network I/O is stateful.
 pub trait MountBackendTrait: Send {
     fn get_status(&mut self) -> Result<MountStatus, MountError>;
+    /// Lightweight status: only RA, Dec, tracking, slewing. Default falls back to full status.
+    fn get_status_light(&mut self) -> Result<MountStatus, MountError> {
+        self.get_status()
+    }
     fn slew_ra_degrees(&mut self, degrees: f64) -> Result<(), MountError>;
     fn set_tracking(&mut self, enabled: bool) -> Result<(), MountError>;
     fn abort(&mut self) -> Result<(), MountError>;
@@ -121,8 +125,8 @@ impl MountController {
     }
 
     /// Connect to an ASCOM Alpaca mount over HTTP.
-    pub fn connect_alpaca(&self, host: String, port: u32) -> Result<(), MountError> {
-        let client = alpaca::AlpacaClient::new(&host, port as u16)?;
+    pub fn connect_alpaca(&self, host: String, port: u32, device_number: u32) -> Result<(), MountError> {
+        let client = alpaca::AlpacaClient::new(&host, port as u16, device_number)?;
         client.set_connected_flag(true)?;
         let mut guard = self.backend.lock().unwrap();
         *guard = Some(Box::new(client));
@@ -171,6 +175,15 @@ impl MountController {
         let mut guard = self.backend.lock().unwrap();
         match guard.as_mut() {
             Some(backend) => backend.get_status(),
+            None => Err(MountError::NotConnected),
+        }
+    }
+
+    /// Lightweight status: only RA, Dec, tracking, slewing (fewer HTTP calls).
+    pub fn get_status_light(&self) -> Result<MountStatus, MountError> {
+        let mut guard = self.backend.lock().unwrap();
+        match guard.as_mut() {
+            Some(backend) => backend.get_status_light(),
             None => Err(MountError::NotConnected),
         }
     }

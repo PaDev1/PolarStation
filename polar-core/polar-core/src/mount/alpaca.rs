@@ -18,8 +18,8 @@ pub struct AlpacaClient {
 }
 
 impl AlpacaClient {
-    pub fn new(host: &str, port: u16) -> Result<Self, MountError> {
-        let base_url = format!("http://{}:{}/api/v1/telescope/0", host, port);
+    pub fn new(host: &str, port: u16, device_number: u32) -> Result<Self, MountError> {
+        let base_url = format!("http://{}:{}/api/v1/telescope/{}", host, port, device_number);
         let config = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(10)))
             .build();
@@ -134,6 +134,27 @@ impl AlpacaClient {
         })
     }
 
+    /// Lightweight status: only RA, Dec, tracking, slewing (4 GETs instead of 8).
+    /// Use for idle polling when alt/az, tracking_rate, and at_park are not needed.
+    pub fn get_status_light(&self) -> Result<MountStatus, MountError> {
+        let ra_hours = self.get_float("rightascension")?;
+        let dec_deg = self.get_float("declination")?;
+        let tracking = self.get_bool("tracking").unwrap_or(false);
+        let slewing = self.get_bool("slewing").unwrap_or(false);
+
+        Ok(MountStatus {
+            connected: true,
+            ra_hours,
+            dec_deg,
+            alt_deg: f64::NAN,
+            az_deg: f64::NAN,
+            tracking,
+            slewing,
+            tracking_rate: 0,
+            at_park: false,
+        })
+    }
+
     pub fn slew_ra_degrees(&self, degrees: f64) -> Result<(), MountError> {
         // Get current position
         let current_ra = self.get_float("rightascension")?;
@@ -142,22 +163,14 @@ impl AlpacaClient {
         // Convert degrees to hours for RA
         let target_ra = (current_ra + degrees / 15.0).rem_euclid(24.0);
 
-        // Use SlewToCoordinatesAsync for non-blocking slew
+        // Start async slew and return immediately.
+        // Swift polling will detect slewing==false when complete.
         let ra_str = target_ra.to_string();
         let dec_str = current_dec.to_string();
         self.put("slewtocoordinatesasync", &[
             ("RightAscension", &ra_str),
             ("Declination", &dec_str),
-        ])?;
-
-        // Wait for slew to complete (poll every 500ms, timeout 60s)
-        for _ in 0..120 {
-            std::thread::sleep(Duration::from_millis(500));
-            if !self.get_bool("slewing").unwrap_or(true) {
-                return Ok(());
-            }
-        }
-        Err(MountError::Timeout)
+        ])
     }
 
     pub fn set_tracking(&self, enabled: bool) -> Result<(), MountError> {
@@ -208,6 +221,10 @@ impl AlpacaClient {
 impl super::MountBackendTrait for AlpacaClient {
     fn get_status(&mut self) -> Result<MountStatus, MountError> {
         AlpacaClient::get_status(self)
+    }
+
+    fn get_status_light(&mut self) -> Result<MountStatus, MountError> {
+        AlpacaClient::get_status_light(self)
     }
 
     fn slew_ra_degrees(&mut self, degrees: f64) -> Result<(), MountError> {
@@ -283,6 +300,83 @@ pub fn discover(timeout: Duration) -> Vec<String> {
     }
 
     results
+}
+
+/// Query the Alpaca management API for configured telescope (mount) devices.
+/// Same pattern as camera and filter wheel discovery.
+pub fn discover_alpaca_mounts(
+    host: String,
+    port: u16,
+) -> Result<Vec<crate::camera::AlpacaDeviceInfo>, MountError> {
+    let url = format!(
+        "http://{}:{}/management/v1/configureddevices",
+        host, port
+    );
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(10)))
+        .build();
+    let agent = config.new_agent();
+    let mut resp = agent
+        .get(&url)
+        .call()
+        .map_err(|_| MountError::CommunicationError)?;
+    let body = resp
+        .body_mut()
+        .read_to_string()
+        .map_err(|_| MountError::InvalidResponse)?;
+
+    let mut mounts = Vec::new();
+    let value_key = "\"Value\"";
+    let pos = match body.find(value_key) {
+        Some(p) => p,
+        None => return Ok(mounts),
+    };
+    let rest = &body[pos + value_key.len()..];
+    let rest = rest.trim_start();
+    let rest = match rest.strip_prefix(':') {
+        Some(r) => r.trim_start(),
+        None => return Ok(mounts),
+    };
+    let rest = match rest.strip_prefix('[') {
+        Some(r) => r,
+        None => return Ok(mounts),
+    };
+
+    for chunk in rest.split('{').skip(1) {
+        let device_name = extract_mount_string_field(chunk, "DeviceName").unwrap_or_default();
+        let device_type = extract_mount_string_field(chunk, "DeviceType").unwrap_or_default();
+        let device_number = extract_mount_number_field(chunk, "DeviceNumber").unwrap_or(0);
+
+        if device_type.eq_ignore_ascii_case("telescope") {
+            mounts.push(crate::camera::AlpacaDeviceInfo {
+                device_name,
+                device_type,
+                device_number,
+            });
+        }
+    }
+
+    Ok(mounts)
+}
+
+fn extract_mount_string_field(json_chunk: &str, field: &str) -> Option<String> {
+    let key = format!("\"{}\"", field);
+    let pos = json_chunk.find(&key)?;
+    let rest = &json_chunk[pos + key.len()..];
+    let rest = rest.trim_start().strip_prefix(':')?;
+    let rest = rest.trim_start().strip_prefix('"')?;
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+fn extract_mount_number_field(json_chunk: &str, field: &str) -> Option<u32> {
+    let key = format!("\"{}\"", field);
+    let pos = json_chunk.find(&key)?;
+    let rest = &json_chunk[pos + key.len()..];
+    let rest = rest.trim_start().strip_prefix(':')?;
+    let rest = rest.trim_start();
+    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    rest[..end].parse().ok()
 }
 
 /// Extract the "Value" field from an Alpaca JSON response.

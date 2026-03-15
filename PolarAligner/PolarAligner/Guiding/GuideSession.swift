@@ -137,6 +137,19 @@ final class GuideSession: ObservableObject {
         log("[Guide] STOPPED")
     }
 
+    /// Dither: shift the guide reference position by a random offset within `pixels` radius.
+    /// The guide loop will then correct the mount to the new position, effectively dithering.
+    func dither(pixels: Double) {
+        guard isGuiding, let ref = referencePosition else { return }
+        let angle = Double.random(in: 0..<(2 * .pi))
+        let radius = Double.random(in: 0.5...pixels)
+        let dx = radius * cos(angle)
+        let dy = radius * sin(angle)
+        referencePosition = CGPoint(x: ref.x + dx, y: ref.y + dy)
+        log("[Guide] DITHER by (\(String(format: "%.1f", dx)), \(String(format: "%.1f", dy))) px")
+        statusMessage = "Dithering..."
+    }
+
     private func guideLoop(
         calibrator: GuideCalibrator,
         cameraViewModel: CameraViewModel,

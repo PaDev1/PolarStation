@@ -243,37 +243,20 @@ final class StarDetectorTests: XCTestCase {
 
     // MARK: - Simulator-matching Tests
 
-    /// Test star detection with parameters matching the SimulatedGuideEngine output.
-    /// Image: 640x480, 15 stars, background 0.047, stars 0.16-0.86 (normalized from 8-bit).
+    /// Test classical star detection with simulator-matching parameters.
     func testDetectionWithSimulatorParameters() throws {
-        let width = 640
-        let height = 480
-
-        // Recreate the simulator's star field (normalized to 0-1 float from 0-255 ADU)
-        let bg: Float = 12.0 / 255.0  // ~0.047
-        let starSpecs: [(x: Float, y: Float, brightness: Float, fwhm: Float)] = [
-            // Bright guide star near center
-            (x: 330, y: 237, brightness: 220.0 / 255.0, fwhm: 2.0),
-            // Second bright star
-            (x: 267, y: 273, brightness: 160.0 / 255.0, fwhm: 2.0),
-            // Dimmer stars spread around
-            (x: 100, y: 100, brightness: 80.0 / 255.0, fwhm: 2.0),
-            (x: 500, y: 350, brightness: 120.0 / 255.0, fwhm: 2.0),
-            (x: 200, y: 400, brightness: 60.0 / 255.0, fwhm: 2.0),
-        ]
-
-        guard let texture = createSyntheticStarfieldWithBackground(
-            width: width, height: height, background: bg, stars: starSpecs
-        ) else {
-            XCTFail("Failed to create texture")
-            return
-        }
-
         var config = StarDetectionConfig()
         config.minSNR = 3.0
         config.detectionSigma = 3.0
 
         let detector = ClassicalDetector(config: config)
+
+        let stars = simulatorStarSpecs()
+        guard let texture = createSimulatorStarfield(stars: stars) else {
+            XCTFail("Failed to create texture")
+            return
+        }
+
         let detected = try detector.detectStars(in: texture, device: device, commandQueue: commandQueue)
 
         print("[Test] Detected \(detected.count) stars from simulator-like frame")
@@ -283,16 +266,19 @@ final class StarDetectorTests: XCTestCase {
                   "snr=\(String(format: "%.1f", star.snr)), fwhm=\(String(format: "%.1f", star.fwhm))")
         }
 
-        XCTAssertGreaterThanOrEqual(detected.count, 2,
-                                    "Should detect at least 2 stars in simulator-like frame (got \(detected.count))")
+        XCTAssertGreaterThanOrEqual(detected.count, 5,
+                                    "Should detect at least 5 stars in simulator-like frame (got \(detected.count))")
     }
 
-    /// Create a synthetic starfield with configurable background level.
-    private func createSyntheticStarfieldWithBackground(
-        width: Int,
-        height: Int,
-        background: Float,
-        stars: [(x: Float, y: Float, brightness: Float, fwhm: Float)]
+    /// Create a synthetic starfield matching simulator parameters.
+    /// Includes Gaussian noise on the background, matching SimulatedAlignmentEngine output.
+    private func createSimulatorStarfield(
+        width: Int = 1920,
+        height: Int = 1080,
+        background: Float = 0.05,
+        noiseStd: Float = 0.012,
+        stars: [(x: Float, y: Float, brightness: Float, fwhm: Float)],
+        seed: UInt64 = 42
     ) -> MTLTexture? {
         let desc = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba16Float,
@@ -306,16 +292,30 @@ final class StarDetectorTests: XCTestCase {
 
         var pixels = [UInt16](repeating: 0, count: width * height * 4)
 
+        // Simple deterministic noise via LCG
+        var rng = seed
+        func nextGaussian() -> Float {
+            // Box-Muller from LCG
+            rng = rng &* 6364136223846793005 &+ 1442695040888963407
+            let u1 = max(Float(rng >> 33) / Float(1 << 31), 1e-10)
+            rng = rng &* 6364136223846793005 &+ 1442695040888963407
+            let u2 = Float(rng >> 33) / Float(1 << 31)
+            return sqrtf(-2.0 * logf(u1)) * cosf(2.0 * .pi * u2)
+        }
+
         for y in 0..<height {
             for x in 0..<width {
-                var value = background
+                var value = max(0, background + nextGaussian() * noiseStd)
 
                 for star in stars {
                     let sigma = star.fwhm / 2.355
                     let dx = Float(x) - star.x
                     let dy = Float(y) - star.y
                     let r2 = dx * dx + dy * dy
-                    value += star.brightness * exp(-r2 / (2 * sigma * sigma))
+                    let radius = sigma * 4
+                    if r2 < radius * radius {
+                        value += star.brightness * exp(-r2 / (2 * sigma * sigma))
+                    }
                 }
 
                 let idx = (y * width + x) * 4
@@ -334,6 +334,37 @@ final class StarDetectorTests: XCTestCase {
         return texture
     }
 
+    /// Generate simulator-like star specs: 20 stars with varying brightness (0.15-0.85).
+    private func simulatorStarSpecs(width: Int = 1920, height: Int = 1080) -> [(x: Float, y: Float, brightness: Float, fwhm: Float)] {
+        // Matches SimulatedGuideEngine: 25 stars, brightness 0.15-0.85, FWHM ~3-5px
+        let margin: Float = 50
+        return [
+            // Bright stars
+            (x: 960, y: 540, brightness: 0.85, fwhm: 4.0),
+            (x: 400, y: 300, brightness: 0.70, fwhm: 3.5),
+            (x: 1500, y: 800, brightness: 0.65, fwhm: 4.0),
+            // Medium stars
+            (x: 200, y: 150, brightness: 0.50, fwhm: 3.5),
+            (x: 1700, y: 200, brightness: 0.45, fwhm: 3.0),
+            (x: 800, y: 900, brightness: 0.40, fwhm: 4.5),
+            (x: 1200, y: 400, brightness: 0.38, fwhm: 3.5),
+            (x: 500, y: 700, brightness: 0.35, fwhm: 3.0),
+            (x: 1400, y: 550, brightness: 0.33, fwhm: 4.0),
+            (x: 300, y: 950, brightness: 0.30, fwhm: 3.5),
+            // Faint stars
+            (x: 1100, y: 200, brightness: 0.28, fwhm: 3.0),
+            (x: 700, y: 400, brightness: 0.25, fwhm: 3.5),
+            (x: 1600, y: 600, brightness: 0.23, fwhm: 4.0),
+            (x: 150, y: 500, brightness: 0.22, fwhm: 3.0),
+            (x: 1000, y: 750, brightness: 0.20, fwhm: 3.5),
+            (x: 600, y: 100, brightness: 0.19, fwhm: 3.0),
+            (x: 1300, y: 950, brightness: 0.18, fwhm: 4.0),
+            (x: 850, y: 250, brightness: 0.17, fwhm: 3.5),
+            (x: 450, y: 850, brightness: 0.16, fwhm: 3.0),
+            (x: 1750, y: 450, brightness: 0.15, fwhm: 3.5),
+        ]
+    }
+
     // MARK: - CoreML Detector Tests
 
     /// Helper to create a CoreMLDetector with the bundled StarDetector model loaded.
@@ -343,7 +374,7 @@ final class StarDetectorTests: XCTestCase {
         return detector
     }
 
-    /// Test that CoreMLDetector loads the model and detects stars in a synthetic starfield.
+    /// Test that CoreMLDetector detects stars in a simulator-like starfield (1920×1080, 20 stars).
     func testCoreMLDetectorFindsStars() throws {
         let detector: CoreMLDetector
         do {
@@ -352,21 +383,8 @@ final class StarDetectorTests: XCTestCase {
             throw XCTSkip("CoreML model not available in test bundle: \(error)")
         }
 
-        let width = 640
-        let height = 480
-        let bg: Float = 12.0 / 255.0
-
-        let starSpecs: [(x: Float, y: Float, brightness: Float, fwhm: Float)] = [
-            (x: 330, y: 237, brightness: 220.0 / 255.0, fwhm: 3.0),
-            (x: 267, y: 273, brightness: 160.0 / 255.0, fwhm: 3.0),
-            (x: 100, y: 100, brightness: 80.0 / 255.0, fwhm: 3.0),
-            (x: 500, y: 350, brightness: 120.0 / 255.0, fwhm: 3.0),
-            (x: 200, y: 400, brightness: 60.0 / 255.0, fwhm: 3.0),
-        ]
-
-        guard let texture = createSyntheticStarfieldWithBackground(
-            width: width, height: height, background: bg, stars: starSpecs
-        ) else {
+        let stars = simulatorStarSpecs()
+        guard let texture = createSimulatorStarfield(stars: stars) else {
             XCTFail("Failed to create texture")
             return
         }
@@ -379,8 +397,9 @@ final class StarDetectorTests: XCTestCase {
                   "brightness=\(String(format: "%.3f", star.brightness)), snr=\(String(format: "%.1f", star.snr))")
         }
 
-        XCTAssertGreaterThanOrEqual(detected.count, 1,
-                                    "CoreML detector should find at least 1 star (got \(detected.count))")
+        // Should detect most of the 20 stars (model F1>99% on similar data)
+        XCTAssertGreaterThanOrEqual(detected.count, 5,
+                                    "CoreML detector should find at least 5 of 20 stars (got \(detected.count))")
     }
 
     /// Test that CoreML detector results are sorted by brightness descending.
@@ -392,21 +411,15 @@ final class StarDetectorTests: XCTestCase {
             throw XCTSkip("CoreML model not available in test bundle: \(error)")
         }
 
-        let starSpecs: [(x: Float, y: Float, brightness: Float, fwhm: Float)] = [
-            (x: 80, y: 80, brightness: 0.3, fwhm: 3.0),
-            (x: 200, y: 80, brightness: 0.9, fwhm: 3.0),
-            (x: 140, y: 200, brightness: 0.6, fwhm: 3.0),
-        ]
-
-        guard let texture = createSyntheticStarfieldWithBackground(
-            width: 300, height: 300, background: 0.05, stars: starSpecs
-        ) else {
+        let stars = simulatorStarSpecs()
+        guard let texture = createSimulatorStarfield(stars: stars) else {
             XCTFail("Failed to create texture")
             return
         }
 
         let detected = try detector.detectStars(in: texture, device: device, commandQueue: commandQueue)
 
+        XCTAssertGreaterThan(detected.count, 0, "Should detect at least one star")
         for i in 1..<detected.count {
             XCTAssertGreaterThanOrEqual(detected[i - 1].brightness, detected[i].brightness,
                                         "CoreML stars should be sorted by brightness (descending)")
@@ -438,34 +451,23 @@ final class StarDetectorTests: XCTestCase {
                                     "Fallback classical detector should find stars (got \(detected.count))")
     }
 
-    /// Compare CoreML and Classical detector results on the same image.
+    /// Compare CoreML and Classical detector results on the same simulator-like image.
     func testCoreMLVsClassicalComparison() throws {
+        var config = StarDetectionConfig()
+        config.minSNR = 2.0
+        config.detectionSigma = 2.0
+
         let coremlDetector: CoreMLDetector
         do {
-            coremlDetector = try makeCoreMLDetector()
+            coremlDetector = try makeCoreMLDetector(config: config)
         } catch {
             throw XCTSkip("CoreML model not available in test bundle: \(error)")
         }
 
-        var config = StarDetectionConfig()
-        config.minSNR = 2.0
-        config.detectionSigma = 2.0
         let classicalDetector = ClassicalDetector(config: config)
 
-        let width = 640
-        let height = 480
-        let bg: Float = 12.0 / 255.0
-
-        let starSpecs: [(x: Float, y: Float, brightness: Float, fwhm: Float)] = [
-            (x: 330, y: 237, brightness: 220.0 / 255.0, fwhm: 3.0),
-            (x: 267, y: 273, brightness: 160.0 / 255.0, fwhm: 3.0),
-            (x: 100, y: 100, brightness: 80.0 / 255.0, fwhm: 3.0),
-            (x: 500, y: 350, brightness: 120.0 / 255.0, fwhm: 3.0),
-        ]
-
-        guard let texture = createSyntheticStarfieldWithBackground(
-            width: width, height: height, background: bg, stars: starSpecs
-        ) else {
+        let stars = simulatorStarSpecs()
+        guard let texture = createSimulatorStarfield(stars: stars) else {
             XCTFail("Failed to create texture")
             return
         }
@@ -483,9 +485,9 @@ final class StarDetectorTests: XCTestCase {
             print("  Classic  \(i): (\(String(format: "%.1f", star.x)), \(String(format: "%.1f", star.y)))")
         }
 
-        // Both should find some stars — not asserting exact match since methods differ
-        XCTAssertGreaterThanOrEqual(coremlStars.count, 1, "CoreML should detect stars")
-        XCTAssertGreaterThanOrEqual(classicalStars.count, 1, "Classical should detect stars")
+        // Both should find stars in the simulator-like image
+        XCTAssertGreaterThanOrEqual(coremlStars.count, 5, "CoreML should detect stars")
+        XCTAssertGreaterThanOrEqual(classicalStars.count, 5, "Classical should detect stars")
     }
 
     // MARK: - Half-float conversion

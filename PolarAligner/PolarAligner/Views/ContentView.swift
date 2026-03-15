@@ -7,52 +7,76 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedTab) {
-                NavigationLink("Alignment", value: "alignment")
-                NavigationLink("Adjustment", value: "adjustment")
+                NavigationLink("Polar Alignment", value: "alignment")
                 NavigationLink("Mount", value: "mount")
                 NavigationLink("Camera", value: "camera")
                 NavigationLink("Guide Camera", value: "guide")
+                NavigationLink("Sequencer", value: "sequencer")
                 NavigationLink("Settings", value: "settings")
             }
-            .navigationTitle("PolarAligner")
+            .navigationTitle("PolarStation")
         } detail: {
-            switch selectedTab {
-            case "alignment":
-                AlignmentView(
-                    coordinator: appState.alignmentCoordinator,
-                    cameraViewModel: appState.cameraViewModel,
-                    selectedTab: $selectedTab
-                )
-            case "adjustment":
-                AdjustmentView(errorTracker: appState.errorTracker)
-            case "mount":
-                MountTabView(
-                    mountService: appState.mountService,
-                    plateSolveService: appState.plateSolveService
-                )
-            case "camera":
-                CameraTabView(viewModel: appState.cameraViewModel)
-            case "guide":
-                GuideTabView(
-                    cameraViewModel: appState.guideCameraViewModel,
-                    calibrator: appState.guideCalibrator,
-                    session: appState.guideSession,
-                    mountService: appState.mountService,
-                    simulatedGuideEngine: appState.simulatedGuideEngine
-                )
-            case "settings":
-                SettingsView(
-                    mountService: appState.mountService,
-                    plateSolveService: appState.plateSolveService,
-                    coordinator: appState.alignmentCoordinator,
-                    cameraViewModel: appState.cameraViewModel,
-                    guideCameraViewModel: appState.guideCameraViewModel,
-                    filterWheelViewModel: appState.filterWheelViewModel
-                )
-            default:
-                Text("Select a tab")
-                    .foregroundStyle(.secondary)
+            Group {
+                switch selectedTab {
+                case "alignment":
+                    PolarAlignmentView(
+                        coordinator: appState.alignmentCoordinator,
+                        cameraViewModel: appState.cameraViewModel,
+                        engine: appState.simulatedAlignmentEngine,
+                        plateSolveService: appState.plateSolveService,
+                        errorTracker: appState.errorTracker
+                    )
+                case "mount":
+                    MountTabView(
+                        mountService: appState.mountService,
+                        plateSolveService: appState.plateSolveService,
+                        sequenceDocument: $appState.sequenceDocument,
+                        onSwitchToSequencer: { selectedTab = "sequencer" },
+                        skyMapVM: appState.skyMapViewModel,
+                        vm: appState.mountTabViewModel
+                    )
+                case "camera":
+                    CameraTabView(mainCamera: appState.cameraViewModel, guideCamera: appState.guideCameraViewModel)
+                case "guide":
+                    GuideTabView(
+                        cameraViewModel: appState.guideCameraViewModel,
+                        calibrator: appState.guideCalibrator,
+                        session: appState.guideSession,
+                        mountService: appState.mountService,
+                        simulatedGuideEngine: appState.simulatedGuideEngine
+                    )
+                case "sequencer":
+                    SequencerView(
+                        engine: appState.sequenceEngine,
+                        filterWheelViewModel: appState.filterWheelViewModel,
+                        document: $appState.sequenceDocument,
+                        selectedItemId: $appState.sequenceSelectedItemId
+                    )
+                case "settings":
+                    SettingsView(
+                        mountService: appState.mountService,
+                        plateSolveService: appState.plateSolveService,
+                        coordinator: appState.alignmentCoordinator,
+                        cameraViewModel: appState.cameraViewModel,
+                        guideCameraViewModel: appState.guideCameraViewModel,
+                        filterWheelViewModel: appState.filterWheelViewModel,
+                        focuserViewModel: appState.focuserViewModel,
+                        domeViewModel: appState.domeViewModel,
+                        rotatorViewModel: appState.rotatorViewModel,
+                        switchViewModel: appState.switchViewModel,
+                        safetyMonitorViewModel: appState.safetyMonitorViewModel,
+                        observingConditionsViewModel: appState.observingConditionsViewModel,
+                        coverCalibratorViewModel: appState.coverCalibratorViewModel
+                    )
+                default:
+                    Text("Select a tab")
+                        .foregroundStyle(.secondary)
+                }
             }
+            // Force complete attribute graph teardown on tab switch.
+            // Without this, SwiftUI accumulates internal graph nodes across
+            // tab transitions, causing exponential layout cost over time.
+            .id(selectedTab)
         }
     }
 
