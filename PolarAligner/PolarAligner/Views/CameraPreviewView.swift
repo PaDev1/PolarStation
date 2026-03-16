@@ -146,6 +146,19 @@ final class CameraPreviewViewModel: ObservableObject {
     @Published var isCapturing = false
     /// Frame stats — only frameRate is @Published to minimize SwiftUI invalidation.
     @Published var frameRate: Double = 0
+
+    /// Auto-stretch toggle: when enabled, computes PixInsight-style STF from image statistics.
+    @Published var autoStretchEnabled = false {
+        didSet { _autoStretchFlag.pointee = autoStretchEnabled ? 1 : 0 }
+    }
+
+    /// Current STF parameters (computed from image stats when autoStretch is on).
+    var stfBlackPoint: Float = 0.0
+    var stfWhitePoint: Float = 1.0
+    var stfMidtones: Float = 0.5
+
+    /// Nonisolated-safe flag for reading autoStretchEnabled from capture thread.
+    private let _autoStretchFlag = UnsafeMutablePointer<Int32>.allocate(capacity: 1)
     var frameCount: UInt64 = 0
     /// Time of last received frame (CFAbsoluteTime). UI can compare to `now` for activity indicator.
     var lastFrameTimestamp: CFAbsoluteTime = 0
@@ -175,11 +188,13 @@ final class CameraPreviewViewModel: ObservableObject {
         self.pipeline = try? MetalPipeline()
         _processing.initialize(to: 0)
         _captureFrameCount.initialize(to: 0)
+        _autoStretchFlag.initialize(to: 0)
     }
 
     deinit {
         _processing.deallocate()
         _captureFrameCount.deallocate()
+        _autoStretchFlag.deallocate()
     }
 
     /// Called from the capture thread — dispatches to main for texture update.
@@ -199,15 +214,41 @@ final class CameraPreviewViewModel: ObservableObject {
         // Copy the buffer since it will be reused by the capture thread
         let dataCopy = Data(buffer)
 
+        // Compute STF stats on capture thread (cheap, avoids main thread work)
+        let wantSTF = _autoStretchFlag.pointee != 0
+        let stfParams: (black: Float, white: Float, mid: Float)?
+        if wantSTF {
+            stfParams = Self.computeSTFParamsSync(data: dataCopy, width: width, height: height, bytesPerPixel: bytesPerPixel)
+        } else {
+            stfParams = nil
+        }
+
         Task { @MainActor [weak self] in
             guard let self = self else { return }
+
+            // Apply STF params if computed
+            if let stf = stfParams {
+                self.stfBlackPoint = stf.black
+                self.stfWhitePoint = stf.white
+                self.stfMidtones = stf.mid
+            }
+
+            let useSTF = self.autoStretchEnabled
+            let bp = useSTF ? self.stfBlackPoint : Float(0.0)
+            let wp = useSTF ? self.stfWhitePoint : Float(1.0)
+            let mid = useSTF ? self.stfMidtones : Float(0.5)
+
             dataCopy.withUnsafeBytes { rawBuffer in
                 guard let ptr = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
                 self.displayTexture = self.pipeline?.processFrame(
                     rawData: ptr,
                     width: width,
                     height: height,
-                    bytesPerPixel: bytesPerPixel
+                    bytesPerPixel: bytesPerPixel,
+                    blackPoint: bp,
+                    whitePoint: wp,
+                    midtones: mid,
+                    useSTF: useSTF
                 )
             }
 
@@ -240,6 +281,86 @@ final class CameraPreviewViewModel: ObservableObject {
         lastFrameTime = 0
         frameRate = 0
         lastFrameTimestamp = 0
+    }
+
+    // MARK: - PixInsight STF Auto-Stretch
+
+    /// Compute STF parameters (black point, white point, midtones balance) from raw image data.
+    /// Uses median + MAD statistics with the standard PixInsight defaults:
+    /// shadowsClipping = -2.8 sigma, targetBackground = 0.25.
+    /// Called from the capture thread — must be nonisolated.
+    private nonisolated static func computeSTFParamsSync(
+        data: Data, width: Int, height: Int, bytesPerPixel: Int
+    ) -> (black: Float, white: Float, mid: Float) {
+        let shadowsClipping: Float = -2.8
+        let targetBackground: Float = 0.25
+
+        // Sample luminance values (subsample for speed — every 4th pixel)
+        let pixelCount = width * height
+        let step = 4
+        let sampleCount = pixelCount / step
+        guard sampleCount > 100 else {
+            return (0.0, 1.0, 0.5)
+        }
+
+        var samples = [Float]()
+        samples.reserveCapacity(sampleCount)
+
+        data.withUnsafeBytes { rawBuffer in
+            if bytesPerPixel == 2 {
+                let raw16 = rawBuffer.bindMemory(to: UInt16.self)
+                for i in stride(from: 0, to: min(pixelCount, raw16.count), by: step) {
+                    samples.append(Float(raw16[i]) / 65535.0)
+                }
+            } else {
+                let raw8 = rawBuffer.bindMemory(to: UInt8.self)
+                for i in stride(from: 0, to: min(pixelCount, raw8.count), by: step) {
+                    samples.append(Float(raw8[i]) / 255.0)
+                }
+            }
+        }
+
+        guard !samples.isEmpty else { return (0.0, 1.0, 0.5) }
+
+        // Sort for median
+        samples.sort()
+
+        let n = samples.count
+        let median = (n % 2 == 0) ? (samples[n/2 - 1] + samples[n/2]) / 2.0 : samples[n/2]
+
+        // MAD (Median Absolute Deviation)
+        var deviations = samples.map { abs($0 - median) }
+        deviations.sort()
+        let rawMAD = (n % 2 == 0) ? (deviations[n/2 - 1] + deviations[n/2]) / 2.0 : deviations[n/2]
+        let mad = rawMAD * 1.4826  // normalize to sigma-equivalent
+
+        // Shadow clipping: clip at 2.8 sigma below median
+        let c0 = max(median + shadowsClipping * mad, 0.0)
+
+        // Adjusted median (relative to black point)
+        let m2 = median - c0
+
+        // Compute midtones balance: find m such that MTF(m2, m) = targetBackground
+        // Solving MTF(x, m) = t for m: m = (t * (2x-1) - x) / ((2t-1) * (x-1))
+        // where x = m2/(1-c0), t = targetBackground
+        let x = (c0 < 1.0) ? m2 / (1.0 - c0) : 0.0
+        let midtones: Float
+        if x <= 0.0 {
+            midtones = 0.0
+        } else if x >= 1.0 {
+            midtones = 0.5  // linear
+        } else if x == targetBackground {
+            midtones = 0.5
+        } else {
+            midtones = (targetBackground * (2.0 * x - 1.0) - x) /
+                       ((2.0 * targetBackground - 1.0) * (x - 1.0))
+        }
+
+        return (
+            black: c0,
+            white: Float(1.0),
+            mid: max(0.001, min(0.999, midtones))
+        )
     }
 }
 

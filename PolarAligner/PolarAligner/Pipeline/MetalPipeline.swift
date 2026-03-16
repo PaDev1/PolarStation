@@ -60,7 +60,9 @@ final class MetalPipeline {
         height: Int,
         bytesPerPixel: Int,
         blackPoint: Float = 0.0,
-        whitePoint: Float = 1.0
+        whitePoint: Float = 1.0,
+        midtones: Float = 0.5,
+        useSTF: Bool = false
     ) -> MTLTexture? {
         let dataSize = width * height * bytesPerPixel
         ensureRawBuffer(size: dataSize)
@@ -111,7 +113,8 @@ final class MetalPipeline {
         encoder.setTexture(intermediateTex, index: 0)
         encoder.setTexture(outTex, index: 1)
 
-        var stretchParams = StretchParams(blackPoint: blackPoint, whitePoint: whitePoint)
+        var stretchParams = StretchParams(blackPoint: blackPoint, whitePoint: whitePoint,
+                                             midtones: midtones, useSTF: useSTF ? 1 : 0)
         encoder.setBytes(&stretchParams, length: MemoryLayout<StretchParams>.size, index: 0)
 
         let stretchThreads = MTLSize(width: (width + 15) / 16, height: (height + 15) / 16, depth: 1)
@@ -159,6 +162,8 @@ struct DebayerParams {
 struct StretchParams {
     var blackPoint: Float
     var whitePoint: Float
+    var midtones: Float
+    var useSTF: UInt32
 }
 
 // MARK: - Errors

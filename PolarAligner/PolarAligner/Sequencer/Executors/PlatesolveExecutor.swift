@@ -36,81 +36,51 @@ struct PlatesolveExecutor: InstructionExecutor {
     }
 }
 
-/// Executor for `center_target` — iterative slew + plate solve + sync until centered.
+/// Executor for `center_target` — delegates to shared CenteringSolveService.
 struct CenterTargetExecutor: InstructionExecutor {
     let instructionType = "center_target"
 
-    /// Acceptable centering error in degrees.
-    private let toleranceDeg: Double = 0.05  // ~3 arcmin
-
     func execute(instruction: SequenceInstruction, context: ExecutionContext) async throws {
         let maxAttempts = instruction.params["attempts"]?.intValue ?? 3
+        let toleranceArcmin = instruction.params["tolerance_arcmin"]?.doubleValue ?? 3.0
         guard let target = context.targetInfo else {
             throw ExecutorError.missingParameter("No target for center_target")
-        }
-        guard let mount = context.deviceResolver.mount() else {
-            throw ExecutorError.deviceNotAvailable("mount")
-        }
-        guard let plateSolver = context.deviceResolver.plateSolver() else {
-            throw ExecutorError.deviceNotAvailable("plate_solver")
         }
         guard let camera = context.deviceResolver.camera() else {
             throw ExecutorError.deviceNotAvailable("imaging_camera")
         }
 
-        let targetRaH = target.ra  // RA in hours from TargetInfo
-        let targetDecDeg = target.dec
-
-        context.status("Centering on \(target.name) (max \(maxAttempts) attempts)")
-
-        for attempt in 1...maxAttempts {
-            try Task.checkCancellation()
-
-            // Step 1: Slew to target
-            context.status("Center attempt \(attempt)/\(maxAttempts): slewing...")
-            try await mount.gotoRADec(raHours: targetRaH, decDeg: targetDecDeg)
-
-            // Wait for mount to settle and camera to get fresh stars
-            try await Task.sleep(for: .seconds(3))
-
-            // Step 2: Plate solve current position
-            let stars = camera.detectedStars
-            guard !stars.isEmpty else {
-                context.status("Attempt \(attempt): no stars detected, retrying...")
-                continue
-            }
-
-            do {
-                let result = try await plateSolver.solveRobust(centroids: stars)
-                guard result.success else {
-                    context.status("Attempt \(attempt): solve failed, retrying...")
-                    continue
-                }
-
-                let solvedRaH = result.raDeg / 15.0
-                let solvedDecDeg = result.decDeg
-
-                // Step 3: Check if we're close enough
-                let raErrorDeg = abs(solvedRaH - targetRaH) * 15.0
-                let decErrorDeg = abs(solvedDecDeg - targetDecDeg)
-                let totalErrorDeg = sqrt(raErrorDeg * raErrorDeg + decErrorDeg * decErrorDeg)
-
-                context.status(String(format: "Attempt %d: error %.2f' (need < %.1f')",
-                                      attempt, totalErrorDeg * 60, toleranceDeg * 60))
-
-                if totalErrorDeg <= toleranceDeg {
-                    context.status("Target centered successfully")
-                    return
-                }
-
-                // Step 4: Sync mount to solved position, then re-slew
-                try await mount.syncPosition(raHours: solvedRaH, decDeg: solvedDecDeg)
-
-            } catch {
-                context.status("Attempt \(attempt): solve error — \(error.localizedDescription)")
-            }
+        // Use shared centering service if available, otherwise fall back to inline logic
+        guard let service = context.deviceResolver.centeringSolve() else {
+            throw ExecutorError.deviceNotAvailable("centering_solve_service")
         }
 
-        context.status("Centering: max attempts reached, continuing with current position")
+        context.status("Centering on \(target.name) (max \(maxAttempts) attempts, tolerance \(String(format: "%.1f", toleranceArcmin))′)")
+
+        // Configure service for this run
+        service.toleranceArcmin = toleranceArcmin
+        service.maxAttempts = maxAttempts
+
+        service.centerOnTarget(
+            targetRAHours: target.ra,
+            targetDecDeg: target.dec,
+            starProvider: { camera.detectedStars }
+        )
+
+        // Wait for centering to complete
+        while service.state.isActive {
+            try Task.checkCancellation()
+            context.status(service.statusMessage)
+            try await Task.sleep(for: .milliseconds(500))
+        }
+
+        switch service.state {
+        case .converged:
+            context.status("Target centered successfully")
+        case .failed(let msg):
+            context.status("Centering failed: \(msg)")
+        default:
+            context.status("Centering completed")
+        }
     }
 }

@@ -9,6 +9,8 @@ struct MountTabView: View {
     var onSwitchToSequencer: (() -> Void)?
     @ObservedObject var skyMapVM: SkyMapViewModel
     @ObservedObject var vm: MountTabViewModel
+    @ObservedObject var centeringSolveService: CenteringSolveService
+    @ObservedObject var cameraViewModel: CameraViewModel
 
     @AppStorage("observerLat") private var observerLat: Double = 60.17
     @AppStorage("observerLon") private var observerLon: Double = 24.94
@@ -57,7 +59,7 @@ struct MountTabView: View {
             // Left panel: controls
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Mount Control")
+                    Text("Framing & Mount")
                         .font(.title)
 
                     if !mountService.isConnected {
@@ -84,14 +86,14 @@ struct MountTabView: View {
             }
             .frame(minWidth: 280, idealWidth: 320, maxWidth: 380)
 
-            // Right panel: sky map + catalog (resizable split)
-            if vm.showCatalog {
+            // Right panel: sky map + optional panels below
+            if vm.showSolvePanel || vm.showCatalog {
                 VSplitView {
                     ZStack(alignment: .topLeading) {
                         SkyMapView(viewModel: skyMapVM) { raHours, decDeg in
                             if vm.isLiveTime { gotoTarget(raHours: raHours, decDeg: decDeg) }
                         }
-                        catalogToggleButton
+                        panelToggleButtons
                         // Planning mode indicator on map
                         if !vm.isLiveTime {
                             Text("Planning mode — GoTo disabled")
@@ -101,15 +103,21 @@ struct MountTabView: View {
                                 .background(.orange.opacity(0.7))
                                 .foregroundStyle(.white)
                                 .cornerRadius(4)
-                                .padding(.leading, 40)
+                                .padding(.leading, 80)
                                 .padding(.top, 6)
                                 .allowsHitTesting(false)
                         }
                     }
                     .frame(minHeight: 200)
 
-                    catalogPanel
-                        .frame(minHeight: 150, idealHeight: 250)
+                    if vm.showSolvePanel {
+                        solvePanel
+                            .frame(minHeight: 120, idealHeight: 180)
+                    }
+                    if vm.showCatalog {
+                        catalogPanel
+                            .frame(minHeight: 150, idealHeight: 250)
+                    }
                 }
                 .frame(minWidth: 400)
             } else {
@@ -117,7 +125,7 @@ struct MountTabView: View {
                     SkyMapView(viewModel: skyMapVM) { raHours, decDeg in
                         gotoTarget(raHours: raHours, decDeg: decDeg)
                     }
-                    catalogToggleButton
+                    panelToggleButtons
                 }
                 .frame(minWidth: 400)
             }
@@ -144,6 +152,13 @@ struct MountTabView: View {
                 return
             }
             skyMapVM.syncToMount(status: newStatus)
+        }
+        .onChange(of: centeringSolveService.lastSolveResult) { _, result in
+            guard let result, result.success else { return }
+            skyMapVM.solvedRA = result.raDeg
+            skyMapVM.solvedDec = result.decDeg
+            skyMapVM.solvedRollDeg = result.rollDeg
+            skyMapVM.solvedFOVDeg = result.fovDeg
         }
         .onChange(of: plateSolveService.isLoaded) { _, loaded in
             if loaded { loadStarCatalog() }
@@ -177,22 +192,183 @@ struct MountTabView: View {
         .onChange(of: obsWindowAzTo) { recomputeCatalog() }
     }
 
-    private var catalogToggleButton: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                vm.showCatalog.toggle()
+    private var panelToggleButtons: some View {
+        HStack(spacing: 4) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    vm.showSolvePanel.toggle()
+                }
+            } label: {
+                Image(systemName: vm.showSolvePanel ? "scope" : "dot.scope")
+                    .font(.system(size: 16))
+                    .padding(8)
+                    .background(.black.opacity(0.6))
+                    .clipShape(Circle())
+                    .foregroundStyle(vm.showSolvePanel ? .green : .white)
             }
-        } label: {
-            Image(systemName: vm.showCatalog ? "list.bullet.circle.fill" : "list.bullet.circle")
-                .font(.system(size: 16))
-                .padding(8)
-                .background(.black.opacity(0.6))
-                .clipShape(Circle())
-                .foregroundStyle(.white)
+            .buttonStyle(.plain)
+            .help("Toggle center & solve panel")
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    vm.showCatalog.toggle()
+                }
+            } label: {
+                Image(systemName: vm.showCatalog ? "list.bullet.circle.fill" : "list.bullet.circle")
+                    .font(.system(size: 16))
+                    .padding(8)
+                    .background(.black.opacity(0.6))
+                    .clipShape(Circle())
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+            .help("Toggle object catalog")
         }
-        .buttonStyle(.plain)
         .padding(8)
-        .help("Toggle object catalog")
+    }
+
+    // MARK: - Center & Solve Panel
+
+    private var solvePanel: some View {
+        VStack(spacing: 0) {
+            Divider()
+            VStack(alignment: .leading, spacing: 10) {
+                // Status line
+                HStack(spacing: 6) {
+                    switch centeringSolveService.state {
+                    case .idle:
+                        Image(systemName: "scope")
+                            .foregroundStyle(.secondary)
+                    case .solving:
+                        ProgressView().controlSize(.small)
+                    case .centering(let attempt):
+                        ProgressView().controlSize(.small)
+                        Text("Attempt \(attempt)/\(centeringSolveService.maxAttempts)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .converged:
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    case .failed:
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.red)
+                    }
+                    Text(centeringSolveService.statusMessage)
+                        .font(.system(size: 11))
+                        .lineLimit(2)
+                        .foregroundStyle(solvePanelTextColor)
+                    Spacer()
+                }
+
+                // Action buttons
+                HStack(spacing: 8) {
+                    Button("Solve") {
+                        Task {
+                            await centeringSolveService.solveOnce(stars: cameraViewModel.detectedStars)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(centeringSolveService.state.isActive)
+                    .help("One-shot plate solve — updates sky map FOV overlay")
+
+                    Button("Center") {
+                        guard let target = currentGoToTarget else { return }
+                        centeringSolveService.centerOnTarget(
+                            targetRAHours: target.raHours,
+                            targetDecDeg: target.decDeg,
+                            starProvider: { [weak cameraViewModel] in
+                                cameraViewModel?.detectedStars ?? []
+                            }
+                        )
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(centeringSolveService.state.isActive || !mountService.isConnected || currentGoToTarget == nil)
+                    .help(currentGoToTarget == nil ? "Enter target coordinates or select from catalog first" : "Iterative plate-solve centering on target")
+
+                    if centeringSolveService.state.isActive {
+                        Button("Stop") {
+                            centeringSolveService.cancel()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(.red)
+                    }
+
+                    Spacer()
+
+                    // Tolerance & attempts
+                    HStack(spacing: 4) {
+                        Text("Tol:")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        TextField("", value: $centeringSolveService.toleranceArcmin, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 40)
+                            .font(.system(size: 11))
+                        Text("′")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack(spacing: 4) {
+                        Text("Max:")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        TextField("", value: $centeringSolveService.maxAttempts, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 30)
+                            .font(.system(size: 11))
+                    }
+                }
+
+                // Results
+                if let result = centeringSolveService.lastSolveResult, result.success {
+                    Divider()
+                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
+                        GridRow {
+                            Text("Solved").foregroundStyle(.secondary)
+                            Text(String(format: "RA %.4fh  Dec %+.3f°", result.raDeg / 15.0, result.decDeg))
+                        }
+                        if let offset = centeringSolveService.lastOffsetArcmin,
+                           let raOff = centeringSolveService.lastRAOffsetArcmin,
+                           let decOff = centeringSolveService.lastDecOffsetArcmin {
+                            GridRow {
+                                Text("Offset").foregroundStyle(.secondary)
+                                Text(String(format: "%.1f′  (RA %+.1f′  Dec %+.1f′)", offset, raOff, decOff))
+                                    .foregroundStyle(offset < centeringSolveService.toleranceArcmin ? .green : .orange)
+                            }
+                        }
+                        GridRow {
+                            Text("Rotation").foregroundStyle(.secondary)
+                            Text(String(format: "%.1f°", result.rollDeg))
+                        }
+                        GridRow {
+                            Text("FOV").foregroundStyle(.secondary)
+                            Text(String(format: "%.2f°  •  %d stars  •  %.0fms", result.fovDeg, result.matchedStars, result.solveTimeMs))
+                        }
+                    }
+                    .font(.system(size: 11, design: .monospaced))
+                }
+            }
+            .padding(10)
+        }
+    }
+
+    private var solvePanelTextColor: Color {
+        switch centeringSolveService.state {
+        case .converged: return .green
+        case .failed: return .red
+        case .solving, .centering: return .primary
+        case .idle: return .secondary
+        }
+    }
+
+    /// Current GoTo target from the text fields (used by Center button).
+    private var currentGoToTarget: (raHours: Double, decDeg: Double)? {
+        guard let ra = Double(gotoRAText), let dec = Double(gotoDecText),
+              ra > 0 || dec != 0 else { return nil }
+        return (ra, dec)
     }
 
     // MARK: - Not Connected

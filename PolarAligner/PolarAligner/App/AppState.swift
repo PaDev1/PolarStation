@@ -21,6 +21,9 @@ final class AppState: ObservableObject {
     let errorTracker = ErrorTracker()
     let skyMapViewModel = SkyMapViewModel()
     let mountTabViewModel = MountTabViewModel()
+    lazy var centeringSolveService: CenteringSolveService = {
+        CenteringSolveService(plateSolveService: plateSolveService, mountService: mountService)
+    }()
     let guideSession = GuideSession()
     let simulatedGuideEngine = SimulatedGuideEngine()
     let simulatedAlignmentEngine = SimulatedAlignmentEngine()
@@ -54,7 +57,8 @@ final class AppState: ObservableObject {
             switchDev: switchViewModel,
             safetyMonitor: safetyMonitorViewModel,
             observingConditions: observingConditionsViewModel,
-            coverCalibrator: coverCalibratorViewModel
+            coverCalibrator: coverCalibratorViewModel,
+            centeringSolve: centeringSolveService
         )
     }
 

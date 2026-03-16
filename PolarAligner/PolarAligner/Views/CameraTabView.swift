@@ -230,6 +230,24 @@ private struct CameraViewerContent: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Divider().frame(height: 20)
+
+                // Auto-stretch toggle + settings popover
+                Button {
+                    viewModel.previewViewModel.autoStretchEnabled.toggle()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: viewModel.previewViewModel.autoStretchEnabled
+                              ? "wand.and.stars" : "wand.and.stars.inverse")
+                        Text("STF")
+                            .font(.system(size: 11))
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(viewModel.previewViewModel.autoStretchEnabled ? .cyan : nil)
+                .help("Auto-stretch (PixInsight STF) — adjusts display to show faint detail")
+
                 Spacer()
 
                 if viewModel.captureWidth > 0 && viewModel.isConnected {

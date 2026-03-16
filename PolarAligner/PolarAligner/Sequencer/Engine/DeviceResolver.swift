@@ -20,6 +20,7 @@ class DeviceResolver {
     private var safetyMonitorViewModel: SafetyMonitorViewModel?
     private var observingConditionsViewModel: ObservingConditionsViewModel?
     private var coverCalibratorViewModel: CoverCalibratorViewModel?
+    private var centeringSolveService: CenteringSolveService?
 
     func configure(
         mount: MountService,
@@ -34,7 +35,8 @@ class DeviceResolver {
         switchDev: SwitchViewModel? = nil,
         safetyMonitor: SafetyMonitorViewModel? = nil,
         observingConditions: ObservingConditionsViewModel? = nil,
-        coverCalibrator: CoverCalibratorViewModel? = nil
+        coverCalibrator: CoverCalibratorViewModel? = nil,
+        centeringSolve: CenteringSolveService? = nil
     ) {
         self.mountService = mount
         self.cameraViewModel = camera
@@ -49,9 +51,11 @@ class DeviceResolver {
         self.safetyMonitorViewModel = safetyMonitor
         self.observingConditionsViewModel = observingConditions
         self.coverCalibratorViewModel = coverCalibrator
+        self.centeringSolveService = centeringSolve
     }
 
     func mount() -> MountService? { mountService }
+    func centeringSolve() -> CenteringSolveService? { centeringSolveService }
     func camera() -> CameraViewModel? { cameraViewModel }
     func guideCamera() -> CameraViewModel? { guideCameraViewModel }
     func filterWheel() -> FilterWheelViewModel? { filterWheelViewModel }

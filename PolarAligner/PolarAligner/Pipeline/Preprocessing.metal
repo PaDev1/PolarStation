@@ -10,6 +10,8 @@ struct DebayerParams {
 struct StretchParams {
     float blackPoint;
     float whitePoint;
+    float midtones;    // MTF balance parameter (0..1); 0.5 = linear (no stretch)
+    uint  useSTF;      // 1 = use MTF auto-stretch, 0 = simple linear + gamma
 };
 
 // Sample a raw Bayer pixel with clamped coordinates, returning normalized [0,1].
@@ -118,8 +120,18 @@ fragment half4 blit_fragment(BlitVertexOut in [[stage_in]],
     return tex.sample(s, in.texCoord);
 }
 
+/// Midtone Transfer Function (PixInsight STF).
+/// MTF(x, m) = ((m-1)*x) / (((2m-1)*x) - m)
+/// Maps 0→0, m→0.5, 1→1. Lower m = more aggressive stretch.
+static float mtf(float x, float m) {
+    if (x <= 0.0) return 0.0;
+    if (x >= 1.0) return 1.0;
+    return ((m - 1.0) * x) / (((2.0 * m - 1.0) * x) - m);
+}
+
 /// Auto-stretch: map [blackPoint, whitePoint] to [0, 1] for display.
-/// Applies gamma correction (sRGB approximation).
+/// When useSTF=1, applies PixInsight-style Midtone Transfer Function.
+/// When useSTF=0, applies simple linear stretch + gamma 2.2.
 kernel void auto_stretch(
     texture2d<half, access::read>  input  [[texture(0)]],
     texture2d<half, access::write> output [[texture(1)]],
@@ -133,11 +145,18 @@ kernel void auto_stretch(
     float range = max(params.whitePoint - params.blackPoint, 0.001);
     float3 rgb = float3(pixel.rgb);
 
-    // Linear stretch
+    // Linear stretch to [0, 1]
     rgb = saturate((rgb - params.blackPoint) / range);
 
-    // Gamma correction for display
-    rgb = pow(rgb, float3(1.0 / 2.2));
+    if (params.useSTF != 0) {
+        // PixInsight STF: apply MTF per channel
+        rgb.r = mtf(rgb.r, params.midtones);
+        rgb.g = mtf(rgb.g, params.midtones);
+        rgb.b = mtf(rgb.b, params.midtones);
+    } else {
+        // Simple gamma correction for display
+        rgb = pow(rgb, float3(1.0 / 2.2));
+    }
 
     // Output as BGRA for CAMetalLayer
     output.write(half4(half(rgb.b), half(rgb.g), half(rgb.r), 1.0h), gid);

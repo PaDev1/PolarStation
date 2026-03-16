@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0b1829"/>
+      <stop offset="100%" stop-color="#060e1c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="256" cy="220" r="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3a7ec0" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#3a7ec0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="starGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="20%" stop-color="#cce4ff"/>
+      <stop offset="100%" stop-color="#4da6ff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="clip">
+      <rect width="512" height="512" rx="112"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="112" fill="url(#glow)"/>
+
+  <g clip-path="url(#clip)">
+
+    <!-- Star trail arcs: circles centered on Polaris (256, 220).
+         stroke-dasharray creates partial arcs.
+         Each circle = one star's trail at radius r.
+         Circumference = 2*pi*r. dash = arc length, gap = rest.
+         transform rotates to position the visible segment. -->
+
+    <!-- r=28, C=175.9, show ~110deg = 53.8 -->
+    <circle cx="256" cy="220" r="28" fill="none"
+            stroke="#8ec8f0" stroke-width="2.2" opacity="0.55"
+            stroke-dasharray="53.8 122.1" stroke-linecap="round"
+            transform="rotate(-200 256 220)"/>
+
+    <!-- r=52, C=326.7, show ~100deg = 90.8 -->
+    <circle cx="256" cy="220" r="52" fill="none"
+            stroke="#7ab8e4" stroke-width="2.4" opacity="0.5"
+            stroke-dasharray="90.8 235.9" stroke-linecap="round"
+            transform="rotate(-190 256 220)"/>
+
+    <!-- r=82, C=515.2, show ~95deg = 135.6 -->
+    <circle cx="256" cy="220" r="82" fill="none"
+            stroke="#68a8d6" stroke-width="2.2" opacity="0.42"
+            stroke-dasharray="135.6 379.6" stroke-linecap="round"
+            transform="rotate(-185 256 220)"/>
+
+    <!-- r=115, C=722.6, show ~90deg = 180.6 -->
+    <circle cx="256" cy="220" r="115" fill="none"
+            stroke="#5898c8" stroke-width="2.0" opacity="0.35"
+            stroke-dasharray="180.6 542.0" stroke-linecap="round"
+            transform="rotate(-180 256 220)"/>
+
+    <!-- r=152, C=955.0, show ~85deg = 225.0 -->
+    <circle cx="256" cy="220" r="152" fill="none"
+            stroke="#4888ba" stroke-width="1.8" opacity="0.28"
+            stroke-dasharray="225.0 730.0" stroke-linecap="round"
+            transform="rotate(-175 256 220)"/>
+
+    <!-- r=195, C=1225.2, show ~80deg = 272.0 -->
+    <circle cx="256" cy="220" r="195" fill="none"
+            stroke="#3a78aa" stroke-width="1.6" opacity="0.22"
+            stroke-dasharray="272.0 953.2" stroke-linecap="round"
+            transform="rotate(-172 256 220)"/>
+
+    <!-- Secondary shorter arcs (other stars, different angular position) -->
+
+    <!-- r=40, C=251.3, show ~70deg = 48.9 -->
+    <circle cx="256" cy="220" r="40" fill="none"
+            stroke="#7ab8e4" stroke-width="1.8" opacity="0.35"
+            stroke-dasharray="48.9 202.4" stroke-linecap="round"
+            transform="rotate(-40 256 220)"/>
+
+    <!-- r=70, C=439.8, show ~60deg = 73.3 -->
+    <circle cx="256" cy="220" r="70" fill="none"
+            stroke="#5898c8" stroke-width="1.6" opacity="0.28"
+            stroke-dasharray="73.3 366.5" stroke-linecap="round"
+            transform="rotate(-30 256 220)"/>
+
+    <!-- r=105, C=659.7, show ~55deg = 100.8 -->
+    <circle cx="256" cy="220" r="105" fill="none"
+            stroke="#4888ba" stroke-width="1.5" opacity="0.22"
+            stroke-dasharray="100.8 558.9" stroke-linecap="round"
+            transform="rotate(-25 256 220)"/>
+
+    <!-- r=140, C=879.6, show ~50deg = 122.2 -->
+    <circle cx="256" cy="220" r="140" fill="none"
+            stroke="#3a78aa" stroke-width="1.4" opacity="0.18"
+            stroke-dasharray="122.2 757.4" stroke-linecap="round"
+            transform="rotate(-20 256 220)"/>
+
+    <!-- Faint background stars -->
+    <g fill="#ffffff">
+      <circle cx="108" cy="115" r="1.5" opacity="0.3"/>
+      <circle cx="390" cy="90" r="1.2" opacity="0.25"/>
+      <circle cx="72" cy="295" r="1" opacity="0.2"/>
+      <circle cx="425" cy="355" r="1.4" opacity="0.22"/>
+      <circle cx="155" cy="415" r="1" opacity="0.18"/>
+      <circle cx="365" cy="435" r="1.2" opacity="0.15"/>
+      <circle cx="442" cy="168" r="1.3" opacity="0.2"/>
+      <circle cx="68" cy="185" r="1" opacity="0.15"/>
+      <circle cx="325" cy="78" r="1.3" opacity="0.22"/>
+      <circle cx="190" cy="85" r="1" opacity="0.25"/>
+      <circle cx="138" cy="345" r="1.2" opacity="0.18"/>
+      <circle cx="420" cy="248" r="1" opacity="0.15"/>
+    </g>
+
+  </g>
+
+  <!-- Polaris at (256, 220) — center of rotation -->
+  <circle cx="256" cy="220" r="32" fill="url(#starGlow)" opacity="0.5"/>
+  <!-- Diffraction spikes -->
+  <g stroke="#c8e4ff" stroke-linecap="round">
+    <line x1="256" y1="182" x2="256" y2="258" stroke-width="1.5" opacity="0.4"/>
+    <line x1="218" y1="220" x2="294" y2="220" stroke-width="1.5" opacity="0.4"/>
+    <line x1="233" y1="197" x2="279" y2="243" stroke-width="1" opacity="0.22"/>
+    <line x1="279" y1="197" x2="233" y2="243" stroke-width="1" opacity="0.22"/>
+  </g>
+  <!-- Core -->
+  <circle cx="256" cy="220" r="7" fill="#ffffff"/>
+  <circle cx="256" cy="220" r="4" fill="#ffffff"/>
+
+  <!-- Text -->
+  <text x="256" y="350" text-anchor="middle"
+        font-family="SF Pro Display, Helvetica Neue, Arial, sans-serif"
+        font-size="30" font-weight="200" letter-spacing="10"
+        fill="#5a90b8" opacity="0.55">
+    POLAR
+  </text>
+  <text x="258" y="385" text-anchor="middle"
+        font-family="SF Pro Display, Helvetica Neue, Arial, sans-serif"
+        font-size="30" font-weight="500" letter-spacing="10"
+        fill="#7cb5d8" opacity="0.75">
+    STATION
+  </text>
+</svg>

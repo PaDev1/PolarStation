@@ -13,11 +13,13 @@
 		079B926030BDC44E6DC6C87A /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA8FD3B4B00A2E5E066BAA6 /* AppState.swift */; };
 		0EEEA077DFD5B49FE74AE020 /* FilterWheelViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78FB79525F24DBF650C7250E /* FilterWheelViewModel.swift */; };
 		10CE779E9F19BD9B86C2E9B8 /* PlateSolveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CDB4454434C2EE32680E95 /* PlateSolveService.swift */; };
+		10CE779E9F19BD9B86C2E9B9 /* CenteringSolveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CDB4454434C2EE32680E96 /* CenteringSolveService.swift */; };
 		13FB1F1136FAC0B8C62848C0 /* MountTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D083431597B495E99C4492C /* MountTabView.swift */; };
 		13FB1F1136FAC0B8C62848C1 /* MountTabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D083431597B495E99C4492D /* MountTabViewModel.swift */; };
 		14C12186A9095643E9CE43EB /* GnomonicProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43E5FDE1C404DE9E2A346149 /* GnomonicProjection.swift */; };
 		1BA4369C97DA27F1CF2191A6 /* PolarAlignerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83FB2261D598CE736A38D07 /* PolarAlignerApp.swift */; };
 		2475155442280D1301D285A2 /* StarDetector.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 6EFA5B9FA485EA81B9C04325 /* StarDetector.mlpackage */; };
+		2475155442280D1301D285A3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6EFA5B9FA485EA81B9C04326 /* Assets.xcassets */; };
 		26185D07EB522E57ED1BE506 /* AlignmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E9A8E5D104B136217EFAC0 /* AlignmentView.swift */; };
 		2915B1F0D9AE4ACE8E9D31E0 /* AdjustmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A66F6CD6AE2586730DCB855 /* AdjustmentView.swift */; };
 		3350CF19CEAC4EB07029B9FA /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89FDD03F62D5E9D379BAFBCF /* CameraPreviewView.swift */; };
@@ -137,10 +139,12 @@
 		690C98F0F4A82574295CD33B /* FrameSaver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSaver.swift; sourceTree = "<group>"; };
 		6A00EE69DE92745A99E2A641 /* GuideCalibration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideCalibration.swift; sourceTree = "<group>"; };
 		6EFA5B9FA485EA81B9C04325 /* StarDetector.mlpackage */ = {isa = PBXFileReference; path = StarDetector.mlpackage; sourceTree = "<group>"; };
+		6EFA5B9FA485EA81B9C04326 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		70344B4164FAFF67CAAE4FC0 /* ASICameraBridge-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "ASICameraBridge-Bridging-Header.h"; sourceTree = "<group>"; };
 		72D42D53989F171AD0E77390 /* CentroidExtractor.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = CentroidExtractor.metal; sourceTree = "<group>"; };
 		72D4E85CF213B9098F67B7F6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		75CDB4454434C2EE32680E95 /* PlateSolveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateSolveService.swift; sourceTree = "<group>"; };
+		75CDB4454434C2EE32680E96 /* CenteringSolveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CenteringSolveService.swift; sourceTree = "<group>"; };
 		77ABA3C380453B9A2B1FE820 /* FrameSaverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSaverTests.swift; sourceTree = "<group>"; };
 		78FB79525F24DBF650C7250E /* FilterWheelViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterWheelViewModel.swift; sourceTree = "<group>"; };
 		7A942BA6F5E4F184838080A6 /* Preprocessing.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Preprocessing.metal; sourceTree = "<group>"; };
@@ -276,6 +280,7 @@
 				BB000001 /* LLMService.swift */,
 				3DD4E82877A64F47BA88252B /* MountService.swift */,
 				75CDB4454434C2EE32680E95 /* PlateSolveService.swift */,
+				75CDB4454434C2EE32680E96 /* CenteringSolveService.swift */,
 				BB000SKY1 /* SkyObjectsService.swift */,
 			);
 			path = Services;
@@ -356,6 +361,7 @@
 		F693F7C395B6BC2B592E5002 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				6EFA5B9FA485EA81B9C04326 /* Assets.xcassets */,
 				6EFA5B9FA485EA81B9C04325 /* StarDetector.mlpackage */,
 			);
 			path = Resources;
@@ -510,6 +516,7 @@
 			buildConfigurationList = 17E7F475D83E75B249A107C7 /* Build configuration list for PBXNativeTarget "PolarAligner" */;
 			buildPhases = (
 				EFC1087FF8CE0647C679332E /* Sources */,
+				A1B2C3D4E5F60718293A4B5C /* Resources */,
 				EDF5276B3997FCDEED13726C /* Frameworks */,
 				7EEC028923D094F3FA3F09E7 /* Copy ZWO SDK dylib */,
 			);
@@ -601,6 +608,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1B2C3D4E5F60718293A4B5C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2475155442280D1301D285A3 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		EFC1087FF8CE0647C679332E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -637,6 +652,7 @@
 				13FB1F1136FAC0B8C62848C0 /* MountTabView.swift in Sources */,
 				13FB1F1136FAC0B8C62848C1 /* MountTabViewModel.swift in Sources */,
 				10CE779E9F19BD9B86C2E9B8 /* PlateSolveService.swift in Sources */,
+				10CE779E9F19BD9B86C2E9B9 /* CenteringSolveService.swift in Sources */,
 				1BA4369C97DA27F1CF2191A6 /* PolarAlignerApp.swift in Sources */,
 				880603980433D77FD369FF64 /* Preprocessing.metal in Sources */,
 				937DB35232ED08BE23B0964A /* SettingsView.swift in Sources */,
@@ -818,6 +834,7 @@
 					"-lusb-1.0",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.polarstation.app;
+				PRODUCT_NAME = PolarStation;
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "PolarAligner/Camera/ASICameraBridge-Bridging-Header.h";
 				SWIFT_VERSION = 5.9;
@@ -909,6 +926,7 @@
 					"-lusb-1.0",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.polarstation.app;
+				PRODUCT_NAME = PolarStation;
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "PolarAligner/Camera/ASICameraBridge-Bridging-Header.h";
 				SWIFT_VERSION = 5.9;

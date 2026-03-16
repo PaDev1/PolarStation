@@ -243,7 +243,7 @@ final class SimulatedGuideEngine: ObservableObject {
             encoder.setComputePipelineState(stretchPipe)
             encoder.setTexture(sfTex, index: 0)
             encoder.setTexture(dispTex, index: 1)
-            var params = StretchParams(blackPoint: 0.0, whitePoint: 1.0)
+            var params = StretchParams(blackPoint: 0.0, whitePoint: 1.0, midtones: 0.5, useSTF: 0)
             encoder.setBytes(&params, length: MemoryLayout<StretchParams>.size, index: 0)
             let threads = MTLSize(width: (w + 15) / 16, height: (h + 15) / 16, depth: 1)
             let groups = MTLSize(width: 16, height: 16, depth: 1)

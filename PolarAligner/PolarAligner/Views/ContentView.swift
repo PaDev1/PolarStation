@@ -8,7 +8,7 @@ struct ContentView: View {
         NavigationSplitView {
             List(selection: $selectedTab) {
                 NavigationLink("Polar Alignment", value: "alignment")
-                NavigationLink("Mount", value: "mount")
+                NavigationLink("Framing", value: "mount")
                 NavigationLink("Camera", value: "camera")
                 NavigationLink("Guide Camera", value: "guide")
                 NavigationLink("Sequencer", value: "sequencer")
@@ -33,7 +33,9 @@ struct ContentView: View {
                         sequenceDocument: $appState.sequenceDocument,
                         onSwitchToSequencer: { selectedTab = "sequencer" },
                         skyMapVM: appState.skyMapViewModel,
-                        vm: appState.mountTabViewModel
+                        vm: appState.mountTabViewModel,
+                        centeringSolveService: appState.centeringSolveService,
+                        cameraViewModel: appState.cameraViewModel
                     )
                 case "camera":
                     CameraTabView(mainCamera: appState.cameraViewModel, guideCamera: appState.guideCameraViewModel)

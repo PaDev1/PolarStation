@@ -780,7 +780,13 @@ struct PolarAlignmentView: View {
             engine.statusMessage = "Re-measuring..."
             Task {
                 await engine.run(plateSolveService: plateSolveService)
-                // Reset sliders — the new computed error already reflects the adjustment
+                // The new computed error reflects the corrected mount position.
+                // Update injected errors to match (adjustment is now the baseline)
+                // and reset sliders to zero.
+                if let newError = engine.computedError {
+                    engine.injectedAltError = newError.altErrorArcmin
+                    engine.injectedAzError = newError.azErrorArcmin
+                }
                 engine.adjustmentAlt = 0
                 engine.adjustmentAz = 0
             }

@@ -9,6 +9,9 @@ import SwiftAA
 /// expensive / user-visible catalog state here keeps it alive in AppState.
 @MainActor
 final class MountTabViewModel: ObservableObject {
+    // Center & Solve panel
+    @Published var showSolvePanel = false
+
     // Catalog panel
     @Published var showCatalog = false
     @Published var catalogSearch = ""
