@@ -28,25 +28,45 @@ struct GuideTabView: View {
     @AppStorage("guideDecMode") private var savedDecMode: String = "both"
 
     @State private var previewSize: CGSize = .zero
+    @State private var mode: GuideMode = .real
+
+    enum GuideMode: String, CaseIterable {
+        case real = "Real"
+        case simulate = "Simulate"
+    }
 
     private var isAlpaca: Bool { sourceRaw == CameraSource.alpaca.rawValue }
+    private var isSimulating: Bool { mode == .simulate }
 
     var body: some View {
         HSplitView {
             // Left panel: controls
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Guiding")
-                        .font(.title)
+                    // Header with mode picker
+                    HStack {
+                        Text("Guiding")
+                            .font(.title)
+                        Spacer()
+                        Picker("Mode", selection: $mode) {
+                            ForEach(GuideMode.allCases, id: \.self) { m in
+                                Text(m.rawValue).tag(m)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 180)
+                    }
 
                     statusGroupBox
                     Divider()
-                    simulationGroupBox
-                    Divider()
-                    if !simulatedGuideEngine.isRunning {
-                        cameraGroupBox
+                    if isSimulating {
+                        simulationGroupBox
+                        Divider()
                     }
-                    Divider()
+                    if !isSimulating {
+                        cameraGroupBox
+                        Divider()
+                    }
                     calibrationGroupBox
                     Divider()
                     guideControlsGroupBox
@@ -58,129 +78,14 @@ struct GuideTabView: View {
             .frame(minWidth: 280, idealWidth: 320, maxWidth: 380)
 
             // Right panel: preview + graph
-            VStack(spacing: 0) {
-                // Camera preview
-                ZStack {
-                    Color.black
-
-                    if cameraViewModel.isConnected {
-                        CameraPreviewView(viewModel: cameraViewModel.previewViewModel)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        VStack(spacing: 12) {
-                            Image(systemName: "camera")
-                                .font(.system(size: 48))
-                                .foregroundStyle(.tertiary)
-                            Text("Connect guide camera to start")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    // Guide star crosshair overlay — tracks current star position
-                    if let pos = trackedGuideStarPosition, cameraViewModel.isConnected {
-                        guideStarOverlay(at: pos)
-                    }
-
-                    // Detected star circles overlay
-                    if cameraViewModel.isConnected && !cameraViewModel.detectedStars.isEmpty {
-                        detectedStarsOverlay
-                    }
-
-                    // Calibration trail overlay
-                    if calibrator.isCalibrating && calibrator.stepPositions.count > 1 {
-                        calibrationTrailOverlay
-                    }
-
-                    // Top overlay: star count + fps
-                    VStack {
-                        HStack {
-                            if simulatedGuideEngine.isRunning || (cameraViewModel.isCapturing && cameraViewModel.starDetectionEnabled) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "star.fill")
-                                        .foregroundStyle(.yellow)
-                                        .font(.caption2)
-                                    Text("\(cameraViewModel.detectedStars.count) stars")
-                                        .font(.system(.caption, design: .monospaced))
-                                        .foregroundStyle(.yellow)
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(.black.opacity(0.6))
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                            }
-
-                            Spacer()
-
-                            if simulatedGuideEngine.isRunning {
-                                Text("10.0 Hz sim")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(.black.opacity(0.6))
-                                    .foregroundStyle(.purple)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                            } else if cameraViewModel.isCapturing {
-                                FrameRateView(previewViewModel: cameraViewModel.previewViewModel)
-                            }
-                        }
-                        Spacer()
-                    }
-                    .padding(8)
-                }
-                .background(
-                    GeometryReader { geo in
-                        Color.clear
-                            .onAppear { previewSize = geo.size }
-                            .onChange(of: geo.size) { _, newSize in previewSize = newSize }
-                    }
-                )
-                .contentShape(Rectangle())
-                .gesture(
-                    SpatialTapGesture()
-                        .onEnded { value in
-                            selectStarAt(viewLocation: value.location)
-                        }
-                )
-
-                Divider()
-
-                // Guide graph
-                GuideGraphView(session: session)
-                    .frame(height: 150)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-
-                Divider()
-
-                // Debug log strip — visible diagnostic output
-                if !cameraViewModel.debugLog.isEmpty {
-                    debugLogStrip
-                }
-
-                Divider()
-
-                // Bottom status bar
-                HStack(spacing: 12) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
-                    Text(statusText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-
-                    Spacer()
-
-                    if cameraViewModel.captureWidth > 0 && cameraViewModel.isConnected {
-                        Text("\(cameraViewModel.captureWidth)x\(cameraViewModel.captureHeight)")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 6)
-                .background(.bar)
-            }
+            GuidePreviewPanel(
+                cameraViewModel: cameraViewModel,
+                calibrator: calibrator,
+                session: session,
+                simulatedGuideEngine: simulatedGuideEngine,
+                previewSize: $previewSize,
+                onStarTap: { selectStarAt(viewLocation: $0) }
+            )
             .frame(minWidth: 400)
         }
         .onAppear {
@@ -207,6 +112,11 @@ struct GuideTabView: View {
             savedDecMode = session.decMode
 
             cameraViewModel.pauseLiveView()
+        }
+        .onChange(of: mode) { _, newMode in
+            if newMode == .real {
+                simulatedGuideEngine.stop()
+            }
         }
     }
 
@@ -482,7 +392,7 @@ struct GuideTabView: View {
                     }
 
                     if !canCalibrate {
-                        Text(simulatedGuideEngine.isRunning
+                        Text(isSimulating
                              ? "Start simulation first"
                              : "Requires live preview + mount connected")
                             .font(.caption2)
@@ -719,15 +629,18 @@ struct GuideTabView: View {
     /// Overlay circles on each detected star for visual debugging.
     private var detectedStarsOverlay: some View {
         let scale = imageScaleX
-        return ForEach(Array(cameraViewModel.detectedStars.prefix(50).enumerated()), id: \.offset) { _, star in
-            let pt = imageToView(pixelX: CGFloat(star.x), pixelY: CGFloat(star.y))
-            let radius = max(CGFloat(star.fwhm) * scale * 2, 4)
-
-            Circle()
-                .stroke(Color.cyan.opacity(0.7), lineWidth: 1)
-                .frame(width: radius, height: radius)
-                .position(x: pt.x, y: pt.y)
+        let stars = cameraViewModel.detectedStars.prefix(50)
+        return Canvas { context, size in
+            for star in stars {
+                let pt = imageToView(pixelX: CGFloat(star.x), pixelY: CGFloat(star.y))
+                let radius = max(CGFloat(star.fwhm) * scale * 2, 4)
+                let rect = CGRect(x: pt.x - radius / 2, y: pt.y - radius / 2,
+                                  width: radius, height: radius)
+                context.stroke(Path(ellipseIn: rect),
+                               with: .color(.cyan.opacity(0.7)), lineWidth: 1)
+            }
         }
+        .allowsHitTesting(false)
     }
 
     private var calibrationTrailOverlay: some View {
@@ -832,7 +745,11 @@ struct GuideTabView: View {
         guard !stars.isEmpty else { return }
 
         // Convert view tap location to image pixel coordinates using imageRect
-        let rect = cameraViewModel.previewViewModel.imageRect
+        var rect = cameraViewModel.previewViewModel.imageRect
+        // Fallback to previewSize if imageRect not yet set (e.g. simulation)
+        if rect.width <= 0 || rect.height <= 0 {
+            rect = CGRect(origin: .zero, size: previewSize)
+        }
         guard rect.width > 0, rect.height > 0 else { return }
         let capW = Double(cameraViewModel.captureWidth)
         let capH = Double(cameraViewModel.captureHeight)
@@ -862,8 +779,8 @@ struct GuideTabView: View {
     }
 
     private var canCalibrate: Bool {
-        if simulatedGuideEngine.isRunning {
-            return cameraViewModel.isCapturing
+        if isSimulating {
+            return simulatedGuideEngine.isRunning && cameraViewModel.isCapturing
         }
         return cameraViewModel.isCapturing && mountService.isConnected
     }
@@ -917,6 +834,296 @@ struct GuideTabView: View {
     private var statusColor: Color {
         stateInfo.1
     }
+
+    private var statusText: String {
+        if calibrator.isCalibrating { return calibrator.statusMessage }
+        if session.isGuiding { return session.statusMessage }
+        return cameraViewModel.statusMessage
+    }
+}
+
+// MARK: - Guide Preview Panel (isolated from left panel to prevent layout storms)
+
+/// Separate view that owns the high-frequency `@ObservedObject` references
+/// (cameraViewModel, simulatedGuideEngine). This prevents the parent GuideTabView
+/// from re-evaluating its body (and expensive segmented picker) at 10Hz.
+private struct GuidePreviewPanel: View {
+    @ObservedObject var cameraViewModel: CameraViewModel
+    @ObservedObject var calibrator: GuideCalibrator
+    @ObservedObject var session: GuideSession
+    @ObservedObject var simulatedGuideEngine: SimulatedGuideEngine
+    @Binding var previewSize: CGSize
+    var onStarTap: (CGPoint) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Camera preview
+            ZStack {
+                Color.black
+
+                if cameraViewModel.isConnected {
+                    CameraPreviewView(viewModel: cameraViewModel.previewViewModel)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    VStack(spacing: 12) {
+                        Image(systemName: "camera")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.tertiary)
+                        Text("Connect guide camera to start")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                // Guide star crosshair overlay
+                if let pos = trackedGuideStarPosition, cameraViewModel.isConnected {
+                    guideStarOverlay(at: pos)
+                }
+
+                // Detected star circles overlay
+                if cameraViewModel.isConnected && !cameraViewModel.detectedStars.isEmpty {
+                    detectedStarsOverlay
+                }
+
+                // Calibration trail overlay
+                if calibrator.isCalibrating && calibrator.stepPositions.count > 1 {
+                    calibrationTrailOverlay
+                }
+
+                // Top overlay: star count + fps
+                VStack {
+                    HStack {
+                        if simulatedGuideEngine.isRunning || (cameraViewModel.isCapturing && cameraViewModel.starDetectionEnabled) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "star.fill")
+                                    .foregroundStyle(.yellow)
+                                    .font(.caption2)
+                                Text("\(cameraViewModel.detectedStars.count) stars")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.yellow)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.black.opacity(0.6))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+
+                        Spacer()
+
+                        if simulatedGuideEngine.isRunning {
+                            Text("10.0 Hz sim")
+                                .font(.system(.caption, design: .monospaced))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.black.opacity(0.6))
+                                .foregroundStyle(.purple)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        } else if cameraViewModel.isCapturing {
+                            FrameRateView(previewViewModel: cameraViewModel.previewViewModel)
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(8)
+            }
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { previewSize = geo.size }
+                        .onChange(of: geo.size) { _, newSize in previewSize = newSize }
+                }
+            )
+            .contentShape(Rectangle())
+            .gesture(
+                SpatialTapGesture()
+                    .onEnded { value in
+                        onStarTap(value.location)
+                    }
+            )
+
+            Divider()
+
+            // Guide graph
+            GuideGraphView(session: session)
+                .frame(height: 150)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+
+            Divider()
+
+            // Debug log strip
+            if !cameraViewModel.debugLog.isEmpty {
+                debugLogStrip
+            }
+
+            Divider()
+
+            // Bottom status bar
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 8, height: 8)
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Spacer()
+
+                if cameraViewModel.captureWidth > 0 && cameraViewModel.isConnected {
+                    Text("\(cameraViewModel.captureWidth)x\(cameraViewModel.captureHeight)")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+            .background(.bar)
+        }
+    }
+
+    // MARK: - Overlays
+
+    private func imageToView(pixelX: CGFloat, pixelY: CGFloat) -> CGPoint {
+        var rect = cameraViewModel.previewViewModel.imageRect
+        if rect.width <= 0 || rect.height <= 0 {
+            rect = CGRect(origin: .zero, size: previewSize)
+        }
+        let capW = CGFloat(max(cameraViewModel.captureWidth, 1))
+        let capH = CGFloat(max(cameraViewModel.captureHeight, 1))
+        let x = rect.origin.x + pixelX * rect.width / capW
+        let y = rect.origin.y + pixelY * rect.height / capH
+        return CGPoint(x: x, y: y)
+    }
+
+    private var imageScaleX: CGFloat {
+        let rect = cameraViewModel.previewViewModel.imageRect
+        return rect.width / CGFloat(max(cameraViewModel.captureWidth, 1))
+    }
+
+    private var trackedGuideStarPosition: CGPoint? {
+        guard let anchor = calibrator.guideStarPosition else { return nil }
+        let stars = cameraViewModel.detectedStars
+        guard !stars.isEmpty else { return anchor }
+
+        var bestDist = Double.greatestFiniteMagnitude
+        var bestStar: DetectedStar?
+        for star in stars {
+            let dx = star.x - Double(anchor.x)
+            let dy = star.y - Double(anchor.y)
+            let dist = sqrt(dx * dx + dy * dy)
+            if dist < bestDist {
+                bestDist = dist
+                bestStar = star
+            }
+        }
+
+        if let star = bestStar, bestDist < 80.0 {
+            let newPos = CGPoint(x: star.x, y: star.y)
+            DispatchQueue.main.async {
+                self.calibrator.guideStarPosition = newPos
+            }
+            return newPos
+        }
+        return anchor
+    }
+
+    private func guideStarOverlay(at pos: CGPoint) -> some View {
+        let pt = imageToView(pixelX: pos.x, pixelY: pos.y)
+        return ZStack {
+            Path { path in
+                path.move(to: CGPoint(x: pt.x - 15, y: pt.y))
+                path.addLine(to: CGPoint(x: pt.x - 5, y: pt.y))
+                path.move(to: CGPoint(x: pt.x + 5, y: pt.y))
+                path.addLine(to: CGPoint(x: pt.x + 15, y: pt.y))
+                path.move(to: CGPoint(x: pt.x, y: pt.y - 15))
+                path.addLine(to: CGPoint(x: pt.x, y: pt.y - 5))
+                path.move(to: CGPoint(x: pt.x, y: pt.y + 5))
+                path.addLine(to: CGPoint(x: pt.x, y: pt.y + 15))
+            }
+            .stroke(Color.green, lineWidth: 1.5)
+
+            Circle()
+                .stroke(Color.green, lineWidth: 1)
+                .frame(width: 20, height: 20)
+                .position(x: pt.x, y: pt.y)
+        }
+    }
+
+    private var detectedStarsOverlay: some View {
+        let scale = imageScaleX
+        let stars = cameraViewModel.detectedStars.prefix(50)
+        return Canvas { context, size in
+            for star in stars {
+                let pt = imageToView(pixelX: CGFloat(star.x), pixelY: CGFloat(star.y))
+                let radius = max(CGFloat(star.fwhm) * scale * 2, 4)
+                let rect = CGRect(x: pt.x - radius / 2, y: pt.y - radius / 2,
+                                  width: radius, height: radius)
+                context.stroke(Path(ellipseIn: rect),
+                               with: .color(.cyan.opacity(0.7)), lineWidth: 1)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var calibrationTrailOverlay: some View {
+        Path { path in
+            for (i, pos) in calibrator.stepPositions.enumerated() {
+                let pt = imageToView(pixelX: pos.x, pixelY: pos.y)
+                if i == 0 {
+                    path.move(to: pt)
+                } else {
+                    path.addLine(to: pt)
+                }
+            }
+        }
+        .stroke(Color.yellow, lineWidth: 1)
+    }
+
+    private var debugLogStrip: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Debug Log")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(cameraViewModel.debugLog, forType: .string)
+                }
+                .font(.caption2)
+                .buttonStyle(.borderless)
+                Button("Clear") {
+                    cameraViewModel.debugLog = ""
+                }
+                .font(.caption2)
+                .buttonStyle(.borderless)
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
+
+            ScrollView(.vertical) {
+                Text(cameraViewModel.debugLog)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.green)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .textSelection(.enabled)
+            }
+            .frame(height: 80)
+            .background(.black.opacity(0.8))
+        }
+    }
+
+    private var stateInfo: (String, Color) {
+        if calibrator.isCalibrating { return ("Calibrating", .orange) }
+        if session.isGuiding { return ("Guiding", .green) }
+        if simulatedGuideEngine.isRunning { return ("Simulating", .purple) }
+        if cameraViewModel.isCapturing { return ("Live", .yellow) }
+        if cameraViewModel.isConnected { return ("Connected", .blue) }
+        return ("Idle", .gray)
+    }
+
+    private var statusColor: Color { stateInfo.1 }
 
     private var statusText: String {
         if calibrator.isCalibrating { return calibrator.statusMessage }

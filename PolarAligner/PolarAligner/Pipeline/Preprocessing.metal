@@ -120,7 +120,7 @@ fragment half4 blit_fragment(BlitVertexOut in [[stage_in]],
     return tex.sample(s, in.texCoord);
 }
 
-/// Midtone Transfer Function (PixInsight STF).
+/// Midtone Transfer Function (MTF).
 /// MTF(x, m) = ((m-1)*x) / (((2m-1)*x) - m)
 /// Maps 0→0, m→0.5, 1→1. Lower m = more aggressive stretch.
 static float mtf(float x, float m) {
@@ -130,7 +130,7 @@ static float mtf(float x, float m) {
 }
 
 /// Auto-stretch: map [blackPoint, whitePoint] to [0, 1] for display.
-/// When useSTF=1, applies PixInsight-style Midtone Transfer Function.
+/// When useSTF=1, applies Midtone Transfer Function (STF auto-stretch).
 /// When useSTF=0, applies simple linear stretch + gamma 2.2.
 kernel void auto_stretch(
     texture2d<half, access::read>  input  [[texture(0)]],
@@ -149,7 +149,7 @@ kernel void auto_stretch(
     rgb = saturate((rgb - params.blackPoint) / range);
 
     if (params.useSTF != 0) {
-        // PixInsight STF: apply MTF per channel
+        // STF: apply MTF per channel
         rgb.r = mtf(rgb.r, params.midtones);
         rgb.g = mtf(rgb.g, params.midtones);
         rgb.b = mtf(rgb.b, params.midtones);

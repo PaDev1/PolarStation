@@ -147,7 +147,7 @@ final class CameraPreviewViewModel: ObservableObject {
     /// Frame stats — only frameRate is @Published to minimize SwiftUI invalidation.
     @Published var frameRate: Double = 0
 
-    /// Auto-stretch toggle: when enabled, computes PixInsight-style STF from image statistics.
+    /// Auto-stretch toggle: when enabled, computes STF auto-stretch from image statistics.
     @Published var autoStretchEnabled = false {
         didSet { _autoStretchFlag.pointee = autoStretchEnabled ? 1 : 0 }
     }
@@ -283,10 +283,10 @@ final class CameraPreviewViewModel: ObservableObject {
         lastFrameTimestamp = 0
     }
 
-    // MARK: - PixInsight STF Auto-Stretch
+    // MARK: - STF Auto-Stretch
 
     /// Compute STF parameters (black point, white point, midtones balance) from raw image data.
-    /// Uses median + MAD statistics with the standard PixInsight defaults:
+    /// Uses median + MAD statistics with standard defaults:
     /// shadowsClipping = -2.8 sigma, targetBackground = 0.25.
     /// Called from the capture thread — must be nonisolated.
     private nonisolated static func computeSTFParamsSync(
