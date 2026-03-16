@@ -1,15 +1,25 @@
 import Foundation
 
-/// A deep-sky object from the Messier catalog.
+/// A deep-sky object or named star from the catalog.
 struct MessierObject: Identifiable {
-    let id: String       // e.g. "M1"
-    let name: String     // e.g. "Crab Nebula"
-    let raDeg: Double    // J2000
-    let decDeg: Double   // J2000
+    let id: String          // e.g. "M1", "NGC7000", "IC434", "B033"
+    let name: String        // Common name or designation
+    let raDeg: Double       // J2000
+    let decDeg: Double      // J2000
     let magnitude: Double
     let type: ObjectType
+    let constellation: String
+    let commonNames: String // Additional common names
+    let identifiers: String // Cross-references (Messier, NGC, IC, etc.)
+    let sizeMajor: Double   // Major axis in arcmin (0 if unknown)
+    let sizeMinor: Double   // Minor axis in arcmin (0 if unknown)
 
     var raHours: Double { raDeg / 15.0 }
+
+    /// All searchable text: id + name + common names + identifiers
+    var searchText: String {
+        "\(id) \(name) \(commonNames) \(identifiers)".lowercased()
+    }
 
     enum ObjectType: String {
         case galaxy = "Galaxy"
@@ -17,124 +27,241 @@ struct MessierObject: Identifiable {
         case cluster = "Cluster"
         case planetary = "Planetary"
         case globular = "Globular"
+        case star = "Star"
         case other = "Other"
+    }
+
+    init(id: String, name: String, raDeg: Double, decDeg: Double, magnitude: Double, type: ObjectType,
+         constellation: String = "", commonNames: String = "", identifiers: String = "",
+         sizeMajor: Double = 0, sizeMinor: Double = 0) {
+        self.id = id
+        self.name = name
+        self.raDeg = raDeg
+        self.decDeg = decDeg
+        self.magnitude = magnitude
+        self.type = type
+        self.constellation = constellation
+        self.commonNames = commonNames
+        self.identifiers = identifiers
+        self.sizeMajor = sizeMajor
+        self.sizeMinor = sizeMinor
     }
 }
 
-/// All 110 Messier objects with J2000 coordinates.
-let messierCatalog: [MessierObject] = [
-    // Nebulae & Supernova Remnants
-    MessierObject(id: "M1",  name: "Crab Nebula",           raDeg: 83.633, decDeg: 22.014, magnitude: 8.4, type: .nebula),
-    MessierObject(id: "M8",  name: "Lagoon Nebula",         raDeg: 270.924, decDeg: -24.384, magnitude: 6.0, type: .nebula),
-    MessierObject(id: "M16", name: "Eagle Nebula",          raDeg: 274.700, decDeg: -13.807, magnitude: 6.0, type: .nebula),
-    MessierObject(id: "M17", name: "Omega Nebula",          raDeg: 275.196, decDeg: -16.171, magnitude: 6.0, type: .nebula),
-    MessierObject(id: "M20", name: "Trifid Nebula",         raDeg: 270.620, decDeg: -23.033, magnitude: 6.3, type: .nebula),
-    MessierObject(id: "M27", name: "Dumbbell Nebula",       raDeg: 299.902, decDeg: 22.721, magnitude: 7.5, type: .planetary),
-    MessierObject(id: "M42", name: "Orion Nebula",          raDeg: 83.822, decDeg: -5.391, magnitude: 4.0, type: .nebula),
-    MessierObject(id: "M43", name: "De Mairan's Nebula",    raDeg: 83.890, decDeg: -5.268, magnitude: 9.0, type: .nebula),
-    MessierObject(id: "M57", name: "Ring Nebula",           raDeg: 283.396, decDeg: 33.029, magnitude: 8.8, type: .planetary),
-    MessierObject(id: "M76", name: "Little Dumbbell",       raDeg: 25.582, decDeg: 51.575, magnitude: 10.1, type: .planetary),
-    MessierObject(id: "M78", name: "Reflection Nebula",     raDeg: 86.691, decDeg: 0.079, magnitude: 8.3, type: .nebula),
-    MessierObject(id: "M97", name: "Owl Nebula",            raDeg: 168.699, decDeg: 55.019, magnitude: 9.9, type: .planetary),
+/// The full deep-sky + named star catalog, loaded from bundled CSV files.
+let messierCatalog: [MessierObject] = CatalogLoader.loadAll()
 
-    // Globular Clusters
-    MessierObject(id: "M2",  name: "Aquarius Globular",     raDeg: 323.363, decDeg: -0.823, magnitude: 6.5, type: .globular),
-    MessierObject(id: "M3",  name: "Canes Venatici Glob.",  raDeg: 205.548, decDeg: 28.377, magnitude: 6.2, type: .globular),
-    MessierObject(id: "M4",  name: "Scorpius Globular",     raDeg: 245.897, decDeg: -26.526, magnitude: 5.6, type: .globular),
-    MessierObject(id: "M5",  name: "Serpens Globular",      raDeg: 229.638, decDeg: 2.081, magnitude: 5.6, type: .globular),
-    MessierObject(id: "M9",  name: "Ophiuchus Globular",    raDeg: 259.800, decDeg: -18.516, magnitude: 7.7, type: .globular),
-    MessierObject(id: "M10", name: "Ophiuchus Globular",    raDeg: 254.288, decDeg: -4.100, magnitude: 6.6, type: .globular),
-    MessierObject(id: "M12", name: "Gumball Globular",      raDeg: 251.810, decDeg: -1.949, magnitude: 6.7, type: .globular),
-    MessierObject(id: "M13", name: "Hercules Cluster",      raDeg: 250.423, decDeg: 36.461, magnitude: 5.8, type: .globular),
-    MessierObject(id: "M14", name: "Ophiuchus Globular",    raDeg: 264.400, decDeg: -3.246, magnitude: 7.6, type: .globular),
-    MessierObject(id: "M15", name: "Pegasus Globular",      raDeg: 322.493, decDeg: 12.167, magnitude: 6.2, type: .globular),
-    MessierObject(id: "M19", name: "Ophiuchus Globular",    raDeg: 255.657, decDeg: -26.268, magnitude: 6.8, type: .globular),
-    MessierObject(id: "M22", name: "Sagittarius Globular",  raDeg: 279.100, decDeg: -23.905, magnitude: 5.1, type: .globular),
-    MessierObject(id: "M28", name: "Sagittarius Globular",  raDeg: 276.137, decDeg: -24.870, magnitude: 6.8, type: .globular),
-    MessierObject(id: "M30", name: "Capricornus Globular",  raDeg: 325.092, decDeg: -23.180, magnitude: 7.2, type: .globular),
-    MessierObject(id: "M53", name: "Coma Berenices Glob.",  raDeg: 198.230, decDeg: 18.169, magnitude: 7.6, type: .globular),
-    MessierObject(id: "M54", name: "Sagittarius Globular",  raDeg: 283.764, decDeg: -30.480, magnitude: 7.6, type: .globular),
-    MessierObject(id: "M55", name: "Summer Rose Star",      raDeg: 294.999, decDeg: -30.965, magnitude: 6.3, type: .globular),
-    MessierObject(id: "M56", name: "Lyra Globular",         raDeg: 289.148, decDeg: 30.184, magnitude: 8.3, type: .globular),
-    MessierObject(id: "M62", name: "Ophiuchus Globular",    raDeg: 255.303, decDeg: -30.114, magnitude: 6.5, type: .globular),
-    MessierObject(id: "M68", name: "Hydra Globular",        raDeg: 189.867, decDeg: -26.744, magnitude: 7.8, type: .globular),
-    MessierObject(id: "M69", name: "Sagittarius Globular",  raDeg: 277.846, decDeg: -32.348, magnitude: 7.6, type: .globular),
-    MessierObject(id: "M70", name: "Sagittarius Globular",  raDeg: 278.779, decDeg: -32.301, magnitude: 7.9, type: .globular),
-    MessierObject(id: "M71", name: "Sagitta Globular",      raDeg: 298.444, decDeg: 18.779, magnitude: 8.2, type: .globular),
-    MessierObject(id: "M72", name: "Aquarius Globular",     raDeg: 313.365, decDeg: -12.537, magnitude: 9.3, type: .globular),
-    MessierObject(id: "M75", name: "Sagittarius Globular",  raDeg: 301.520, decDeg: -21.921, magnitude: 8.5, type: .globular),
-    MessierObject(id: "M79", name: "Lepus Globular",        raDeg: 81.046, decDeg: -24.524, magnitude: 7.7, type: .globular),
-    MessierObject(id: "M80", name: "Scorpius Globular",     raDeg: 244.260, decDeg: -22.976, magnitude: 7.3, type: .globular),
-    MessierObject(id: "M92", name: "Hercules Globular",     raDeg: 259.281, decDeg: 43.136, magnitude: 6.4, type: .globular),
-    MessierObject(id: "M107", name: "Ophiuchus Globular",   raDeg: 248.133, decDeg: -13.054, magnitude: 7.9, type: .globular),
+// MARK: - CSV Catalog Loader
 
-    // Open Clusters
-    MessierObject(id: "M6",  name: "Butterfly Cluster",     raDeg: 265.083, decDeg: -32.217, magnitude: 4.2, type: .cluster),
-    MessierObject(id: "M7",  name: "Ptolemy Cluster",       raDeg: 268.467, decDeg: -34.793, magnitude: 3.3, type: .cluster),
-    MessierObject(id: "M11", name: "Wild Duck Cluster",     raDeg: 282.765, decDeg: -6.271, magnitude: 5.8, type: .cluster),
-    MessierObject(id: "M18", name: "Sagittarius Cluster",   raDeg: 275.238, decDeg: -17.130, magnitude: 6.9, type: .cluster),
-    MessierObject(id: "M21", name: "Sagittarius Cluster",   raDeg: 270.978, decDeg: -22.500, magnitude: 5.9, type: .cluster),
-    MessierObject(id: "M23", name: "Sagittarius Cluster",   raDeg: 269.267, decDeg: -19.017, magnitude: 5.5, type: .cluster),
-    MessierObject(id: "M25", name: "IC 4725",               raDeg: 277.922, decDeg: -19.115, magnitude: 4.6, type: .cluster),
-    MessierObject(id: "M26", name: "Scutum Cluster",        raDeg: 281.317, decDeg: -9.383, magnitude: 8.0, type: .cluster),
-    MessierObject(id: "M29", name: "Cygnus Cluster",        raDeg: 305.967, decDeg: 38.517, magnitude: 6.6, type: .cluster),
-    MessierObject(id: "M34", name: "Perseus Cluster",       raDeg: 40.517, decDeg: 42.783, magnitude: 5.2, type: .cluster),
-    MessierObject(id: "M35", name: "Gemini Cluster",        raDeg: 92.250, decDeg: 24.333, magnitude: 5.1, type: .cluster),
-    MessierObject(id: "M36", name: "Pinwheel Cluster",      raDeg: 84.083, decDeg: 34.133, magnitude: 6.0, type: .cluster),
-    MessierObject(id: "M37", name: "Auriga Cluster",        raDeg: 88.067, decDeg: 32.550, magnitude: 5.6, type: .cluster),
-    MessierObject(id: "M38", name: "Starfish Cluster",      raDeg: 82.167, decDeg: 35.850, magnitude: 6.4, type: .cluster),
-    MessierObject(id: "M39", name: "Cygnus Cluster",        raDeg: 322.317, decDeg: 48.433, magnitude: 4.6, type: .cluster),
-    MessierObject(id: "M41", name: "Canis Major Cluster",   raDeg: 101.500, decDeg: -20.733, magnitude: 4.5, type: .cluster),
-    MessierObject(id: "M44", name: "Beehive Cluster",       raDeg: 130.025, decDeg: 19.667, magnitude: 3.1, type: .cluster),
-    MessierObject(id: "M45", name: "Pleiades",              raDeg: 56.750, decDeg: 24.117, magnitude: 1.6, type: .cluster),
-    MessierObject(id: "M46", name: "Puppis Cluster",        raDeg: 115.383, decDeg: -14.817, magnitude: 6.1, type: .cluster),
-    MessierObject(id: "M47", name: "Puppis Cluster",        raDeg: 114.150, decDeg: -14.500, magnitude: 4.4, type: .cluster),
-    MessierObject(id: "M48", name: "Hydra Cluster",         raDeg: 123.433, decDeg: -5.800, magnitude: 5.8, type: .cluster),
-    MessierObject(id: "M50", name: "Monoceros Cluster",     raDeg: 105.683, decDeg: -8.333, magnitude: 5.9, type: .cluster),
-    MessierObject(id: "M52", name: "Cassiopeia Cluster",    raDeg: 351.200, decDeg: 61.583, magnitude: 6.9, type: .cluster),
-    MessierObject(id: "M67", name: "Cancer Cluster",        raDeg: 132.825, decDeg: 11.817, magnitude: 6.9, type: .cluster),
-    MessierObject(id: "M73", name: "Aquarius Asterism",     raDeg: 314.750, decDeg: -12.633, magnitude: 9.0, type: .cluster),
-    MessierObject(id: "M93", name: "Puppis Cluster",        raDeg: 116.150, decDeg: -23.867, magnitude: 6.2, type: .cluster),
-    MessierObject(id: "M103", name: "Cassiopeia Cluster",   raDeg: 23.350, decDeg: 60.650, magnitude: 7.4, type: .cluster),
+enum CatalogLoader {
 
-    // Galaxies
-    MessierObject(id: "M31", name: "Andromeda Galaxy",      raDeg: 10.685, decDeg: 41.269, magnitude: 3.4, type: .galaxy),
-    MessierObject(id: "M32", name: "Andromeda Companion",   raDeg: 10.674, decDeg: 40.865, magnitude: 8.1, type: .galaxy),
-    MessierObject(id: "M33", name: "Triangulum Galaxy",     raDeg: 23.462, decDeg: 30.660, magnitude: 5.7, type: .galaxy),
-    MessierObject(id: "M49", name: "Virgo Galaxy",          raDeg: 187.445, decDeg: 8.000, magnitude: 8.4, type: .galaxy),
-    MessierObject(id: "M51", name: "Whirlpool Galaxy",      raDeg: 202.470, decDeg: 47.195, magnitude: 8.4, type: .galaxy),
-    MessierObject(id: "M58", name: "Virgo Galaxy",          raDeg: 189.431, decDeg: 11.818, magnitude: 9.7, type: .galaxy),
-    MessierObject(id: "M59", name: "Virgo Galaxy",          raDeg: 190.509, decDeg: 11.647, magnitude: 9.6, type: .galaxy),
-    MessierObject(id: "M60", name: "Virgo Galaxy",          raDeg: 190.917, decDeg: 11.553, magnitude: 8.8, type: .galaxy),
-    MessierObject(id: "M61", name: "Virgo Galaxy",          raDeg: 185.479, decDeg: 4.474, magnitude: 9.7, type: .galaxy),
-    MessierObject(id: "M63", name: "Sunflower Galaxy",      raDeg: 198.955, decDeg: 42.029, magnitude: 8.6, type: .galaxy),
-    MessierObject(id: "M64", name: "Black Eye Galaxy",      raDeg: 194.182, decDeg: 21.683, magnitude: 8.5, type: .galaxy),
-    MessierObject(id: "M65", name: "Leo Triplet",           raDeg: 169.733, decDeg: 13.092, magnitude: 9.3, type: .galaxy),
-    MessierObject(id: "M66", name: "Leo Triplet",           raDeg: 170.063, decDeg: 12.992, magnitude: 8.9, type: .galaxy),
-    MessierObject(id: "M74", name: "Phantom Galaxy",        raDeg: 24.174, decDeg: 15.783, magnitude: 9.4, type: .galaxy),
-    MessierObject(id: "M77", name: "Cetus A",               raDeg: 40.670, decDeg: -0.014, magnitude: 8.9, type: .galaxy),
-    MessierObject(id: "M81", name: "Bode's Galaxy",         raDeg: 148.888, decDeg: 69.065, magnitude: 6.9, type: .galaxy),
-    MessierObject(id: "M82", name: "Cigar Galaxy",          raDeg: 148.970, decDeg: 69.680, magnitude: 8.4, type: .galaxy),
-    MessierObject(id: "M83", name: "Southern Pinwheel",     raDeg: 204.254, decDeg: -29.865, magnitude: 7.6, type: .galaxy),
-    MessierObject(id: "M84", name: "Virgo Galaxy",          raDeg: 186.265, decDeg: 12.887, magnitude: 9.1, type: .galaxy),
-    MessierObject(id: "M85", name: "Coma Galaxy",           raDeg: 186.350, decDeg: 18.191, magnitude: 9.1, type: .galaxy),
-    MessierObject(id: "M86", name: "Virgo Galaxy",          raDeg: 186.549, decDeg: 12.946, magnitude: 8.9, type: .galaxy),
-    MessierObject(id: "M87", name: "Virgo A",               raDeg: 187.706, decDeg: 12.391, magnitude: 8.6, type: .galaxy),
-    MessierObject(id: "M88", name: "Coma Galaxy",           raDeg: 187.997, decDeg: 14.420, magnitude: 9.6, type: .galaxy),
-    MessierObject(id: "M89", name: "Virgo Galaxy",          raDeg: 188.916, decDeg: 12.556, magnitude: 9.8, type: .galaxy),
-    MessierObject(id: "M90", name: "Virgo Galaxy",          raDeg: 189.209, decDeg: 13.163, magnitude: 9.5, type: .galaxy),
-    MessierObject(id: "M91", name: "Coma Galaxy",           raDeg: 188.860, decDeg: 14.497, magnitude: 10.2, type: .galaxy),
-    MessierObject(id: "M94", name: "Cat's Eye Galaxy",      raDeg: 192.722, decDeg: 41.120, magnitude: 8.2, type: .galaxy),
-    MessierObject(id: "M95", name: "Leo Galaxy",            raDeg: 160.990, decDeg: 11.704, magnitude: 9.7, type: .galaxy),
-    MessierObject(id: "M96", name: "Leo Galaxy",            raDeg: 161.693, decDeg: 11.820, magnitude: 9.2, type: .galaxy),
-    MessierObject(id: "M98", name: "Coma Galaxy",           raDeg: 183.451, decDeg: 14.900, magnitude: 10.1, type: .galaxy),
-    MessierObject(id: "M99", name: "Coma Pinwheel",         raDeg: 184.707, decDeg: 14.417, magnitude: 9.9, type: .galaxy),
-    MessierObject(id: "M100", name: "Mirror Galaxy",        raDeg: 185.729, decDeg: 15.822, magnitude: 9.3, type: .galaxy),
-    MessierObject(id: "M101", name: "Pinwheel Galaxy",      raDeg: 210.802, decDeg: 54.349, magnitude: 7.9, type: .galaxy),
-    MessierObject(id: "M104", name: "Sombrero Galaxy",      raDeg: 190.010, decDeg: -11.623, magnitude: 8.0, type: .galaxy),
-    MessierObject(id: "M105", name: "Leo Galaxy",           raDeg: 161.957, decDeg: 12.582, magnitude: 9.3, type: .galaxy),
-    MessierObject(id: "M106", name: "Canes Venatici Gal.",  raDeg: 184.740, decDeg: 47.304, magnitude: 8.4, type: .galaxy),
-    MessierObject(id: "M108", name: "Surfboard Galaxy",     raDeg: 167.879, decDeg: 55.674, magnitude: 10.0, type: .galaxy),
-    MessierObject(id: "M109", name: "Vacuum Cleaner Gal.",  raDeg: 179.400, decDeg: 53.375, magnitude: 9.8, type: .galaxy),
-    MessierObject(id: "M110", name: "Andromeda Companion",  raDeg: 10.092, decDeg: 41.685, magnitude: 8.5, type: .galaxy),
-]
+    static func loadAll() -> [MessierObject] {
+        var objects: [MessierObject] = []
+
+        // Load OpenNGC (NGC + IC objects)
+        if let url = Bundle.main.url(forResource: "OpenNGC", withExtension: "csv") {
+            objects.append(contentsOf: parseOpenNGC(url: url))
+        }
+
+        // Load OpenNGC addendum (Barnard, Caldwell, Sharpless, etc.)
+        if let url = Bundle.main.url(forResource: "OpenNGC_addendum", withExtension: "csv") {
+            objects.append(contentsOf: parseOpenNGC(url: url))
+        }
+
+        // Load named stars
+        if let url = Bundle.main.url(forResource: "NamedStars", withExtension: "csv") {
+            objects.append(contentsOf: parseNamedStars(url: url))
+        }
+
+        // Filter out objects without valid coordinates or that are duplicates/non-existent
+        objects = objects.filter { $0.raDeg != 0 || $0.decDeg != 0 }
+
+        return objects
+    }
+
+    // MARK: - OpenNGC Parser
+
+    /// Parse OpenNGC semicolon-separated CSV.
+    /// Format: Name;Type;RA;Dec;Const;MajAx;MinAx;PosAng;B-Mag;V-Mag;...;M;NGC;IC;...;Common names;...
+    private static func parseOpenNGC(url: URL) -> [MessierObject] {
+        guard let data = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        let lines = data.components(separatedBy: .newlines)
+        guard lines.count > 1 else { return [] }
+
+        // Parse header to find column indices
+        let header = lines[0].components(separatedBy: ";")
+        let colIndex = Dictionary(uniqueKeysWithValues: header.enumerated().map { ($1, $0) })
+
+        guard let nameCol = colIndex["Name"],
+              let typeCol = colIndex["Type"],
+              let raCol = colIndex["RA"],
+              let decCol = colIndex["Dec"] else { return [] }
+
+        let constCol = colIndex["Const"]
+        let majAxCol = colIndex["MajAx"]
+        let minAxCol = colIndex["MinAx"]
+        let vMagCol = colIndex["V-Mag"]
+        let bMagCol = colIndex["B-Mag"]
+        let messierCol = colIndex["M"]
+        let ngcCol = colIndex["NGC"]
+        let icCol = colIndex["IC"]
+        let identCol = colIndex["Identifiers"]
+        let commonCol = colIndex["Common names"]
+
+        var objects: [MessierObject] = []
+
+        for i in 1..<lines.count {
+            let line = lines[i]
+            guard !line.isEmpty else { continue }
+            let fields = line.components(separatedBy: ";")
+            guard fields.count > decCol else { continue }
+
+            let rawName = fields[nameCol]
+            let rawType = fields[typeCol]
+            let raStr = fields[raCol]
+            let decStr = fields[decCol]
+
+            // Skip objects without coordinates
+            guard !raStr.isEmpty, !decStr.isEmpty else { continue }
+            // Skip non-existent and duplicate entries
+            guard rawType != "NonEx", rawType != "Dup" else { continue }
+
+            guard let raDeg = parseRA(raStr), let decDeg = parseDec(decStr) else { continue }
+
+            let magnitude: Double
+            if let vCol = vMagCol, fields.count > vCol, let v = Double(fields[vCol]) {
+                magnitude = v
+            } else if let bCol = bMagCol, fields.count > bCol, let b = Double(fields[bCol]) {
+                magnitude = b
+            } else {
+                magnitude = 99.0
+            }
+
+            let constellation = constCol.flatMap { fields.count > $0 ? fields[$0] : nil } ?? ""
+            let sizeMajor = majAxCol.flatMap { fields.count > $0 ? Double(fields[$0]) : nil } ?? 0
+            let sizeMinor = minAxCol.flatMap { fields.count > $0 ? Double(fields[$0]) : nil } ?? 0
+            let commonNames = commonCol.flatMap { fields.count > $0 ? fields[$0] : nil } ?? ""
+            let identifiers = identCol.flatMap { fields.count > $0 ? fields[$0] : nil } ?? ""
+            let messierRef = messierCol.flatMap { fields.count > $0 ? fields[$0] : nil } ?? ""
+
+            // Build display name: prefer Messier, then common name, then catalog name
+            let displayName: String
+            let objectId: String
+            if !messierRef.isEmpty {
+                objectId = "M\(messierRef)"
+                displayName = commonNames.isEmpty ? rawName : commonNames.components(separatedBy: ",").first!.trimmingCharacters(in: .whitespaces)
+            } else if !commonNames.isEmpty {
+                objectId = rawName
+                displayName = commonNames.components(separatedBy: ",").first!.trimmingCharacters(in: .whitespaces)
+            } else {
+                objectId = rawName
+                displayName = rawName
+            }
+
+            // Build cross-reference identifiers
+            var xref: [String] = []
+            if !messierRef.isEmpty { xref.append("M\(messierRef)") }
+            let ngcRef = ngcCol.flatMap { fields.count > $0 ? fields[$0] : nil } ?? ""
+            if !ngcRef.isEmpty { xref.append("NGC\(ngcRef)") }
+            let icRef = icCol.flatMap { fields.count > $0 ? fields[$0] : nil } ?? ""
+            if !icRef.isEmpty { xref.append("IC\(icRef)") }
+            if !identifiers.isEmpty { xref.append(identifiers) }
+            let allIdentifiers = xref.joined(separator: ",")
+
+            let objType = mapOpenNGCType(rawType)
+
+            objects.append(MessierObject(
+                id: objectId,
+                name: displayName,
+                raDeg: raDeg,
+                decDeg: decDeg,
+                magnitude: magnitude,
+                type: objType,
+                constellation: constellation,
+                commonNames: commonNames,
+                identifiers: allIdentifiers,
+                sizeMajor: sizeMajor,
+                sizeMinor: sizeMinor
+            ))
+        }
+
+        return objects
+    }
+
+    // MARK: - Named Stars Parser
+
+    /// Parse named stars CSV: name;designation;ra_deg;dec_deg;mag
+    private static func parseNamedStars(url: URL) -> [MessierObject] {
+        guard let data = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        let lines = data.components(separatedBy: .newlines)
+        guard lines.count > 1 else { return [] }
+
+        var stars: [MessierObject] = []
+        for i in 1..<lines.count {
+            let line = lines[i]
+            guard !line.isEmpty else { continue }
+            let fields = line.components(separatedBy: ";")
+            guard fields.count >= 5 else { continue }
+
+            let name = fields[0]
+            let designation = fields[1]
+            guard let raDeg = Double(fields[2]),
+                  let decDeg = Double(fields[3]),
+                  let mag = Double(fields[4]) else { continue }
+
+            stars.append(MessierObject(
+                id: "star_\(name.lowercased().replacingOccurrences(of: " ", with: "_"))",
+                name: name,
+                raDeg: raDeg,
+                decDeg: decDeg,
+                magnitude: mag,
+                type: .star,
+                identifiers: designation
+            ))
+        }
+
+        return stars
+    }
+
+    // MARK: - Coordinate Parsing
+
+    /// Parse RA string "HH:MM:SS.SS" to degrees.
+    private static func parseRA(_ s: String) -> Double? {
+        let parts = s.components(separatedBy: ":")
+        guard parts.count >= 2,
+              let h = Double(parts[0]),
+              let m = Double(parts[1]) else { return nil }
+        let sec = parts.count >= 3 ? (Double(parts[2]) ?? 0) : 0
+        return (h + m / 60.0 + sec / 3600.0) * 15.0
+    }
+
+    /// Parse Dec string "+/-DD:MM:SS.SS" to degrees.
+    private static func parseDec(_ s: String) -> Double? {
+        let cleaned = s.trimmingCharacters(in: .whitespaces)
+        let sign: Double = cleaned.hasPrefix("-") ? -1.0 : 1.0
+        let abs = cleaned.replacingOccurrences(of: "+", with: "").replacingOccurrences(of: "-", with: "")
+        let parts = abs.components(separatedBy: ":")
+        guard parts.count >= 2,
+              let d = Double(parts[0]),
+              let m = Double(parts[1]) else { return nil }
+        let sec = parts.count >= 3 ? (Double(parts[2]) ?? 0) : 0
+        return sign * (d + m / 60.0 + sec / 3600.0)
+    }
+
+    // MARK: - Type Mapping
+
+    /// Map OpenNGC type codes to our ObjectType.
+    private static func mapOpenNGCType(_ t: String) -> MessierObject.ObjectType {
+        switch t {
+        case "G", "GPair", "GTrpl", "GGroup": return .galaxy
+        case "OCl": return .cluster
+        case "GCl": return .globular
+        case "PN": return .planetary
+        case "HII", "EmN", "RfN", "SNR", "Neb": return .nebula
+        case "DrkN": return .nebula
+        case "*", "**", "*Ass": return .star
+        case "Cl+N": return .nebula
+        default: return .other
+        }
+    }
+}

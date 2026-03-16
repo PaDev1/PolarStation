@@ -9,6 +9,9 @@ import SwiftAA
 /// expensive / user-visible catalog state here keeps it alive in AppState.
 @MainActor
 final class MountTabViewModel: ObservableObject {
+    // AI Assistant
+    @Published var showAssistant = false
+
     // Center & Solve panel
     @Published var showSolvePanel = false
 
@@ -304,16 +307,20 @@ final class MountTabViewModel: ObservableObject {
             }
         }
 
-        // Messier objects
+        // Deep-sky objects and named stars
         if filter != .planets {
             for obj in catalog {
                 switch filter {
                 case .galaxies: guard obj.type == .galaxy else { continue }
                 case .nebulae: guard obj.type == .nebula || obj.type == .planetary else { continue }
                 case .clusters: guard obj.type == .cluster || obj.type == .globular else { continue }
-                case .messier, .all, .aboveHorizon: break
+                case .messier: guard obj.id.hasPrefix("M") && !obj.id.hasPrefix("MCG") else { continue }
+                case .all, .aboveHorizon: break
                 case .planets: continue
                 }
+
+                // Skip stars from catalog unless explicitly searching
+                if obj.type == .star && search.isEmpty && filter != .all { continue }
 
                 let horiz = EquatorialCoordinates(
                     alpha: Hour(obj.raDeg / 15.0),
@@ -327,14 +334,20 @@ final class MountTabViewModel: ObservableObject {
                     case .cluster: return .cyan
                     case .planetary: return .green
                     case .globular: return .orange
+                    case .star: return .white
                     case .other: return .gray
                     }
                 }()
 
+                let displayName = obj.id == obj.name ? obj.id : "\(obj.id) \(obj.name)"
+                let magStr = obj.magnitude < 90 ? String(format: "mag %.1f", obj.magnitude) : ""
+                let sizeStr = obj.sizeMajor > 0 ? String(format: "%.1f'", obj.sizeMajor) : ""
+                let detail = [obj.type.rawValue, magStr, sizeStr, obj.constellation].filter { !$0.isEmpty }.joined(separator: "  ")
+
                 entries.append(CatalogEntry(
                     id: obj.id,
-                    name: "\(obj.id) \(obj.name)",
-                    detail: "\(obj.type.rawValue)  mag \(String(format: "%.1f", obj.magnitude))",
+                    name: displayName,
+                    detail: detail,
                     raHours: obj.raHours,
                     decDeg: obj.decDeg,
                     altDeg: horiz.altitude.value,
@@ -361,7 +374,13 @@ final class MountTabViewModel: ObservableObject {
 
         if !search.isEmpty {
             let query = search.lowercased()
-            entries = entries.filter { $0.name.lowercased().contains(query) || $0.detail.lowercased().contains(query) }
+            // Search catalog objects by their full searchText (id, name, common names, identifiers)
+            let matchingIds = Set(catalog.filter { $0.searchText.contains(query) }.map(\.id))
+            entries = entries.filter {
+                matchingIds.contains($0.id) ||
+                $0.name.lowercased().contains(query) ||
+                $0.detail.lowercased().contains(query)
+            }
         }
 
         entries.sort { a, b in

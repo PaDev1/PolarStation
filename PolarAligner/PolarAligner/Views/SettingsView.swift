@@ -45,8 +45,11 @@ struct SettingsView: View {
     @AppStorage("observerLat") private var observerLat: Double = 60.17
     @AppStorage("observerLon") private var observerLon: Double = 24.94
 
-    // Telescope
+    // Telescope & Optics
     @AppStorage("focalLengthMM") private var focalLengthMM: Double = 200.0
+    @AppStorage("pixelSizeMicrons") private var pixelSizeMicrons: Double = 2.9
+    @AppStorage("guideFocalLengthMM") private var guideFocalLengthMM: Double = 200.0
+    @AppStorage("guidePixelSizeMicrons") private var guidePixelSizeMicrons: Double = 2.9
 
     // Camera
     @AppStorage("cameraSource") private var cameraSourceRaw: String = CameraSource.usb.rawValue
@@ -230,25 +233,59 @@ struct SettingsView: View {
                     .padding(.vertical, 4)
                 }
 
-                // MARK: - Telescope
-                GroupBox("Telescope") {
+                // MARK: - Telescope & Imaging
+                GroupBox("Imaging Optics") {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("Focal Length")
-                                .frame(width: 80, alignment: .trailing)
+                                .frame(width: 90, alignment: .trailing)
                             TextField("mm", value: $focalLengthMM, format: .number.precision(.fractionLength(0)))
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 80)
                             Text("mm")
                                 .foregroundStyle(.secondary)
                         }
-                        let sensorWidthMM = selectedCamera.map { Double($0.maxWidth) * $0.pixelSize / 1000.0 } ?? 11.14
-                        let effectiveSensorMM = sensorWidthMM / Double(binning)
-                        let fov = 2.0 * atan(effectiveSensorMM / (2.0 * focalLengthMM)) * 180.0 / .pi
-                        let cameraLabel = selectedCamera?.name ?? "unknown camera"
-                        Text(String(format: "FOV: %.2f° (%@ %dx%d bin)", fov, cameraLabel, binning, binning))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        HStack {
+                            Text("Pixel Size")
+                                .frame(width: 90, alignment: .trailing)
+                            TextField("μm", value: $pixelSizeMicrons, format: .number.precision(.fractionLength(2)))
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 80)
+                            Text("μm")
+                                .foregroundStyle(.secondary)
+                            if selectedCamera != nil {
+                                Image(systemName: "antenna.radiowaves.left.and.right")
+                                    .foregroundStyle(.green)
+                                    .font(.caption)
+                                    .help("Auto-detected from camera")
+                            }
+                        }
+                        imagingOpticsSummary
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                GroupBox("Guide Optics") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Focal Length")
+                                .frame(width: 90, alignment: .trailing)
+                            TextField("mm", value: $guideFocalLengthMM, format: .number.precision(.fractionLength(0)))
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 80)
+                            Text("mm")
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Text("Pixel Size")
+                                .frame(width: 90, alignment: .trailing)
+                            TextField("μm", value: $guidePixelSizeMicrons, format: .number.precision(.fractionLength(2)))
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 80)
+                            Text("μm")
+                                .foregroundStyle(.secondary)
+                        }
+                        guideOpticsSummary
                     }
                     .padding(.vertical, 4)
                 }
@@ -1126,7 +1163,17 @@ struct SettingsView: View {
         .onChange(of: observerLat) { syncLocationToCoordinator() }
         .onChange(of: observerLon) { syncLocationToCoordinator() }
         .onChange(of: focalLengthMM) {
-            plateSolveService.setFOV(focalLengthMM: focalLengthMM)
+            plateSolveService.setFOV(focalLengthMM: focalLengthMM, sensorWidthMM: pixelSizeMicrons * Double(selectedCamera?.maxWidth ?? 3840) / 1000.0)
+        }
+        .onChange(of: selectedCameraIndex) {
+            if let cam = selectedCamera {
+                pixelSizeMicrons = cam.pixelSize
+            }
+        }
+        .onChange(of: guideSelectedCameraIndex) {
+            if let cam = selectedGuideCamera {
+                guidePixelSizeMicrons = cam.pixelSize
+            }
         }
     }
 
@@ -1230,6 +1277,31 @@ struct SettingsView: View {
     private var selectedGuideCamera: ASICameraInfo? {
         guard guideSelectedCameraIndex >= 0, guideSelectedCameraIndex < guideDiscoveredCameras.count else { return nil }
         return guideDiscoveredCameras[guideSelectedCameraIndex]
+    }
+
+    private var imagingOpticsSummary: some View {
+        let arcsecPerPix = pixelSizeMicrons * 206.265 / focalLengthMM
+        let effectiveArcsec = arcsecPerPix * Double(binning)
+        let imageWidth = selectedCamera.map { Int($0.maxWidth) / binning } ?? (1920 / binning)
+        let imageHeight = selectedCamera.map { Int($0.maxHeight) / binning } ?? (1080 / binning)
+        let fovW = effectiveArcsec * Double(imageWidth) / 3600.0
+        let fovH = effectiveArcsec * Double(imageHeight) / 3600.0
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(String(format: "%.2f\u{2033}/px (%.2f\u{2033}/px at %dx bin)", arcsecPerPix, effectiveArcsec, binning))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(String(format: "FOV: %.2f\u{00B0} \u{00D7} %.2f\u{00B0} (%dx%d px)", fovW, fovH, imageWidth, imageHeight))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var guideOpticsSummary: some View {
+        let arcsecPerPix = guidePixelSizeMicrons * 206.265 / guideFocalLengthMM
+        let effectiveArcsec = arcsecPerPix * Double(guideBinning)
+        return Text(String(format: "%.2f\u{2033}/px (%.2f\u{2033}/px at %dx bin)", arcsecPerPix, effectiveArcsec, guideBinning))
+            .font(.caption)
+            .foregroundStyle(.secondary)
     }
 
     private var llmStatusColor: Color {

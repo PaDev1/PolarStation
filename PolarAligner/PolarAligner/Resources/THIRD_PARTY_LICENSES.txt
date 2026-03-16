@@ -1,0 +1,48 @@
+PolarStation - Third Party Licenses
+====================================
+
+This application uses the following open source data and libraries.
+
+
+1. OpenNGC
+----------
+Deep-sky object catalog (NGC, IC, and supplementary objects).
+Author: Mattia Verga
+License: CC-BY-SA-4.0
+Source: https://github.com/mattiaverga/OpenNGC
+Files: Resources/Catalogs/OpenNGC.csv, Resources/Catalogs/OpenNGC_addendum.csv
+
+
+2. HYG Star Database
+--------------------
+Named star data extracted from the HYG stellar database.
+Author: David Nash (astronexus)
+License: CC-BY-SA-2.5
+Source: https://github.com/astronexus/HYG-Database
+Files: Resources/Catalogs/NamedStars.csv
+
+
+3. SwiftAA
+----------
+Astronomical algorithms library for Swift (celestial coordinates,
+planet positions, rise/set times, Julian dates).
+Author: Cedric Foellmi
+License: MIT
+Source: https://github.com/onekiloparsec/SwiftAA
+
+
+4. Open-Meteo
+--------------
+Free weather API used for cloud cover forecasts and observing
+condition data. No API key required for non-commercial use.
+License: CC-BY-4.0 (API data)
+Source: https://open-meteo.com
+Terms: https://open-meteo.com/en/terms
+
+
+5. Hipparcos-2 Catalog
+-----------------------
+Star positions used for plate solving via the tetra3 algorithm.
+Source: ESA Hipparcos mission, CDS archive (catalog I/311)
+Reference: van Leeuwen F., 2007, A&A 474, 653
+URL: https://cdsarc.u-strasbg.fr/viz-bin/cat/I/311

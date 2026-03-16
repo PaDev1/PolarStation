@@ -18,6 +18,8 @@ struct GuideTabView: View {
     @AppStorage("guideExposureMs") private var exposureMs: Double = 500
     @AppStorage("guideGain") private var guideGain: Double = 300
     @AppStorage("guideBinning") private var guideBinning: Int = 2
+    @AppStorage("guideFocalLengthMM") private var guideFocalLengthMM: Double = 200.0
+    @AppStorage("guidePixelSizeMicrons") private var guidePixelSizeMicrons: Double = 2.9
 
     // Guide parameters are stored on GuideSession (live binding).
     // Persist to @AppStorage for restore across launches.
@@ -447,10 +449,10 @@ struct GuideTabView: View {
                         .tint(.red)
                     } else {
                         Button {
-                            // Pixel scale: from simulator or default
+                            // Pixel scale: from simulator or computed from guide optics settings
                             session.pixelScaleArcsecPerPix = simulatedGuideEngine.isRunning
                                 ? simulatedGuideEngine.pixelScaleArcsecPerPix
-                                : 1.5
+                                : guidePixelSizeMicrons * 206.265 / guideFocalLengthMM * Double(guideBinning)
                             session.startGuiding(
                                 calibrator: calibrator,
                                 cameraViewModel: cameraViewModel

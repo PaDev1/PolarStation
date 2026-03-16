@@ -3,6 +3,17 @@ import SwiftUI
 @main
 struct PolarAlignerApp: App {
     @StateObject private var appState = AppState()
+
+    init() {
+        UserDefaults.standard.register(defaults: [
+            "observerLat": 60.17,
+            "observerLon": 24.94,
+            "focalLengthMM": 200.0,
+            "pixelSizeMicrons": 2.9,
+            "guideFocalLengthMM": 200.0,
+            "guidePixelSizeMicrons": 2.9
+        ])
+    }
     @AppStorage("starCatalogPath") private var starCatalogPath: String = ""
 
     // Auto-connect: remember which devices were connected

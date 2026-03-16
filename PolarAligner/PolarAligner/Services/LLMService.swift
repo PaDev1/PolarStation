@@ -100,6 +100,212 @@ class LLMService: ObservableObject {
         return try extractContent(from: data, provider: provider)
     }
 
+    // MARK: - Multi-turn Chat with Tool Calling
+
+    /// Send a multi-turn chat request with optional tool definitions.
+    /// Returns the parsed response and the raw assistant message for history tracking.
+    func chat(
+        systemPrompt: String,
+        messages: [[String: Any]],
+        tools: [ToolDefinition],
+        provider: LLMProvider,
+        endpoint: String,
+        apiKey: String,
+        model: String,
+        maxTokens: Int = 4096
+    ) async throws -> (response: ChatResponse, rawAssistantMessage: [String: Any]) {
+        let url: URL
+        let request: URLRequest
+
+        switch provider {
+        case .claude:
+            url = URL(string: "\(endpoint)/v1/messages")!
+            request = buildClaudeChatRequest(
+                url: url, apiKey: apiKey, model: model,
+                systemPrompt: systemPrompt, messages: messages,
+                tools: tools, maxTokens: maxTokens
+            )
+        case .openai:
+            url = URL(string: "\(endpoint)/v1/chat/completions")!
+            request = buildOpenAIChatRequest(
+                url: url, apiKey: apiKey, model: model,
+                systemPrompt: systemPrompt, messages: messages,
+                tools: tools, maxTokens: maxTokens
+            )
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw LLMError.invalidResponse
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? "No body"
+            throw LLMError.httpError(httpResponse.statusCode, body)
+        }
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw LLMError.parseError("Invalid JSON response")
+        }
+
+        switch provider {
+        case .claude:
+            return try parseClaudeChatResponse(json)
+        case .openai:
+            return try parseOpenAIChatResponse(json)
+        }
+    }
+
+    // MARK: - Chat Request Builders
+
+    private func buildClaudeChatRequest(
+        url: URL, apiKey: String, model: String,
+        systemPrompt: String, messages: [[String: Any]],
+        tools: [ToolDefinition], maxTokens: Int
+    ) -> URLRequest {
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        req.timeoutInterval = 120
+
+        var body: [String: Any] = [
+            "model": model,
+            "max_tokens": maxTokens,
+            "system": systemPrompt,
+            "messages": messages
+        ]
+        if !tools.isEmpty {
+            body["tools"] = tools.map { tool -> [String: Any] in
+                [
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.parameters
+                ]
+            }
+        }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        return req
+    }
+
+    private func buildOpenAIChatRequest(
+        url: URL, apiKey: String, model: String,
+        systemPrompt: String, messages: [[String: Any]],
+        tools: [ToolDefinition], maxTokens: Int
+    ) -> URLRequest {
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 120
+
+        // Prepend system message
+        var allMessages: [[String: Any]] = [["role": "system", "content": systemPrompt]]
+        allMessages.append(contentsOf: messages)
+
+        var body: [String: Any] = [
+            "model": model,
+            "max_completion_tokens": maxTokens,
+            "messages": allMessages
+        ]
+        if !tools.isEmpty {
+            body["tools"] = tools.map { tool -> [String: Any] in
+                [
+                    "type": "function",
+                    "function": [
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters
+                    ] as [String: Any]
+                ]
+            }
+        }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        return req
+    }
+
+    // MARK: - Chat Response Parsers
+
+    private func parseClaudeChatResponse(_ json: [String: Any]) throws -> (ChatResponse, [String: Any]) {
+        guard let content = json["content"] as? [[String: Any]] else {
+            throw LLMError.parseError("Missing content array in Claude response")
+        }
+
+        var textParts: [String] = []
+        var toolCalls: [ToolCall] = []
+
+        for block in content {
+            if let type = block["type"] as? String {
+                if type == "text", let text = block["text"] as? String {
+                    textParts.append(text)
+                } else if type == "tool_use",
+                          let id = block["id"] as? String,
+                          let name = block["name"] as? String,
+                          let input = block["input"] as? [String: Any] {
+                    toolCalls.append(ToolCall(id: id, name: name, arguments: input))
+                }
+            }
+        }
+
+        // Build raw assistant message for history
+        let rawMessage: [String: Any] = ["role": "assistant", "content": content]
+
+        if !toolCalls.isEmpty {
+            return (.toolUse(toolCalls), rawMessage)
+        }
+        return (.text(textParts.joined(separator: "\n")), rawMessage)
+    }
+
+    private func parseOpenAIChatResponse(_ json: [String: Any]) throws -> (ChatResponse, [String: Any]) {
+        guard let choices = json["choices"] as? [[String: Any]],
+              let first = choices.first,
+              let message = first["message"] as? [String: Any] else {
+            throw LLMError.parseError("Missing choices[0].message in OpenAI response")
+        }
+
+        if let rawToolCalls = message["tool_calls"] as? [[String: Any]], !rawToolCalls.isEmpty {
+            var toolCalls: [ToolCall] = []
+            for tc in rawToolCalls {
+                guard let id = tc["id"] as? String,
+                      let function = tc["function"] as? [String: Any],
+                      let name = function["name"] as? String,
+                      let argsStr = function["arguments"] as? String else { continue }
+                let args = (try? JSONSerialization.jsonObject(with: Data(argsStr.utf8))) as? [String: Any] ?? [:]
+                toolCalls.append(ToolCall(id: id, name: name, arguments: args))
+            }
+            return (.toolUse(toolCalls), message)
+        }
+
+        let text = message["content"] as? String ?? ""
+        return (.text(text), message)
+    }
+
+    // MARK: - Tool Result Formatting
+
+    /// Format a tool result message for Claude API.
+    static func claudeToolResultMessage(toolUseId: String, result: String) -> [String: Any] {
+        [
+            "role": "user",
+            "content": [
+                [
+                    "type": "tool_result",
+                    "tool_use_id": toolUseId,
+                    "content": result
+                ] as [String: Any]
+            ]
+        ]
+    }
+
+    /// Format a tool result message for OpenAI API.
+    static func openAIToolResultMessage(toolCallId: String, result: String) -> [String: Any] {
+        [
+            "role": "tool",
+            "tool_call_id": toolCallId,
+            "content": result
+        ]
+    }
+
     // MARK: - Request Builders
 
     private func buildClaudeRequest(
@@ -175,6 +381,32 @@ class LLMService: ObservableObject {
                 throw LLMError.parseError("Missing choices[0].message.content in OpenAI response")
             }
             return text
+        }
+    }
+}
+
+// MARK: - Chat Types (multi-turn + tool calling)
+
+struct ToolDefinition {
+    let name: String
+    let description: String
+    let parameters: [String: Any] // JSON Schema
+}
+
+struct ToolCall: Identifiable {
+    let id: String
+    let name: String
+    let arguments: [String: Any]
+}
+
+enum ChatResponse {
+    case text(String)
+    case toolUse([ToolCall])
+
+    var textContent: String? {
+        switch self {
+        case .text(let s): return s
+        case .toolUse: return nil
         }
     }
 }

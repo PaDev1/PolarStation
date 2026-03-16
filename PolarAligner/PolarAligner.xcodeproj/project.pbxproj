@@ -101,6 +101,17 @@
 		DV000105 /* SafetyMonitorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV000005 /* SafetyMonitorViewModel.swift */; };
 		DV000106 /* ObservingConditionsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV000006 /* ObservingConditionsViewModel.swift */; };
 		DV000107 /* CoverCalibratorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV000007 /* CoverCalibratorViewModel.swift */; };
+		B2C3D4E5F6A7B8C9D0E1F2A1 /* AssistantTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* AssistantTool.swift */; };
+		B2C3D4E5F6A7B8C9D0E1F3A1 /* AssistantViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F3 /* AssistantViewModel.swift */; };
+		B2C3D4E5F6A7B8C9D0E1F4A1 /* AssistantPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F4 /* AssistantPanelView.swift */; };
+		B2C3D4E5F6A7B8C9D0E1F5A1 /* MountTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F5 /* MountTool.swift */; };
+		B2C3D4E5F6A7B8C9D0E1F6A1 /* CameraTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F6 /* CameraTool.swift */; };
+		B2C3D4E5F6A7B8C9D0E1F7A1 /* SkyInfoTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F7 /* SkyInfoTool.swift */; };
+		B2C3D4E5F6A7B8C9D0E1F8A1 /* SkyMapTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F8 /* SkyMapTool.swift */; };
+		WS000101 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = WS000001 /* WeatherService.swift */; };
+		CA7B10001 /* OpenNGC.csv in Resources */ = {isa = PBXBuildFile; fileRef = CA7A10001 /* OpenNGC.csv */; };
+		CA7B10002 /* OpenNGC_addendum.csv in Resources */ = {isa = PBXBuildFile; fileRef = CA7A10002 /* OpenNGC_addendum.csv */; };
+		CA7B10003 /* NamedStars.csv in Resources */ = {isa = PBXBuildFile; fileRef = CA7A10003 /* NamedStars.csv */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -212,6 +223,17 @@
 		DV000005 /* SafetyMonitorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafetyMonitorViewModel.swift; sourceTree = "<group>"; };
 		DV000006 /* ObservingConditionsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObservingConditionsViewModel.swift; sourceTree = "<group>"; };
 		DV000007 /* CoverCalibratorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverCalibratorViewModel.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* AssistantTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTool.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F3 /* AssistantViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantViewModel.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F4 /* AssistantPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantPanelView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F5 /* MountTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountTool.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F6 /* CameraTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraTool.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F7 /* SkyInfoTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyInfoTool.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F8 /* SkyMapTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyMapTool.swift; sourceTree = "<group>"; };
+		WS000001 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
+		CA7A10001 /* OpenNGC.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = OpenNGC.csv; sourceTree = "<group>"; };
+		CA7A10002 /* OpenNGC_addendum.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = OpenNGC_addendum.csv; sourceTree = "<group>"; };
+		CA7A10003 /* NamedStars.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = NamedStars.csv; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -252,6 +274,7 @@
 			children = (
 				8FBDFA25E1CE134C4296F6C2 /* Alignment */,
 				1C351A6029375A2040449995 /* App */,
+				C3D4E5F6A7B8C9D0E1F2A1B2 /* Assistant */,
 				8F83EF6C219FD3B1D6501CA8 /* Camera */,
 				DV000000 /* Devices */,
 				2CA6AA3CC3A79433D1896730 /* Guiding */,
@@ -282,6 +305,7 @@
 				75CDB4454434C2EE32680E95 /* PlateSolveService.swift */,
 				75CDB4454434C2EE32680E96 /* CenteringSolveService.swift */,
 				BB000SKY1 /* SkyObjectsService.swift */,
+				WS000001 /* WeatherService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -362,9 +386,20 @@
 			isa = PBXGroup;
 			children = (
 				6EFA5B9FA485EA81B9C04326 /* Assets.xcassets */,
+				CA7C10001 /* Catalogs */,
 				6EFA5B9FA485EA81B9C04325 /* StarDetector.mlpackage */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		CA7C10001 /* Catalogs */ = {
+			isa = PBXGroup;
+			children = (
+				CA7A10003 /* NamedStars.csv */,
+				CA7A10001 /* OpenNGC.csv */,
+				CA7A10002 /* OpenNGC_addendum.csv */,
+			);
+			path = Catalogs;
 			sourceTree = "<group>";
 		};
 		F7C52D998CD58A35324B0796 /* Views */ = {
@@ -490,6 +525,28 @@
 			path = Devices;
 			sourceTree = "<group>";
 		};
+		C3D4E5F6A7B8C9D0E1F2A1B2 /* Assistant */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F6A7B8C9D0E1F4 /* AssistantPanelView.swift */,
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* AssistantTool.swift */,
+				A1B2C3D4E5F6A7B8C9D0E1F3 /* AssistantViewModel.swift */,
+				C3D4E5F6A7B8C9D0E1F3A1B2 /* Tools */,
+			);
+			path = Assistant;
+			sourceTree = "<group>";
+		};
+		C3D4E5F6A7B8C9D0E1F3A1B2 /* Tools */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F6A7B8C9D0E1F6 /* CameraTool.swift */,
+				A1B2C3D4E5F6A7B8C9D0E1F5 /* MountTool.swift */,
+				A1B2C3D4E5F6A7B8C9D0E1F7 /* SkyInfoTool.swift */,
+				A1B2C3D4E5F6A7B8C9D0E1F8 /* SkyMapTool.swift */,
+			);
+			path = Tools;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -613,6 +670,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				2475155442280D1301D285A3 /* Assets.xcassets in Resources */,
+				CA7B10001 /* OpenNGC.csv in Resources */,
+				CA7B10002 /* OpenNGC_addendum.csv in Resources */,
+				CA7B10003 /* NamedStars.csv in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -706,6 +766,14 @@
 				DV000105 /* SafetyMonitorViewModel.swift in Sources */,
 				DV000106 /* ObservingConditionsViewModel.swift in Sources */,
 				DV000107 /* CoverCalibratorViewModel.swift in Sources */,
+				B2C3D4E5F6A7B8C9D0E1F2A1 /* AssistantTool.swift in Sources */,
+				B2C3D4E5F6A7B8C9D0E1F3A1 /* AssistantViewModel.swift in Sources */,
+				B2C3D4E5F6A7B8C9D0E1F4A1 /* AssistantPanelView.swift in Sources */,
+				B2C3D4E5F6A7B8C9D0E1F5A1 /* MountTool.swift in Sources */,
+				B2C3D4E5F6A7B8C9D0E1F6A1 /* CameraTool.swift in Sources */,
+				B2C3D4E5F6A7B8C9D0E1F7A1 /* SkyInfoTool.swift in Sources */,
+				B2C3D4E5F6A7B8C9D0E1F8A1 /* SkyMapTool.swift in Sources */,
+				WS000101 /* WeatherService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

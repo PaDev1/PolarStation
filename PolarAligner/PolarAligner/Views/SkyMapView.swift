@@ -672,10 +672,25 @@ struct SkyMapView: View {
     }
 
     private func drawMessierObjects(context: GraphicsContext, size: CGSize) {
-        // Only show labels when zoomed in enough
-        let showLabels = viewModel.mapFOV < 90
+        let fov = viewModel.mapFOV
+
+        // Magnitude limit based on zoom: wider view = only bright objects
+        let magLimit: Double
+        if fov > 180 { magLimit = 7.0 }       // full sky: Messier-bright only
+        else if fov > 90 { magLimit = 9.0 }    // hemisphere
+        else if fov > 30 { magLimit = 11.0 }   // wide field
+        else if fov > 10 { magLimit = 13.0 }   // medium zoom
+        else { magLimit = 99.0 }                // deep zoom: show everything
+
+        let showLabels = fov < 60
+        let showAllLabels = fov < 15
 
         for obj in messierCatalog {
+            // Skip faint objects at wide FOV
+            if obj.magnitude > magLimit { continue }
+            // Skip named stars on the map (they clutter)
+            if obj.type == .star { continue }
+
             guard let p = viewModel.projectFast(raDeg: obj.raDeg, decDeg: obj.decDeg) else { continue }
             let sp = viewModel.toScreen(p, size: size)
 
@@ -688,6 +703,7 @@ struct SkyMapView: View {
                 case .cluster: return .cyan
                 case .planetary: return .green
                 case .globular: return .orange
+                case .star: return .white
                 case .other: return .gray
                 }
             }()
@@ -723,9 +739,10 @@ struct SkyMapView: View {
                 context.stroke(Path(ellipseIn: rect), with: .color(color), lineWidth: 1.0)
             }
 
-            // Label
-            if showLabels {
-                let text = Text(obj.id).font(.system(size: 9)).foregroundColor(color)
+            // Label: show for bright objects or when deeply zoomed
+            if showLabels && (showAllLabels || obj.magnitude < 10 || obj.id.hasPrefix("M")) {
+                let label = obj.name != obj.id && !obj.name.isEmpty ? obj.name : obj.id
+                let text = Text(label).font(.system(size: 9)).foregroundColor(color)
                 context.draw(text, at: CGPoint(x: sp.x + symbolSize/2 + 2, y: sp.y - 6), anchor: .leading)
             }
         }
@@ -1135,13 +1152,16 @@ struct SkyMapView: View {
                     }
                 }
 
-                // Check Messier objects (within ~15px)
+                // Check catalog objects (within ~15px, same mag filter as drawing)
+                let tapMagLimit: Double = viewModel.mapFOV > 180 ? 7.0 : viewModel.mapFOV > 90 ? 9.0 : viewModel.mapFOV > 30 ? 11.0 : viewModel.mapFOV > 10 ? 13.0 : 99.0
                 for obj in messierCatalog {
+                    if obj.magnitude > tapMagLimit || obj.type == .star { continue }
                     guard let p = viewModel.projectFast(raDeg: obj.raDeg, decDeg: obj.decDeg) else { continue }
                     let sp = viewModel.toScreen(p, size: size)
                     let dist = hypot(sp.x - point.x, sp.y - point.y)
                     if dist < 15 {
-                        viewModel.selectedTarget = (name: "\(obj.id) \(obj.name)", raHours: obj.raHours, decDeg: obj.decDeg)
+                        let displayName = obj.name != obj.id ? "\(obj.id) \(obj.name)" : obj.id
+                        viewModel.selectedTarget = (name: displayName, raHours: obj.raHours, decDeg: obj.decDeg)
                         viewModel.showGoToConfirm = true
                         return
                     }

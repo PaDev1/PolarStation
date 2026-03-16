@@ -21,6 +21,7 @@ final class AppState: ObservableObject {
     let errorTracker = ErrorTracker()
     let skyMapViewModel = SkyMapViewModel()
     let mountTabViewModel = MountTabViewModel()
+    let weatherService = WeatherService()
     lazy var centeringSolveService: CenteringSolveService = {
         CenteringSolveService(plateSolveService: plateSolveService, mountService: mountService)
     }()
@@ -30,6 +31,10 @@ final class AppState: ObservableObject {
     let sequenceEngine = SequenceEngine()
     @Published var sequenceDocument = SequenceDocument(name: "New Sequence")
     @Published var sequenceSelectedItemId: UUID?
+    lazy var assistantViewModel: AssistantViewModel = {
+        AssistantViewModel(mountService: mountService, cameraViewModel: cameraViewModel, weatherService: weatherService, skyMapViewModel: skyMapViewModel)
+    }()
+    let assistantWindowController = AssistantWindowController()
     lazy var guideCalibrator: GuideCalibrator = {
         GuideCalibrator(mountService: mountService, cameraViewModel: guideCameraViewModel)
     }()

@@ -15,6 +15,7 @@ struct MountTabView: View {
     @AppStorage("observerLat") private var observerLat: Double = 60.17
     @AppStorage("observerLon") private var observerLon: Double = 24.94
     @AppStorage("focalLengthMM") private var focalLengthMM: Double = 200.0
+    @AppStorage("pixelSizeMicrons") private var pixelSizeMicrons: Double = 2.9
 
     // GoTo inputs
     @State private var gotoRAText: String = "0.0"
@@ -31,6 +32,8 @@ struct MountTabView: View {
 
     // Ephemeral UI state
     @State private var showObsWindowPopover = false
+    var assistantVM: AssistantViewModel
+    var assistantWindowController: AssistantWindowController
     // Observation window (persisted via AppStorage)
     @AppStorage("obsWindowEnabled") private var obsWindowEnabled = false
     @AppStorage("obsWindowMinAlt") private var obsWindowMinAlt: Double = 10
@@ -59,8 +62,7 @@ struct MountTabView: View {
             // Left panel: controls
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Framing & Mount")
-                        .font(.title)
+                    framingHeader
 
                     if !mountService.isConnected {
                         notConnectedView
@@ -388,6 +390,33 @@ struct MountTabView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
+    }
+
+    // MARK: - Header
+
+    private var framingHeader: some View {
+        HStack {
+            Text("Framing & Mount")
+                .font(.title)
+            Spacer()
+            Button {
+                vm.showAssistant.toggle()
+                assistantWindowController.toggle(
+                    viewModel: assistantVM,
+                    showBinding: Binding(
+                        get: { vm.showAssistant },
+                        set: { vm.showAssistant = $0 }
+                    )
+                )
+            } label: {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(vm.showAssistant ? .purple : nil)
+            .help("AI Assistant")
+        }
     }
 
     // MARK: - Position Display
@@ -1133,10 +1162,9 @@ struct MountTabView: View {
     }
 
     private func updateCameraFOV() {
-        // ASI585MC sensor: 3840x2160 pixels at 2.9μm = 11.14mm x 6.26mm
-        // Binning does NOT change physical FOV (same sensor area, fewer pixels)
-        let sensorWidthMM = 11.14
-        let fov = 2.0 * atan(sensorWidthMM / (2.0 * focalLengthMM)) * 180.0 / .pi
+        let arcsecPerPix = pixelSizeMicrons * 206.265 / focalLengthMM
+        let imageWidth = max(Double(cameraViewModel.captureWidth), 3840)
+        let fov = arcsecPerPix * imageWidth / 3600.0
         skyMapVM.cameraFOVDeg = fov
     }
 }

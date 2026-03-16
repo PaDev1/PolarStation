@@ -35,7 +35,9 @@ struct ContentView: View {
                         skyMapVM: appState.skyMapViewModel,
                         vm: appState.mountTabViewModel,
                         centeringSolveService: appState.centeringSolveService,
-                        cameraViewModel: appState.cameraViewModel
+                        cameraViewModel: appState.cameraViewModel,
+                        assistantVM: appState.assistantViewModel,
+                        assistantWindowController: appState.assistantWindowController
                     )
                 case "camera":
                     CameraTabView(mainCamera: appState.cameraViewModel, guideCamera: appState.guideCameraViewModel)

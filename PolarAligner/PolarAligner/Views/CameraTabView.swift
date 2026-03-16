@@ -245,7 +245,7 @@ private struct CameraViewerContent: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .tint(viewModel.previewViewModel.autoStretchEnabled ? .cyan : nil)
+                .foregroundStyle(viewModel.previewViewModel.autoStretchEnabled ? .cyan : .secondary)
                 .help("Auto-stretch — adjusts display to reveal faint detail")
 
                 Spacer()
