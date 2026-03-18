@@ -108,6 +108,7 @@
 		B2C3D4E5F6A7B8C9D0E1F6A1 /* CameraTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F6 /* CameraTool.swift */; };
 		B2C3D4E5F6A7B8C9D0E1F7A1 /* SkyInfoTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F7 /* SkyInfoTool.swift */; };
 		B2C3D4E5F6A7B8C9D0E1F8A1 /* SkyMapTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F8 /* SkyMapTool.swift */; };
+		B2C3D4E5F6A7B8C9D0E1F9A1 /* InstructionBridgeTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F9 /* InstructionBridgeTool.swift */; };
 		WS000101 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = WS000001 /* WeatherService.swift */; };
 		DS000101 /* DSSTileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DS000001 /* DSSTileService.swift */; };
 		MT000101 /* DSSMetalTileLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = MT000001 /* DSSMetalTileLayer.swift */; };
@@ -233,6 +234,7 @@
 		A1B2C3D4E5F6A7B8C9D0E1F6 /* CameraTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraTool.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F7 /* SkyInfoTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyInfoTool.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F8 /* SkyMapTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyMapTool.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F9 /* InstructionBridgeTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstructionBridgeTool.swift; sourceTree = "<group>"; };
 		WS000001 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		DS000001 /* DSSTileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSSTileService.swift; sourceTree = "<group>"; };
 		MT000001 /* DSSMetalTileLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSSMetalTileLayer.swift; sourceTree = "<group>"; };
@@ -549,6 +551,7 @@
 			isa = PBXGroup;
 			children = (
 				A1B2C3D4E5F6A7B8C9D0E1F6 /* CameraTool.swift */,
+				A1B2C3D4E5F6A7B8C9D0E1F9 /* InstructionBridgeTool.swift */,
 				A1B2C3D4E5F6A7B8C9D0E1F5 /* MountTool.swift */,
 				A1B2C3D4E5F6A7B8C9D0E1F7 /* SkyInfoTool.swift */,
 				A1B2C3D4E5F6A7B8C9D0E1F8 /* SkyMapTool.swift */,
@@ -782,6 +785,7 @@
 				B2C3D4E5F6A7B8C9D0E1F6A1 /* CameraTool.swift in Sources */,
 				B2C3D4E5F6A7B8C9D0E1F7A1 /* SkyInfoTool.swift in Sources */,
 				B2C3D4E5F6A7B8C9D0E1F8A1 /* SkyMapTool.swift in Sources */,
+				B2C3D4E5F6A7B8C9D0E1F9A1 /* InstructionBridgeTool.swift in Sources */,
 				WS000101 /* WeatherService.swift in Sources */,
 				DS000101 /* DSSTileService.swift in Sources */,
 				MT000101 /* DSSMetalTileLayer.swift in Sources */,

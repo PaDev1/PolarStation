@@ -33,7 +33,7 @@ final class AppState: ObservableObject {
     @Published var sequenceDocument = SequenceDocument(name: "New Sequence")
     @Published var sequenceSelectedItemId: UUID?
     lazy var assistantViewModel: AssistantViewModel = {
-        AssistantViewModel(mountService: mountService, cameraViewModel: cameraViewModel, weatherService: weatherService, skyMapViewModel: skyMapViewModel)
+        AssistantViewModel(mountService: mountService, cameraViewModel: cameraViewModel, weatherService: weatherService, skyMapViewModel: skyMapViewModel, sequenceEngine: sequenceEngine)
     }()
     let assistantWindowController = AssistantWindowController()
     lazy var guideCalibrator: GuideCalibrator = {

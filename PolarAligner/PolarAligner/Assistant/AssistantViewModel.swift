@@ -40,7 +40,8 @@ final class AssistantViewModel: ObservableObject {
 
     private let maxToolLoopDepth = 5
 
-    init(mountService: MountService, cameraViewModel: CameraViewModel, weatherService: WeatherService, skyMapViewModel: SkyMapViewModel) {
+    init(mountService: MountService, cameraViewModel: CameraViewModel, weatherService: WeatherService, skyMapViewModel: SkyMapViewModel,
+         sequenceEngine: SequenceEngine? = nil) {
         self.mountService = mountService
         self.cameraViewModel = cameraViewModel
         self.weatherService = weatherService
@@ -50,6 +51,15 @@ final class AssistantViewModel: ObservableObject {
         toolRegistry.register(CameraTool(cameraViewModel: cameraViewModel))
         toolRegistry.register(SkyInfoTool(weatherService: weatherService))
         toolRegistry.register(SkyMapTool(skyMapViewModel: skyMapViewModel))
+
+        // Bridge all sequencer instructions as device commands
+        if let engine = sequenceEngine {
+            toolRegistry.register(InstructionBridgeTool(
+                registry: engine.instructionRegistry,
+                deviceResolver: engine.deviceResolver,
+                progress: engine.progress
+            ))
+        }
     }
 
     // MARK: - Public
