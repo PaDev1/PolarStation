@@ -202,6 +202,236 @@ final class CenteringSolveService: ObservableObject {
         }
     }
 
+    // MARK: - Simulated solve
+
+    /// Generate a synthetic star field at the mount's current position and plate-solve it locally.
+    ///
+    /// Uses the tetra3 star catalog to project stars onto a virtual sensor, then runs the
+    /// local solver on the generated centroids. Useful for verifying solver config, FOV settings,
+    /// and mount pointing accuracy without a live camera image.
+    func simulateSolve(
+        mountRADeg: Double,
+        mountDecDeg: Double,
+        fovDeg: Double,
+        imageWidth: Int,
+        imageHeight: Int
+    ) async {
+        guard !state.isActive else { return }
+        state = .solving
+        statusMessage = "Loading star catalog for simulation..."
+
+        let catalog = await plateSolveService.getStarCatalog()
+        guard !catalog.isEmpty else {
+            state = .failed("Star catalog not loaded")
+            statusMessage = "Star catalog not loaded — load it in Settings first"
+            return
+        }
+
+        statusMessage = "Projecting stars at RA \(String(format: "%.2f", mountRADeg/15))h Dec \(String(format: "%+.1f", mountDecDeg))°..."
+
+        // Project catalog stars onto the virtual sensor using gnomonic projection
+        var centroids: [DetectedStar] = []
+        for star in catalog {
+            guard star.magnitude <= 11.0 else { continue }
+            guard let pixel = GnomonicProjection.projectToPixel(
+                starRA: star.raDeg, starDec: star.decDeg,
+                centerRA: mountRADeg, centerDec: mountDecDeg,
+                rollDeg: 0.0,
+                fovDeg: fovDeg,
+                imageWidth: imageWidth, imageHeight: imageHeight
+            ) else { continue }
+
+            guard pixel.x >= 0 && pixel.x < Double(imageWidth) &&
+                  pixel.y >= 0 && pixel.y < Double(imageHeight) else { continue }
+
+            let brightness = GnomonicProjection.magnitudeToBrightness(star.magnitude)
+            guard brightness > 0.005 else { continue }
+
+            centroids.append(DetectedStar(
+                x: pixel.x, y: pixel.y,
+                brightness: Double(brightness) * 50000,
+                fwhm: 2.5, snr: Double(brightness) * 100
+            ))
+        }
+
+        guard centroids.count >= 4 else {
+            state = .failed("Too few stars in FOV (\(centroids.count))")
+            statusMessage = "Too few stars in FOV (\(centroids.count)) — check FOV setting"
+            return
+        }
+
+        statusMessage = "Simulating solve with \(centroids.count) stars..."
+
+        // Run through local solver exactly as the real pipeline does
+        plateSolveService.imageWidth = UInt32(imageWidth)
+        plateSolveService.imageHeight = UInt32(imageHeight)
+        plateSolveService.fovDeg = fovDeg
+
+        do {
+            let result = try await plateSolveService.solveRobust(centroids: centroids)
+            guard result.success else {
+                state = .failed("Simulation: solve failed")
+                statusMessage = "Simulation failed — local solver could not match. Check FOV."
+                return
+            }
+
+            lastSolveResult = result
+
+            let raErr = (result.raDeg - mountRADeg) * 60.0
+            let decErr = (result.decDeg - mountDecDeg) * 60.0
+            let totalErr = sqrt(raErr * raErr + decErr * decErr)
+
+            statusMessage = String(format: "Simulation: solved RA %.4f° Dec %+.3f° | error %.1f′ (%d stars)",
+                                   result.raDeg, result.decDeg, totalErr, result.matchedStars)
+            state = .idle
+        } catch {
+            state = .failed(error.localizedDescription)
+            statusMessage = "Simulation error: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Remote one-shot solve
+
+    /// Solve using the Astrometry.net REST API (nova.astrometry.net or local Watney).
+    /// Updates lastSolveResult for sky map overlay — same result path as solveOnce.
+    func solveOnceRemote(jpegData: Data, apiKey: String, baseURL: String) async {
+        guard !state.isActive else { return }
+        state = .solving
+        statusMessage = "Submitting to remote solver..."
+
+        do {
+            let result = try await plateSolveService.solveRemote(
+                jpegData: jpegData,
+                apiKey: apiKey,
+                baseURL: baseURL,
+                hintRA: mountService.status.map { $0.raHours * 15.0 },
+                hintDec: mountService.status?.decDeg,
+                hintRadiusDeg: 5.0,
+                onStatus: { [weak self] msg in self?.statusMessage = msg }
+            )
+            guard result.success else {
+                state = .failed("Remote solve failed")
+                statusMessage = "Remote solve failed — no solution found"
+                return
+            }
+            lastSolveResult = result
+            statusMessage = String(format: "Solved: RA %.4f° Dec %+.4f° rot %.1f°",
+                                   result.raDeg, result.decDeg, result.rollDeg)
+            state = .idle
+        } catch {
+            state = .failed(error.localizedDescription)
+            statusMessage = "Remote solve error: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Remote iterative centering
+
+    /// Iterative center-on-target using Astrometry.net remote solver.
+    /// Each iteration: slew → wait → grab JPEG → remote solve → sync → re-slew.
+    func centerOnTargetRemote(
+        targetRAHours: Double,
+        targetDecDeg: Double,
+        frameProvider: @escaping () async -> Data?,
+        apiKey: String,
+        baseURL: String,
+        settleSeconds: Double = 5.0
+    ) {
+        guard !state.isActive else { return }
+
+        let tolerance = toleranceArcmin
+        let attempts = maxAttempts
+
+        centeringTask?.cancel()
+        centeringTask = Task { [weak self] in
+            guard let self else { return }
+
+            for attempt in 1...attempts {
+                guard !Task.isCancelled else {
+                    self.state = .idle
+                    self.statusMessage = "Cancelled"
+                    return
+                }
+
+                self.currentAttempt = attempt
+                self.state = .centering(attempt)
+                self.statusMessage = "Attempt \(attempt)/\(attempts): slewing to target..."
+
+                do {
+                    try await self.mountService.gotoRADec(raHours: targetRAHours, decDeg: targetDecDeg)
+                } catch {
+                    self.state = .failed("Slew failed: \(error.localizedDescription)")
+                    self.statusMessage = "Slew failed: \(error.localizedDescription)"
+                    return
+                }
+
+                self.statusMessage = "Attempt \(attempt)/\(attempts): waiting for settle..."
+                try? await Task.sleep(for: .seconds(settleSeconds))
+                guard !Task.isCancelled else {
+                    self.state = .idle; self.statusMessage = "Cancelled"; return
+                }
+
+                self.statusMessage = "Attempt \(attempt)/\(attempts): submitting to remote solver..."
+                guard let jpegData = await frameProvider() else {
+                    self.statusMessage = "Attempt \(attempt)/\(attempts): no frame available, retrying..."
+                    continue
+                }
+
+                let result: SolveResult
+                do {
+                    result = try await self.plateSolveService.solveRemote(
+                        jpegData: jpegData,
+                        apiKey: apiKey,
+                        baseURL: baseURL,
+                        hintRA: self.mountService.status.map { $0.raHours * 15.0 },
+                        hintDec: self.mountService.status?.decDeg,
+                        hintRadiusDeg: 5.0,
+                        onStatus: { [weak self] msg in self?.statusMessage = msg }
+                    )
+                } catch {
+                    self.statusMessage = "Attempt \(attempt)/\(attempts): remote solve failed, retrying..."
+                    continue
+                }
+                guard result.success else {
+                    self.statusMessage = "Attempt \(attempt)/\(attempts): no solution, retrying..."
+                    continue
+                }
+
+                self.lastSolveResult = result
+
+                let solvedRAHours = result.raDeg / 15.0
+                let solvedDecDeg = result.decDeg
+                let cosDec = cos(targetDecDeg * .pi / 180.0)
+                let raOffsetDeg = (solvedRAHours - targetRAHours) * 15.0 * cosDec
+                let decOffsetDeg = solvedDecDeg - targetDecDeg
+                let totalOffsetDeg = sqrt(raOffsetDeg * raOffsetDeg + decOffsetDeg * decOffsetDeg)
+
+                self.lastRAOffsetArcmin = raOffsetDeg * 60.0
+                self.lastDecOffsetArcmin = decOffsetDeg * 60.0
+                self.lastOffsetArcmin = totalOffsetDeg * 60.0
+
+                let offsetStr = String(format: "%.1f′ (RA %+.1f′ Dec %+.1f′)",
+                                       totalOffsetDeg * 60.0, raOffsetDeg * 60.0, decOffsetDeg * 60.0)
+
+                if totalOffsetDeg * 60.0 <= tolerance {
+                    self.state = .converged
+                    self.statusMessage = "Centered! Offset: \(offsetStr)"
+                    return
+                }
+
+                self.statusMessage = "Attempt \(attempt)/\(attempts): offset \(offsetStr), syncing..."
+                do {
+                    try await self.mountService.syncPosition(raHours: solvedRAHours, decDeg: solvedDecDeg)
+                } catch {
+                    self.statusMessage = "Sync failed: \(error.localizedDescription)"
+                }
+            }
+
+            let offsetStr = self.lastOffsetArcmin.map { String(format: "%.1f′", $0) } ?? "unknown"
+            self.state = .failed("Did not converge after \(attempts) attempts (offset: \(offsetStr))")
+            self.statusMessage = "Failed to center after \(attempts) attempts (offset: \(offsetStr))"
+        }
+    }
+
     // MARK: - Cancel
 
     func cancel() {

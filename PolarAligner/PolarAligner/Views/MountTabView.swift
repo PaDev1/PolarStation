@@ -32,6 +32,19 @@ struct MountTabView: View {
     @State private var solveStatus: String?
     @State private var isSolving = false
 
+    // Remote plate solving
+    @AppStorage("astrometryNetEnabled") private var astrometryNetEnabled: Bool = false
+    @AppStorage("astrometryNetApiKey") private var astrometryNetApiKey: String = ""
+    @AppStorage("astrometryNetLocalMode") private var astrometryNetLocalMode: Bool = false
+    @AppStorage("astrometryNetLocalURL") private var astrometryNetLocalURL: String = "http://localhost:8080/api"
+
+    private var astrometryBaseURL: String {
+        astrometryNetLocalMode ? astrometryNetLocalURL : AstrometryNetService.remoteBaseURL
+    }
+    private var astrometryApiKey: String {
+        astrometryNetLocalMode ? "local" : astrometryNetApiKey
+    }
+
     // Ephemeral UI state
     @State private var showObsWindowPopover = false
     var assistantVM: AssistantViewModel
@@ -163,6 +176,9 @@ struct MountTabView: View {
             skyMapVM.solvedDec = result.decDeg
             skyMapVM.solvedRollDeg = result.rollDeg
             skyMapVM.solvedFOVDeg = result.fovDeg
+            // Re-center sky map at solved position so overlay is visible
+            skyMapVM.followMount = false
+            skyMapVM.centerMap(raDeg: result.raDeg, decDeg: result.decDeg)
         }
         .onChange(of: plateSolveService.isLoaded) { _, loaded in
             if loaded { loadStarCatalog() }
@@ -201,6 +217,13 @@ struct MountTabView: View {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     vm.showSolvePanel.toggle()
+                }
+                // When closing the panel, clear solved overlay so FOV rect follows mount
+                if vm.showSolvePanel {
+                    skyMapVM.solvedRA = nil
+                    skyMapVM.solvedDec = nil
+                    skyMapVM.solvedRollDeg = nil
+                    skyMapVM.solvedFOVDeg = nil
                 }
             } label: {
                 Image(systemName: vm.showSolvePanel ? "scope" : "dot.scope")
@@ -323,6 +346,89 @@ struct MountTabView: View {
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 30)
                             .font(.system(size: 11))
+                    }
+                }
+
+                // Remote solve buttons (shown when Astrometry.net is configured)
+                if astrometryNetEnabled {
+                    HStack(spacing: 8) {
+                        Image(systemName: "network")
+                            .foregroundStyle(.secondary)
+                            .font(.system(size: 10))
+                        Button("Solve (remote)") {
+                            Task {
+                                guard let jpeg = cameraViewModel.currentFrameJPEG() else {
+                                    centeringSolveService.statusMessage = "No camera frame — connect camera and start preview"
+                                    return
+                                }
+                                if cameraViewModel.detectedStars.isEmpty {
+                                    centeringSolveService.statusMessage = "No stars detected locally — image may be dark or out of focus. Submitting anyway..."
+                                }
+                                await centeringSolveService.solveOnceRemote(
+                                    jpegData: jpeg,
+                                    apiKey: astrometryApiKey,
+                                    baseURL: astrometryBaseURL
+                                )
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(centeringSolveService.state.isActive)
+                        .help("One-shot solve via Astrometry.net — slower but works without local star detection")
+
+                        Button("Center (remote)") {
+                            guard let target = currentGoToTarget else { return }
+                            centeringSolveService.centerOnTargetRemote(
+                                targetRAHours: target.raHours,
+                                targetDecDeg: target.decDeg,
+                                frameProvider: { [weak cameraViewModel] in
+                                    cameraViewModel?.currentFrameJPEG()
+                                },
+                                apiKey: astrometryApiKey,
+                                baseURL: astrometryBaseURL
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(centeringSolveService.state.isActive || !mountService.isConnected || currentGoToTarget == nil)
+                        .help(currentGoToTarget == nil ? "Select a target first" : "Iterative centering using remote Astrometry.net solver")
+
+                        Spacer()
+
+                        Text(astrometryNetLocalMode ? "Local" : "nova.astrometry.net")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
+                // Simulation button — always available if catalog loaded and mount connected
+                if mountService.isConnected && plateSolveService.isLoaded {
+                    HStack(spacing: 8) {
+                        Image(systemName: "wand.and.stars")
+                            .foregroundStyle(.secondary)
+                            .font(.system(size: 10))
+                        Button("Simulate Solve") {
+                            guard let status = mountService.status else { return }
+                            Task {
+                                await centeringSolveService.simulateSolve(
+                                    mountRADeg: status.raHours * 15.0,
+                                    mountDecDeg: status.decDeg,
+                                    fovDeg: plateSolveService.fovDeg,
+                                    imageWidth: Int(plateSolveService.imageWidth),
+                                    imageHeight: Int(plateSolveService.imageHeight)
+                                )
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(centeringSolveService.state.isActive)
+                        .help("Generate a synthetic star field at the mount's reported position and solve it — validates solver config without a real camera image")
+
+                        Spacer()
+
+                        Text("Simulates at mount position")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
                     }
                 }
 

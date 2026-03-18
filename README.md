@@ -102,6 +102,33 @@ Sky map tiles are loaded on-demand from the [STScI Digitized Sky Survey](https:/
 | OpenNGC addendum | ~60 | Barnard, Caldwell, Sharpless, and other notable objects |
 | Named Stars | ~460 | Bright stars with common names |
 
+## Plate Solving
+
+PolarStation uses two plate solving backends:
+
+### Local solver (default)
+
+Built-in [tetra3](https://crates.io/crates/tetra3) geometric hash solver compiled into the app via the Rust core. A bundled star catalog (`star_catalog.rkyv`) is required — load it in Settings → Star Catalog. Solves in under a second when stars are detected.
+
+### Remote / local server solver (optional fallback)
+
+PolarStation supports the [Astrometry.net REST API](https://astrometry.net/doc/net/api.html) as a fallback when the local solver fails. This works with:
+
+- **nova.astrometry.net** — free cloud service, requires an account and API key. Solves are typically 30–120 seconds depending on server load. Sign up at [nova.astrometry.net](https://nova.astrometry.net) and find your API key in My Profile.
+- **Watney (local server)** — run the same API locally on your Mac with no internet required.
+
+#### Running Watney locally
+
+[Watney](https://github.com/Jusas/WatneyAstrometry) is a .NET-based plate solver that exposes the Astrometry.net-compatible REST API on `localhost`. A macOS binary is available on its releases page.
+
+1. Download the macOS release from [github.com/Jusas/WatneyAstrometry/releases](https://github.com/Jusas/WatneyAstrometry/releases)
+2. Download the Watney quad database (star catalog for Watney — separate download, a few GB)
+3. Edit `config.yml` to point at the catalog and set the HTTP port (default `8080`)
+4. Start Watney: `./watney-solve-api`
+5. In PolarStation → Settings → Plate Solving: enable **Use local server**, set URL to `http://localhost:8080/api`
+
+No API key is needed for Watney. Solves are fast (seconds) since everything runs locally.
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.

@@ -115,6 +115,18 @@ struct SettingsView: View {
     @State private var catalogLoadError: String?
     @State private var isLoadingCatalog = false
 
+    // Remote plate solving
+    @AppStorage("astrometryNetApiKey") private var astrometryNetApiKey: String = ""
+    @AppStorage("astrometryNetEnabled") private var astrometryNetEnabled: Bool = false
+    @AppStorage("astrometryNetLocalMode") private var astrometryNetLocalMode: Bool = false
+    @AppStorage("astrometryNetLocalURL") private var astrometryNetLocalURL: String = "http://localhost:8080/api"
+    @State private var remoteTestStatus: String?
+    @State private var isTestingRemote = false
+
+    private var astrometryBaseURL: String {
+        astrometryNetLocalMode ? astrometryNetLocalURL : AstrometryNetService.remoteBaseURL
+    }
+
     // Auto-connect flags
     @AppStorage("autoConnectMount") private var autoConnectMount: Bool = false
     @AppStorage("autoConnectCamera") private var autoConnectCamera: Bool = false
@@ -323,6 +335,66 @@ struct SettingsView: View {
                             Text(err)
                                 .foregroundStyle(.red)
                                 .font(.caption)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                // MARK: - Remote Plate Solving
+                GroupBox("Plate Solving — Astrometry.net API") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Enable as fallback when local solve fails", isOn: $astrometryNetEnabled)
+
+                        Toggle("Use local server (Watney / astrometry-api-lite)", isOn: $astrometryNetLocalMode)
+
+                        if astrometryNetLocalMode {
+                            HStack {
+                                Text("Server URL")
+                                    .frame(width: 90, alignment: .trailing)
+                                TextField("http://localhost:8080/api", text: $astrometryNetLocalURL)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Text("Run Watney locally — same API, no internet needed. Get Watney at github.com/Jusas/WatneyAstrometry (macOS binary available).")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            HStack {
+                                Text("API Key")
+                                    .frame(width: 90, alignment: .trailing)
+                                SecureField("nova.astrometry.net API key", text: $astrometryNetApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Text("Free key at nova.astrometry.net → My Profile.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        HStack {
+                            Button("Test Connection") {
+                                Task {
+                                    isTestingRemote = true
+                                    remoteTestStatus = nil
+                                    defer { isTestingRemote = false }
+                                    do {
+                                        let svc = AstrometryNetService(baseURL: astrometryBaseURL)
+                                        try await svc.testLogin(apiKey: astrometryNetLocalMode ? "local" : astrometryNetApiKey)
+                                        remoteTestStatus = "Connected"
+                                    } catch {
+                                        remoteTestStatus = error.localizedDescription
+                                    }
+                                }
+                            }
+                            .disabled((!astrometryNetLocalMode && astrometryNetApiKey.isEmpty) || isTestingRemote)
+
+                            if isTestingRemote {
+                                ProgressView().controlSize(.small)
+                            }
+
+                            if let status = remoteTestStatus {
+                                Text(status)
+                                    .font(.caption)
+                                    .foregroundStyle(status == "Connected" ? .green : .red)
+                            }
                         }
                     }
                     .padding(.vertical, 4)

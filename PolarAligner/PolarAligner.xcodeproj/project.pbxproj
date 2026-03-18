@@ -111,6 +111,7 @@
 		B2C3D4E5F6A7B8C9D0E1F9A1 /* InstructionBridgeTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F9 /* InstructionBridgeTool.swift */; };
 		WS000101 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = WS000001 /* WeatherService.swift */; };
 		DS000101 /* DSSTileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DS000001 /* DSSTileService.swift */; };
+		AN000101 /* AstrometryNetService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AN000001 /* AstrometryNetService.swift */; };
 		MT000101 /* DSSMetalTileLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = MT000001 /* DSSMetalTileLayer.swift */; };
 		MT000102 /* DSSShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = MT000002 /* DSSShaders.metal */; };
 		CA7B10001 /* OpenNGC.csv in Resources */ = {isa = PBXBuildFile; fileRef = CA7A10001 /* OpenNGC.csv */; };
@@ -237,6 +238,7 @@
 		A1B2C3D4E5F6A7B8C9D0E1F9 /* InstructionBridgeTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstructionBridgeTool.swift; sourceTree = "<group>"; };
 		WS000001 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		DS000001 /* DSSTileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSSTileService.swift; sourceTree = "<group>"; };
+		AN000001 /* AstrometryNetService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstrometryNetService.swift; sourceTree = "<group>"; };
 		MT000001 /* DSSMetalTileLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSSMetalTileLayer.swift; sourceTree = "<group>"; };
 		MT000002 /* DSSShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = DSSShaders.metal; sourceTree = "<group>"; };
 		CA7A10001 /* OpenNGC.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = OpenNGC.csv; sourceTree = "<group>"; };
@@ -315,6 +317,7 @@
 				75CDB4454434C2EE32680E96 /* CenteringSolveService.swift */,
 				BB000SKY1 /* SkyObjectsService.swift */,
 				WS000001 /* WeatherService.swift */,
+				AN000001 /* AstrometryNetService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -788,6 +791,7 @@
 				B2C3D4E5F6A7B8C9D0E1F9A1 /* InstructionBridgeTool.swift in Sources */,
 				WS000101 /* WeatherService.swift in Sources */,
 				DS000101 /* DSSTileService.swift in Sources */,
+				AN000101 /* AstrometryNetService.swift in Sources */,
 				MT000101 /* DSSMetalTileLayer.swift in Sources */,
 				MT000102 /* DSSShaders.metal in Sources */,
 			);

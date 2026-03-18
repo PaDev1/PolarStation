@@ -149,6 +149,39 @@ final class PlateSolveService: ObservableObject {
         throw PlateSolveServiceError.robustSolveFailed(starCount: centroids.count)
     }
 
+    /// Solve using Astrometry.net remote API.
+    ///
+    /// Requires an API key from nova.astrometry.net.
+    /// Provide optional hints (RA/Dec center + radius, FOV) to speed up the solve.
+    func solveRemote(
+        jpegData: Data,
+        apiKey: String,
+        baseURL: String = AstrometryNetService.remoteBaseURL,
+        hintRA: Double? = nil,
+        hintDec: Double? = nil,
+        hintRadiusDeg: Double? = nil,
+        onStatus: ((String) -> Void)? = nil
+    ) async throws -> SolveResult {
+        isSolving = true
+        defer { Task { @MainActor in isSolving = false } }
+
+        let service = AstrometryNetService(baseURL: baseURL)
+        // Forward step-by-step status to the caller via callback
+        if let onStatus {
+            service.onStatusUpdate = onStatus
+        }
+        let result = try await service.solve(
+            jpegData: jpegData,
+            apiKey: apiKey,
+            hintRA: hintRA,
+            hintDec: hintDec,
+            hintRadiusDeg: hintRadiusDeg,
+            hintFovDeg: fovDeg
+        )
+        lastResult = result
+        return result
+    }
+
     /// Compute FOV from focal length (mm) and sensor width (mm).
     func setFOV(focalLengthMM: Double, sensorWidthMM: Double = 11.14) {
         fovDeg = 2.0 * atan(sensorWidthMM / (2.0 * focalLengthMM)) * 180.0 / .pi

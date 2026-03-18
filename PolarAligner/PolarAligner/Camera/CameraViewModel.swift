@@ -1,4 +1,6 @@
 import Foundation
+import CoreGraphics
+import ImageIO
 import Metal
 import PolarCore
 
@@ -691,6 +693,45 @@ final class CameraViewModel: ObservableObject {
         case .gr: return "GRBG"
         case .gb: return "GBRG"
         }
+    }
+
+    // MARK: - Frame export
+
+    /// Returns a JPEG-encoded snapshot of the current display texture, or nil if no frame is available.
+    /// Uses the fully-processed (debayered + STF-stretched) Metal texture shown in the preview,
+    /// which is what should be sent to remote plate solvers — stars are more visible when stretched.
+    func currentFrameJPEG(quality: CGFloat = 0.85) -> Data? {
+        guard let texture = previewViewModel.displayTexture else { return nil }
+
+        let width = texture.width
+        let height = texture.height
+        let bytesPerRow = width * 4
+        var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
+
+        texture.getBytes(&pixels,
+                         bytesPerRow: bytesPerRow,
+                         from: MTLRegionMake2D(0, 0, width, height),
+                         mipmapLevel: 0)
+
+        // Build CGImage from BGRA texture data
+        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+              let cgImage = CGImage(
+                width: width, height: height,
+                bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: bytesPerRow,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue |
+                                                   CGBitmapInfo.byteOrder32Little.rawValue),
+                provider: provider,
+                decode: nil, shouldInterpolate: false, intent: .defaultIntent
+              ) else { return nil }
+
+        let mutable = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(mutable, "public.jpeg" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, cgImage, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else { return nil }
+
+        return mutable as Data
     }
 }
 
