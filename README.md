@@ -1,0 +1,107 @@
+# PolarStation
+
+A macOS application for telescope control, astrophotography, and polar alignment.
+
+> **Hobby project** — This software is provided as-is, with no warranty. Use at your own risk. The author assumes no responsibility for any damage to equipment or data loss resulting from use of this software.
+
+## Features
+
+- **Polar Alignment** — Plate-solving assisted polar alignment workflow with simulated alignment mode for practice
+- **Framing & Sky Map** — Interactive sky map with stereographic projection, DSS2 sky imagery tiles, deep-sky catalog (~14,000 objects from OpenNGC), altitude/visibility planning, and observation window filtering
+- **Camera Control** — Live preview with configurable Bayer debayer (RGGB/BGGR/GRBG/GBRG), STF auto-stretch (Midtone Transfer Function), frame capture to FITS/TIFF, sensor cooling control, and star detection via CoreML and classical background-subtraction with sub-pixel centroid refinement
+- **Autoguiding** — Guide camera control with calibration, guide loop, dithering, and guide graph
+- **Sequencer** — Visual sequence builder with containers, conditions, triggers, and 30+ instruction types covering all connected devices. AI-assisted sequence building via the assistant
+- **AI Assistant** — LLM-powered assistant with tool use for mount control, sky information, weather, catalog search, and device commands
+- **Full ASCOM/Alpaca Support** — All 10 standard device types: Camera, Mount, Focuser, Filter Wheel, Rotator, Dome, Switch, Safety Monitor, Cover Calibrator, Observing Conditions
+- **ZWO ASI Cameras** — Native USB support for ZWO ASI cameras via the ASI SDK
+- **Mount Protocols** — LX200 (serial & TCP) and ASCOM Alpaca
+
+## Architecture
+
+```
+PolarStation
+├── polar-core/           # Rust core library (plate solving, mount protocols, Alpaca clients)
+│   └── UniFFI bindings   # Auto-generated Swift bindings
+├── PolarCore/            # Swift package wrapping the Rust static library
+├── PolarAligner/         # Xcode project (historically named PolarAligner)
+│   └── PolarAligner/     # Swift source
+│       ├── App/          # AppState, entry point
+│       ├── Views/        # SwiftUI views, sky map, settings
+│       ├── Camera/       # Camera & filter wheel control
+│       ├── Pipeline/     # Metal shaders (debayer, stretch, DSS)
+│       ├── Devices/      # Alpaca device ViewModels
+│       ├── Sequencer/    # Sequence engine, executors, UI
+│       ├── Assistant/    # AI assistant with LLM tool use (Claude/OpenAI)
+│       ├── Guiding/      # Autoguider
+│       ├── Alignment/    # Polar alignment engine
+│       └── Services/     # Mount, plate solve, weather, DSS tiles
+├── StarDetector-Mac/     # CoreML star detection model project
+└── build.sh              # Complete build script
+```
+
+> **Note:** The Xcode project is named `PolarAligner` for historical reasons. The app builds and runs as **PolarStation**.
+
+## Requirements
+
+- macOS 14.0 (Sonoma) or later
+- Xcode 15+
+- Rust toolchain (`rustup`, stable)
+- Apple Silicon or Intel Mac
+
+## Building
+
+```bash
+# Install Rust if needed
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Clone and build
+git clone <repo-url>
+cd PolarStation
+./build.sh
+```
+
+The build script:
+1. Builds the Rust core library (`polar-core`)
+2. Generates UniFFI Swift bindings
+3. Copies artifacts to the PolarCore Swift package
+4. Builds the Xcode project
+
+The built app is located in Xcode's DerivedData directory.
+
+## Third-Party Dependencies
+
+### Rust (polar-core)
+| Crate | License | Purpose |
+|-------|---------|---------|
+| [uniffi](https://github.com/mozilla/uniffi-rs) | MPL-2.0 | Swift/Rust bindings generator |
+| [tetra3](https://crates.io/crates/tetra3) | MIT/Apache-2.0 | Star pattern plate solver |
+| [nalgebra](https://github.com/dimforge/nalgebra) | Apache-2.0 | Linear algebra |
+| [ureq](https://github.com/algesten/ureq) | MIT/Apache-2.0 | HTTP client (Alpaca API) |
+| [serialport](https://crates.io/crates/serialport) | MPL-2.0 | Serial port (LX200) |
+| [thiserror](https://crates.io/crates/thiserror) | MIT/Apache-2.0 | Error handling |
+
+### Swift
+| Package | License | Purpose |
+|---------|---------|---------|
+| [SwiftAA](https://github.com/onekiloparsec/SwiftAA) | MIT | Astronomical algorithms |
+
+### Bundled SDKs
+| SDK | License | Purpose |
+|-----|---------|---------|
+| [ZWO ASI Camera SDK](https://www.zwoastro.com/software/) | Proprietary (freely distributed) | ZWO ASI USB camera support |
+
+### Sky Imagery
+
+Sky map tiles are loaded on-demand from the [STScI Digitized Sky Survey](https://archive.stsci.edu/dss/) (DSS2) archive — not bundled with the app. Tiles are cached locally for offline use. The Digitized Sky Surveys were produced at the Space Telescope Science Institute under U.S. Government grant NAG W-2166. Images based on photographic data from the UK Schmidt Telescope and Palomar Observatory.
+
+### Object Catalogs (bundled)
+
+| Catalog | Entries | Content |
+|---------|---------|---------|
+| [OpenNGC](https://github.com/mattiaverga/OpenNGC) | ~13,900 | NGC and IC deep-sky objects (CC BY-SA 4.0) |
+| OpenNGC addendum | ~60 | Barnard, Caldwell, Sharpless, and other notable objects |
+| Named Stars | ~460 | Bright stars with common names |
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
