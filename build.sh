@@ -35,10 +35,10 @@ echo "  ✓ Rust library built"
 echo ""
 echo "--- [2/4] Generating UniFFI Swift bindings ---"
 UNIFFI_OUT=$(mktemp -d)
-$CARGO run --release --manifest-path "$RUST_DIR/Cargo.toml" \
+(cd "$RUST_DIR" && $CARGO run --release --manifest-path "$RUST_DIR/Cargo.toml" \
     --features=uniffi/cli --bin uniffi-bindgen \
     generate --library "$SCRIPT_DIR/polar-core/target/release/libpolar_core.a" \
-    --language swift --out-dir "$UNIFFI_OUT"
+    --language swift --out-dir "$UNIFFI_OUT")
 echo "  ✓ Bindings generated"
 
 # Step 3: Copy artifacts to PolarCore Swift package

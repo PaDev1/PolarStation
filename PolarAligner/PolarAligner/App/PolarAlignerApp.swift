@@ -54,6 +54,7 @@ struct PolarAlignerApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
+                .environmentObject(appState.dssTileService)
                 .task {
                     await autoLoadCatalog()
                     await autoConnectDevices()

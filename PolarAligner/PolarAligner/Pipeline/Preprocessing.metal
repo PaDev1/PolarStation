@@ -5,6 +5,8 @@ struct DebayerParams {
     uint width;
     uint height;
     uint bytesPerPixel;
+    uint bayerOffsetX;  // 0 or 1: column offset for Red pixel
+    uint bayerOffsetY;  // 0 or 1: row offset for Red pixel
 };
 
 struct StretchParams {
@@ -27,12 +29,10 @@ static float sample_raw(device const uchar *rawBuffer, uint sx, uint sy,
     return float(rawBuffer[idx]) / 255.0;
 }
 
-/// Debayer RGGB Bayer pattern to RGBA half-float.
+/// Generic Bayer pattern debayer to RGBA half-float.
 /// Uses bilinear interpolation for demosaicing.
-///
-/// RGGB pattern:
-///   R  G
-///   G  B
+/// Supports all 4 patterns via bayerOffsetX/Y:
+///   RGGB: (0,0)   GRBG: (1,0)   GBRG: (0,1)   BGGR: (1,1)
 kernel void debayer_rggb(
     device const uchar *rawBuffer [[buffer(0)]],
     texture2d<half, access::write> output [[texture(0)]],
@@ -49,8 +49,9 @@ kernel void debayer_rggb(
 
     float r, g, b;
 
-    uint px = x % 2;
-    uint py = y % 2;
+    // Apply bayer offset to determine pixel role
+    uint px = (x + params.bayerOffsetX) % 2;
+    uint py = (y + params.bayerOffsetY) % 2;
 
     float c = sample_raw(rawBuffer, x, y, w, h, bpp);
 

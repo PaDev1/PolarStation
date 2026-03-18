@@ -237,14 +237,14 @@ private struct CameraViewerContent: View {
                     viewModel.previewViewModel.autoStretchEnabled.toggle()
                 } label: {
                     HStack(spacing: 3) {
-                        Image(systemName: viewModel.previewViewModel.autoStretchEnabled
-                              ? "wand.and.stars" : "wand.and.stars.inverse")
-                        Text("STF")
+                        Image(systemName: "wand.and.stars")
+                        Text(viewModel.previewViewModel.autoStretchEnabled ? "STF On" : "STF Off")
                             .font(.system(size: 11))
                     }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .tint(viewModel.previewViewModel.autoStretchEnabled ? .cyan : nil)
                 .foregroundStyle(viewModel.previewViewModel.autoStretchEnabled ? .cyan : .secondary)
                 .help("Auto-stretch — adjusts display to reveal faint detail")
 

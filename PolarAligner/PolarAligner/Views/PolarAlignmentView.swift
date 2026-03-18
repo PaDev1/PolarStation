@@ -534,10 +534,16 @@ struct PolarAlignmentView: View {
 
         // Set camera FOV from telescope settings
         let focalLength = UserDefaults.standard.double(forKey: "focalLengthMM")
-        if focalLength > 0 {
-            let sensorWidthMM = 11.14 // ASI585MC default
+        let pixelSize = UserDefaults.standard.double(forKey: "pixelSizeMicrons")
+        let sW = UserDefaults.standard.integer(forKey: "sensorWidthPx")
+        let sH = UserDefaults.standard.integer(forKey: "sensorHeightPx")
+        let sensorW = sW > 0 ? sW : 1920
+        let sensorH = sH > 0 ? sH : 1080
+        if focalLength > 0 && pixelSize > 0 {
+            let sensorWidthMM = pixelSize * Double(sensorW) / 1000.0
             let fov = 2.0 * atan(sensorWidthMM / (2.0 * focalLength)) * 180.0 / .pi
             skyMapVM.cameraFOVDeg = fov
+            skyMapVM.sensorAspect = Double(sensorW) / Double(sensorH)
         }
 
         // Sync to current mount position if available

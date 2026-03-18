@@ -22,6 +22,7 @@ final class AppState: ObservableObject {
     let skyMapViewModel = SkyMapViewModel()
     let mountTabViewModel = MountTabViewModel()
     let weatherService = WeatherService()
+    let dssTileService = DSSTileService()
     lazy var centeringSolveService: CenteringSolveService = {
         CenteringSolveService(plateSolveService: plateSolveService, mountService: mountService)
     }()

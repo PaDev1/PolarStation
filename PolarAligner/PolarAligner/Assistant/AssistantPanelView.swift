@@ -72,6 +72,131 @@ final class AssistantWindowController {
     }
 }
 
+// MARK: - Markdown Block Renderer
+
+/// Renders an AI response with proper block-level spacing.
+/// Splits content into headings, paragraphs, list items and dividers so each
+/// gets appropriate vertical breathing room, unlike a single SwiftUI Text node.
+struct MarkdownBlockView: View {
+    let content: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
+        }
+    }
+
+    // MARK: - Block model
+
+    private enum Block {
+        case heading(level: Int, text: String)
+        case paragraph(String)
+        case listItem(indent: Int, text: String)
+        case divider
+    }
+
+    // MARK: - Parser
+
+    private var blocks: [Block] {
+        var result: [Block] = []
+        let lines = content.components(separatedBy: "\n")
+        var paragraphLines: [String] = []
+
+        func flushParagraph() {
+            let joined = paragraphLines.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+            if !joined.isEmpty { result.append(.paragraph(joined)) }
+            paragraphLines.removeAll()
+        }
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Horizontal rule
+            if trimmed.hasPrefix("---") || trimmed == "⸻" || trimmed == "—" {
+                flushParagraph()
+                result.append(.divider)
+                continue
+            }
+
+            // Headings: ### ## #
+            if trimmed.hasPrefix("###") {
+                flushParagraph()
+                result.append(.heading(level: 3, text: String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)))
+                continue
+            }
+            if trimmed.hasPrefix("##") {
+                flushParagraph()
+                result.append(.heading(level: 2, text: String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)))
+                continue
+            }
+            if trimmed.hasPrefix("#") {
+                flushParagraph()
+                result.append(.heading(level: 1, text: String(trimmed.dropFirst(1)).trimmingCharacters(in: .whitespaces)))
+                continue
+            }
+
+            // List items: - or *
+            let listPrefixes = ["- ", "* ", "• "]
+            if let prefix = listPrefixes.first(where: { trimmed.hasPrefix($0) }) {
+                flushParagraph()
+                let indent = (line.prefix(while: { $0 == " " }).count) / 2
+                result.append(.listItem(indent: indent, text: String(trimmed.dropFirst(prefix.count))))
+                continue
+            }
+
+            // Blank line → paragraph break
+            if trimmed.isEmpty {
+                flushParagraph()
+                continue
+            }
+
+            paragraphLines.append(trimmed)
+        }
+        flushParagraph()
+        return result
+    }
+
+    // MARK: - Rendering
+
+    @ViewBuilder
+    private func blockView(_ block: Block) -> some View {
+        switch block {
+        case .heading(let level, let text):
+            Text(inlineMarkdown(text))
+                .font(level == 1 ? .headline : (level == 2 ? .subheadline : .footnote))
+                .fontWeight(.semibold)
+                .foregroundStyle(level == 1 ? Color.primary : Color.primary.opacity(0.85))
+                .padding(.top, level == 1 ? 10 : 8)
+                .padding(.bottom, 2)
+
+        case .paragraph(let text):
+            Text(inlineMarkdown(text))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+
+        case .listItem(let indent, let text):
+            HStack(alignment: .top, spacing: 5) {
+                Text("•")
+                    .foregroundStyle(.secondary)
+                Text(inlineMarkdown(text))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 2)
+            .padding(.leading, CGFloat(indent) * 14)
+
+        case .divider:
+            Divider()
+                .padding(.vertical, 6)
+        }
+    }
+
+    private func inlineMarkdown(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text)) ?? AttributedString(text)
+    }
+}
+
 // MARK: - Panel Content View
 
 /// The chat UI content (no window chrome — the NSPanel provides that).
@@ -171,7 +296,7 @@ struct AssistantPanelContent: View {
                     .foregroundStyle(.purple)
                     .font(.system(size: 12))
                     .padding(.top, 4)
-                Text(message.content)
+                MarkdownBlockView(content: message.content)
                     .textSelection(.enabled)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)

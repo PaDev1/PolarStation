@@ -47,6 +47,14 @@ final class SkyMapViewModel: ObservableObject {
     @Published var centerRA: Double = 0.0
     @Published var centerDec: Double = 0.0
 
+    // Map orientation mode
+    enum MapMode { case equatorial, altAz }
+    @Published var mapMode: MapMode = .equatorial
+
+    // Alt-Az projection center (altAz mode)
+    @Published var centerAlt: Double = 45.0
+    @Published var centerAz: Double = 180.0   // Face south (good default for N hemisphere)
+
     // Zoom: field of view shown on the map (degrees)
     @Published var mapFOV: Double = 60.0
 
@@ -84,7 +92,7 @@ final class SkyMapViewModel: ObservableObject {
     /// Set to false when user drags the map; re-enabled by "Find Camera" button.
     @Published var followMount = true
 
-    let minFOV: Double = 2.0
+    let minFOV: Double = 1.0
     let maxFOV: Double = 180.0
 
     deinit {
@@ -208,6 +216,20 @@ final class SkyMapViewModel: ObservableObject {
         mapFOV = max(minFOV, min(maxFOV, mapFOV * factor))
     }
 
+    /// Center the sky map on an equatorial position, handling both map modes.
+    /// Use this instead of setting centerRA/centerDec directly when the intent is to move the view.
+    func centerMap(raDeg: Double, decDeg: Double) {
+        centerRA = raDeg
+        centerDec = decDeg
+        if mapMode == .altAz {
+            // Ensure lat/LST trig is current (updateProjectionCache runs each frame; safe after first render)
+            if _cosLat == 0 { updateProjectionCache() }
+            let aa = equatorialToAltAzFast(raDeg: raDeg, decDeg: decDeg)
+            centerAlt = aa.altDeg
+            centerAz = aa.azDeg
+        }
+    }
+
     func pan(deltaRA: Double, deltaDec: Double) {
         centerRA = (centerRA + deltaRA).truncatingRemainder(dividingBy: 360.0)
         if centerRA < 0 { centerRA += 360.0 }
@@ -247,23 +269,37 @@ final class SkyMapViewModel: ObservableObject {
 
         guard followMount else { return }
 
-        if abs(s.decDeg) < 85.0 {
-            // Normal: follow mount RA
-            centerRA = mountRA!
+        if mapMode == .altAz {
+            if !s.altDeg.isNaN && !s.azDeg.isNaN {
+                centerAlt = s.altDeg
+                centerAz = s.azDeg
+            }
+        } else {
+            if abs(s.decDeg) < 85.0 {
+                // Normal: follow mount RA
+                centerRA = mountRA!
+            }
+            // Near pole: keep centerRA as-is (stable orientation)
+            centerDec = mountDec!
         }
-        // Near pole: keep centerRA as-is (stable orientation)
-        centerDec = mountDec!
     }
 
     /// Re-center the map on the current mount position.
     func snapToMount() {
         followMount = true
-        if let ra = mountRA {
-            if abs(mountDec ?? 0) < 85.0 {
-                centerRA = ra
+        if mapMode == .altAz {
+            if let ra = mountRA, let dec = mountDec {
+                // updateProjectionCache() must have been called before (it's called each frame)
+                let aa = equatorialToAltAzFast(raDeg: ra, decDeg: dec)
+                centerAlt = aa.altDeg
+                centerAz = aa.azDeg
             }
+        } else {
+            if let ra = mountRA {
+                if abs(mountDec ?? 0) < 85.0 { centerRA = ra }
+            }
+            if let dec = mountDec { centerDec = dec }
         }
-        if let dec = mountDec { centerDec = dec }
     }
 
     // MARK: - Horizon Coordinate Conversion
@@ -338,6 +374,10 @@ final class SkyMapViewModel: ObservableObject {
     private(set) var _sinLat: Double = 0
     private(set) var _cosLat: Double = 1
     private(set) var _cachedLST: Double = 0
+    // Alt-az mode cache
+    private(set) var _sinAlt0: Double = 0
+    private(set) var _cosAlt0: Double = 1
+    private(set) var _az0Rad: Double = 0
 
     /// Call once per render frame before calling projectFast / altazToEquatorialFast.
     func updateProjectionCache() {
@@ -350,6 +390,11 @@ final class SkyMapViewModel: ObservableObject {
         _sinLat = sin(lat)
         _cosLat = cos(lat)
         _cachedLST = lstRadians
+        // Alt-az mode cache
+        let alt0 = centerAlt * .pi / 180.0
+        _sinAlt0 = sin(alt0)
+        _cosAlt0 = cos(alt0)
+        _az0Rad = centerAz * .pi / 180.0
     }
 
     /// Project RA/Dec (degrees) to normalized coordinates [-1, 1] centered on projection center.
@@ -379,7 +424,16 @@ final class SkyMapViewModel: ObservableObject {
     }
 
     /// Fast projection using cached center trig values. Call updateProjectionCache() first.
+    /// In altAz mode, converts RA/Dec → Alt/Az first, then projects in alt-az space.
     func projectFast(raDeg: Double, decDeg: Double) -> CGPoint? {
+        if mapMode == .altAz {
+            let aa = equatorialToAltAzFast(raDeg: raDeg, decDeg: decDeg)
+            return projectAltAzFast(altDeg: aa.altDeg, azDeg: aa.azDeg)
+        }
+        return projectEquatorialFast(raDeg: raDeg, decDeg: decDeg)
+    }
+
+    private func projectEquatorialFast(raDeg: Double, decDeg: Double) -> CGPoint? {
         let ra = raDeg * .pi / 180.0
         let dec = decDeg * .pi / 180.0
 
@@ -397,6 +451,42 @@ final class SkyMapViewModel: ObservableObject {
         let y = kClamped * (_cosDec0 * sinDec - _sinDec0 * cosDec * cosDeltaRA)
 
         return CGPoint(x: -x * _projScale, y: y * _projScale)
+    }
+
+    /// Project alt-az coordinates directly (alt-az mode). Call updateProjectionCache() first.
+    func projectAltAzFast(altDeg: Double, azDeg: Double) -> CGPoint? {
+        let alt = altDeg * .pi / 180.0
+        var deltaAz = azDeg * .pi / 180.0 - _az0Rad
+        // Normalize to [-π, π]
+        if deltaAz > .pi { deltaAz -= 2 * .pi }
+        if deltaAz < -.pi { deltaAz += 2 * .pi }
+
+        let sinAlt = sin(alt)
+        let cosAlt = cos(alt)
+        let cosDeltaAz = cos(deltaAz)
+        let cosc = _sinAlt0 * sinAlt + _cosAlt0 * cosAlt * cosDeltaAz
+
+        if cosc < -0.1 { return nil }
+
+        let kClamped = min(2.0 / (1.0 + cosc), 10.0)
+        let x = kClamped * cosAlt * sin(deltaAz)
+        let y = kClamped * (_cosAlt0 * sinAlt - _sinAlt0 * cosAlt * cosDeltaAz)
+
+        return CGPoint(x: x * _projScale, y: y * _projScale)  // no flip: east naturally goes left in alt-az (az increases clockwise, so east=smaller deltaAz from south=negative x)
+    }
+
+    /// Fast equatorial→altaz using cached lat and LST trig values. Call updateProjectionCache() first.
+    func equatorialToAltAzFast(raDeg: Double, decDeg: Double) -> (altDeg: Double, azDeg: Double) {
+        let ra = raDeg * .pi / 180.0
+        let dec = decDeg * .pi / 180.0
+        let h = _cachedLST - ra   // hour angle
+        let sinAlt = sin(dec) * _sinLat + cos(dec) * _cosLat * cos(h)
+        let alt = asin(max(-1, min(1, sinAlt)))
+        let az = atan2(-cos(dec) * sin(h),
+                       sin(dec) * _cosLat - cos(dec) * _sinLat * cos(h))
+        var azDeg = az * 180.0 / .pi
+        if azDeg < 0 { azDeg += 360.0 }
+        return (alt * 180.0 / .pi, azDeg)
     }
 
     /// Fast altaz→equatorial using cached lat trig values. Call updateProjectionCache() first.
@@ -444,9 +534,23 @@ final class SkyMapViewModel: ObservableObject {
 
         let scale = 2.0 / (mapFOV * .pi / 180.0)
         let x = -nx / scale  // undo the -x flip (east-left convention)
-        let y = ny / scale   // y was not flipped in project
+        let y = ny / scale
 
         let rho = sqrt(x * x + y * y)
+
+        if mapMode == .altAz {
+            if rho < 1e-10 { return altazToEquatorial(altDeg: centerAlt, azDeg: centerAz) }
+            let c = 2.0 * atan(rho / 2.0)
+            let alt0 = centerAlt * .pi / 180.0
+            let az0 = centerAz * .pi / 180.0
+            let altRad = asin(cos(c) * sin(alt0) + y * sin(c) * cos(alt0) / rho)
+            let azRadRaw = az0 + atan2(x * sin(c), rho * cos(alt0) * cos(c) - y * sin(alt0) * sin(c))
+            var azDeg = azRadRaw * 180.0 / .pi
+            azDeg = azDeg.truncatingRemainder(dividingBy: 360.0)
+            if azDeg < 0 { azDeg += 360.0 }
+            return altazToEquatorial(altDeg: altRad * 180.0 / .pi, azDeg: azDeg)
+        }
+
         if rho < 1e-10 { return (centerRA, centerDec) }
 
         let c = 2.0 * atan(rho / 2.0)
@@ -465,21 +569,35 @@ final class SkyMapViewModel: ObservableObject {
 
 struct SkyMapView: View {
     @ObservedObject var viewModel: SkyMapViewModel
+    @EnvironmentObject var dssTileService: DSSTileService
+    var onAskAI: ((String, Double, Double) -> Void)?  // (name, raHours, decDeg)
     var onGoTo: ((Double, Double) -> Void)?  // (raHours, decDeg)
 
     @State private var dragStart: CGPoint?
     @State private var dragStartCenter: (ra: Double, dec: Double)?
+    @State private var dragStartAltAz: (az: Double, alt: Double)?
+    @State private var isHovering = false
+    @State private var scrollMonitor: Any?
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                // Reference lstRadians so Canvas redraws when sidereal time updates
+                // Reference published properties so Canvas redraws when they change
                 let _ = viewModel.lstRadians
+                let _ = dssTileService.isEnabled
+                let _ = dssTileService.tileLoadCount
 
                 Canvas { context, size in
                     viewModel.updateProjectionCache()
                     drawBackground(context: context, size: size)
-                    drawGrid(context: context, size: size)
+                    if dssTileService.isEnabled {
+                        drawDSSLayer(context: context, size: size)
+                    }
+                    if viewModel.mapMode == .altAz {
+                        drawAltAzGrid(context: context, size: size)
+                    } else {
+                        drawGrid(context: context, size: size)
+                    }
                     drawStars(context: context, size: size)
                     drawMessierObjects(context: context, size: size)
                     drawSolarSystem(context: context, size: size)
@@ -494,25 +612,74 @@ struct SkyMapView: View {
                 .gesture(scrollGesture)
                 .gesture(dragGesture(size: geo.size))
                 .gesture(tapGesture(size: geo.size))
+                .onHover { isHovering = $0 }
 
                 // Overlay controls
                 VStack {
                     HStack {
                         Spacer()
-                        // "Find Camera" button — re-center map on mount
-                        if !viewModel.followMount, viewModel.mountRA != nil {
+                        VStack(spacing: 6) {
+                            // Map orientation toggle (Alt-Az / Equatorial)
                             Button {
-                                viewModel.snapToMount()
+                                if viewModel.mapMode == .altAz {
+                                    // Carry the current alt-az center to equatorial
+                                    let eq = viewModel.altazToEquatorial(altDeg: viewModel.centerAlt, azDeg: viewModel.centerAz)
+                                    viewModel.centerRA = eq.raDeg
+                                    viewModel.centerDec = eq.decDeg
+                                    viewModel.mapMode = .equatorial
+                                } else {
+                                    // Carry the current equatorial center to alt-az
+                                    viewModel.updateProjectionCache()
+                                    let aa = viewModel.equatorialToAltAzFast(raDeg: viewModel.centerRA, decDeg: viewModel.centerDec)
+                                    viewModel.centerAlt = aa.altDeg
+                                    viewModel.centerAz = aa.azDeg
+                                    viewModel.mapMode = .altAz
+                                }
                             } label: {
-                                Image(systemName: "scope")
-                                    .font(.system(size: 14))
+                                ZStack {
+                                    Circle()
+                                        .fill(.black.opacity(0.6))
+                                        .frame(width: 29, height: 29)
+                                    Text(viewModel.mapMode == .altAz ? "ALT" : "EQ")
+                                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(.white.opacity(0.85))
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .help(viewModel.mapMode == .altAz ? "Switch to equatorial (RA/Dec)" : "Switch to alt-az (horizon up)")
+
+                            // DSS imagery toggle
+                            Button {
+                                dssTileService.isEnabled.toggle()
+                                if !dssTileService.isEnabled {
+                                    dssTileService.cancelAllFetches()
+                                }
+                            } label: {
+                                Image(systemName: "photo.stack")
+                                    .font(.system(size: 13))
                                     .padding(8)
                                     .background(.black.opacity(0.6))
                                     .clipShape(Circle())
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(dssTileService.isEnabled ? .cyan : .white.opacity(0.5))
                             }
                             .buttonStyle(.plain)
-                            .help("Center on camera")
+                            .help(dssTileService.isEnabled ? "Hide sky imagery" : "Show DSS sky imagery")
+
+                            // "Find Camera" button
+                            if !viewModel.followMount, viewModel.mountRA != nil {
+                                Button {
+                                    viewModel.snapToMount()
+                                } label: {
+                                    Image(systemName: "scope")
+                                        .font(.system(size: 14))
+                                        .padding(8)
+                                        .background(.black.opacity(0.6))
+                                        .clipShape(Circle())
+                                        .foregroundStyle(.white)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Center on camera")
+                            }
                         }
                     }
                     Spacer()
@@ -523,14 +690,30 @@ struct SkyMapView: View {
         .background(Color.black)
         .onAppear {
             viewModel.startLSTTimer()
+            scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                guard isHovering else { return event }
+                let delta = event.scrollingDeltaY
+                guard abs(delta) > 0.1 else { return event }
+                viewModel.zoom(by: exp(-delta * 0.04))
+                return nil  // consume so scroll doesn't propagate to window
+            }
         }
         .onDisappear {
             viewModel.stopLSTTimer()
+            if let monitor = scrollMonitor {
+                NSEvent.removeMonitor(monitor)
+                scrollMonitor = nil
+            }
         }
         .alert("GoTo Target", isPresented: $viewModel.showGoToConfirm) {
             Button("GoTo") {
                 if let target = viewModel.selectedTarget {
                     onGoTo?(target.raHours, target.decDeg)
+                }
+            }
+            Button("Ask AI") {
+                if let target = viewModel.selectedTarget {
+                    onAskAI?(target.name, target.raHours, target.decDeg)
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -550,8 +733,79 @@ struct SkyMapView: View {
         )
     }
 
+    private func drawDSSLayer(context: GraphicsContext, size: CGSize) {
+        let fov = viewModel.mapFOV
+        guard fov <= DSSTileService.minFOV else { return }
+
+        // In alt-az mode derive tile center from the current alt-az position; in equatorial
+        // mode use centerRA/centerDec directly.  Using the alt-az→equatorial conversion
+        // here means tiles load for wherever the view is actually pointing, even after panning.
+        let tileEq: (raDeg: Double, decDeg: Double)
+        if viewModel.mapMode == .altAz {
+            tileEq = viewModel.altazToEquatorialFast(altDeg: viewModel.centerAlt, azDeg: viewModel.centerAz)
+        } else {
+            tileEq = (viewModel.centerRA, viewModel.centerDec)
+        }
+        let tiles = dssTileService.visibleTiles(
+            centerRA: tileEq.raDeg,
+            centerDec: tileEq.decDeg,
+            fov: fov)
+        dssTileService.requestTiles(tiles)
+
+        let halfView  = min(size.width, size.height) / 2.0
+        let pixPerDeg = halfView / (fov / 2.0 * .pi / 180.0) * (.pi / 180.0)
+
+        let isAltAz = viewModel.mapMode == .altAz
+
+        for tile in tiles {
+            guard let cgImage = dssTileService.cachedCGImage(key: tile.key) else { continue }
+            guard let proj = viewModel.projectFast(raDeg: tile.raDeg, decDeg: tile.decDeg)
+            else { continue }
+            let center = viewModel.toScreen(proj, size: size)
+            let half   = tile.sizeDeg * pixPerDeg / 2.0
+            guard center.x + half >= 0, center.x - half <= size.width,
+                  center.y + half >= 0, center.y - half <= size.height else { continue }
+
+            var tileCtx = context
+            tileCtx.opacity = 0.85
+            tileCtx.addFilter(.colorMultiply(Color(red: 0.55, green: 0.75, blue: 1.0)))
+
+            if isAltAz {
+                // Project the four edge midpoints of this tile in equatorial coords so that
+                // adjacent tiles share identical projected boundary points, eliminating seams.
+                let hSz = tile.sizeDeg / 2.0
+                guard let pN = viewModel.projectFast(raDeg: tile.raDeg,          decDeg: min(tile.decDeg + hSz, 89.9)),
+                      let pS = viewModel.projectFast(raDeg: tile.raDeg,          decDeg: max(tile.decDeg - hSz, -89.9)),
+                      let pE = viewModel.projectFast(raDeg: tile.raDeg - hSz,    decDeg: tile.decDeg),
+                      let pW = viewModel.projectFast(raDeg: tile.raDeg + hSz,    decDeg: tile.decDeg)
+                else { continue }
+                let sN = viewModel.toScreen(pN, size: size)
+                let sS = viewModel.toScreen(pS, size: size)
+                let sE = viewModel.toScreen(pE, size: size)
+                let sW = viewModel.toScreen(pW, size: size)
+                let pixH = hypot(sN.x - sS.x, sN.y - sS.y)
+                let pixW = hypot(sE.x - sW.x, sE.y - sW.y)
+                // Angle of equatorial north on the alt-az screen at this tile position
+                let northAngle = CGFloat(atan2(sN.x - sS.x, sS.y - sN.y))
+                let centredRect = CGRect(x: -pixW / 2, y: -pixH / 2, width: pixW, height: pixH)
+                // Both projections and DSS images share the same east-left sky convention.
+                // Just translate to tile center and rotate by the parallactic angle so the
+                // image's north (v=0) aligns with the celestial north direction on screen.
+                tileCtx.transform = tileCtx.transform
+                    .translatedBy(x: center.x, y: center.y)
+                    .rotated(by: northAngle)
+                tileCtx.draw(Image(cgImage, scale: 1.0, orientation: .up, label: Text("")),
+                             in: centredRect)
+            } else {
+                let rect = CGRect(x: center.x - half, y: center.y - half,
+                                  width: half * 2, height: half * 2)
+                tileCtx.draw(Image(cgImage, scale: 1.0, orientation: .up, label: Text("")), in: rect)
+            }
+        }
+    }
+
     private func drawGrid(context: GraphicsContext, size: CGSize) {
-        let gridColor = Color.white.opacity(0.12)
+        let gridColor = Color.white.opacity(0.07)
 
         // RA lines (every 15° = 1 hour, or finer depending on zoom)
         let raStep: Double = {
@@ -635,7 +889,73 @@ struct SkyMapView: View {
             }
             raPos += curveStep
         }
-        context.stroke(eqPath, with: .color(Color.blue.opacity(0.3)), lineWidth: 1.0)
+        context.stroke(eqPath, with: .color(Color.blue.opacity(0.18)), lineWidth: 1.0)
+    }
+
+    // Alt-az grid: altitude rings + azimuth radials, drawn directly in alt-az coordinates.
+    private func drawAltAzGrid(context: GraphicsContext, size: CGSize) {
+        let gridColor = Color.white.opacity(0.10)
+        let fov = viewModel.mapFOV
+
+        let altStep: Double = fov < 10 ? 2.0 : fov < 30 ? 5.0 : 10.0
+        let azStep: Double  = fov < 10 ? 5.0 : fov < 30 ? 10.0 : fov < 90 ? 15.0 : 30.0
+        let curveStep: Double = fov < 15 ? 1.0 : 2.0
+
+        // Altitude rings
+        var alt = -80.0
+        while alt <= 90.0 {
+            var path = Path()
+            var first = true
+            var az = 0.0
+            while az <= 360.0 {
+                if let p = viewModel.projectAltAzFast(altDeg: alt, azDeg: az) {
+                    let sp = viewModel.toScreen(p, size: size)
+                    if sp.x >= -50 && sp.x <= size.width + 50 && sp.y >= -50 && sp.y <= size.height + 50 {
+                        if first { path.move(to: sp); first = false }
+                        else { path.addLine(to: sp) }
+                    } else { first = true }
+                } else { first = true }
+                az += curveStep
+            }
+            context.stroke(path, with: .color(gridColor), lineWidth: 0.5)
+            alt += altStep
+        }
+
+        // Azimuth radials
+        var az = 0.0
+        while az < 360.0 {
+            var path = Path()
+            var first = true
+            var a = -80.0
+            while a <= 90.0 {
+                if let p = viewModel.projectAltAzFast(altDeg: a, azDeg: az) {
+                    let sp = viewModel.toScreen(p, size: size)
+                    if sp.x >= -50 && sp.x <= size.width + 50 && sp.y >= -50 && sp.y <= size.height + 50 {
+                        if first { path.move(to: sp); first = false }
+                        else { path.addLine(to: sp) }
+                    } else { first = true }
+                } else { first = true }
+                a += curveStep
+            }
+            context.stroke(path, with: .color(gridColor), lineWidth: 0.5)
+            az += azStep
+        }
+
+        // Celestial equator as a faint blue curve (Dec=0)
+        var eqPath = Path()
+        var first = true
+        var ra = 0.0
+        while ra <= 360.0 {
+            if let p = viewModel.projectFast(raDeg: ra, decDeg: 0) {
+                let sp = viewModel.toScreen(p, size: size)
+                if sp.x >= -50 && sp.x <= size.width + 50 && sp.y >= -50 && sp.y <= size.height + 50 {
+                    if first { eqPath.move(to: sp); first = false }
+                    else { eqPath.addLine(to: sp) }
+                } else { first = true }
+            } else { first = true }
+            ra += curveStep
+        }
+        context.stroke(eqPath, with: .color(Color.blue.opacity(0.25)), lineWidth: 1.0)
     }
 
     private func drawStars(context: GraphicsContext, size: CGSize) {
@@ -674,16 +994,17 @@ struct SkyMapView: View {
     private func drawMessierObjects(context: GraphicsContext, size: CGSize) {
         let fov = viewModel.mapFOV
 
-        // Magnitude limit based on zoom: wider view = only bright objects
+        // Magnitude limit based on zoom: wider view = only bright objects.
+        // At FOV ≤ 20° DSS imagery is active, so show the full catalog for context.
         let magLimit: Double
-        if fov > 180 { magLimit = 7.0 }       // full sky: Messier-bright only
-        else if fov > 90 { magLimit = 9.0 }    // hemisphere
-        else if fov > 30 { magLimit = 11.0 }   // wide field
-        else if fov > 10 { magLimit = 13.0 }   // medium zoom
-        else { magLimit = 99.0 }                // deep zoom: show everything
+        if fov > 180 { magLimit = 7.0 }
+        else if fov > 90 { magLimit = 9.0 }
+        else if fov > 30 { magLimit = 11.0 }
+        else if fov > 20 { magLimit = 13.0 }
+        else { magLimit = 99.0 }  // DSS zone: show all catalog objects
 
         let showLabels = fov < 60
-        let showAllLabels = fov < 15
+        let showAllLabels = fov < 20
 
         for obj in messierCatalog {
             // Skip faint objects at wide FOV
@@ -938,10 +1259,12 @@ struct SkyMapView: View {
             if firstPoint { horizonPath.move(to: sp); firstPoint = false }
             else { horizonPath.addLine(to: sp) }
         }
+        let horizonOpacity: Double = viewModel.mapMode == .altAz ? 0.6 : 0.3
+        let horizonWidth: CGFloat  = viewModel.mapMode == .altAz ? 1.5 : 1.0
         context.stroke(
             horizonPath,
-            with: .color(Color.orange.opacity(0.3)),
-            style: StrokeStyle(lineWidth: 1.0, dash: [6, 4])
+            with: .color(Color.orange.opacity(horizonOpacity)),
+            style: StrokeStyle(lineWidth: horizonWidth, dash: [6, 4])
         )
 
         // Place labels every 10° along the horizon for dense coverage
@@ -1045,7 +1368,13 @@ struct SkyMapView: View {
 
     private func drawLabels(context: GraphicsContext, size: CGSize) {
         // FOV info at top-left
-        let infoText = Text("FOV: \(String(format: "%.1f", viewModel.mapFOV))°  Center: \(String(format: "%.1f", viewModel.centerRA / 15.0))h \(String(format: "%+.1f", viewModel.centerDec))°")
+        let centerStr: String
+        if viewModel.mapMode == .altAz {
+            centerStr = "Az \(String(format: "%.1f", viewModel.centerAz))°  Alt \(String(format: "%+.1f", viewModel.centerAlt))°"
+        } else {
+            centerStr = "RA \(String(format: "%.1f", viewModel.centerRA / 15.0))h  Dec \(String(format: "%+.1f", viewModel.centerDec))°"
+        }
+        let infoText = Text("FOV: \(String(format: "%.1f", viewModel.mapFOV))°  \(centerStr)")
             .font(.system(size: 10, design: .monospaced))
             .foregroundColor(.white.opacity(0.6))
         context.draw(infoText, at: CGPoint(x: 8, y: 8), anchor: .topLeading)
@@ -1068,6 +1397,9 @@ struct SkyMapView: View {
     }
 
     private func drawCompassIndicator(context: GraphicsContext, size: CGSize) {
+        // In alt-az mode the horizon + cardinal labels already provide orientation; skip this indicator
+        guard viewModel.mapMode == .equatorial else { return }
+
         // Convert view center RA/Dec → Alt/Az to get the azimuth
         let lat = viewModel.observerLatDeg * .pi / 180.0
         let dec = viewModel.centerDec * .pi / 180.0
@@ -1107,31 +1439,46 @@ struct SkyMapView: View {
             }
     }
 
+
     private func dragGesture(size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 5)
             .onChanged { value in
-                if dragStart == nil {
-                    dragStart = value.startLocation
-                    dragStartCenter = (viewModel.centerRA, viewModel.centerDec)
-                    viewModel.followMount = false  // detach from mount
-                }
-                guard let startCenter = dragStartCenter else { return }
-
+                viewModel.followMount = false
                 let dx = value.translation.width
                 let dy = value.translation.height
                 let halfSize = min(size.width, size.height) / 2.0
+                let degPerPx = viewModel.mapFOV / 2.0 / halfSize
 
-                // RA increases left, so dx>0 means RA increases
-                let deltaRA = dx / halfSize * viewModel.mapFOV / 2.0
-                let deltaDec = dy / halfSize * viewModel.mapFOV / 2.0
-
-                viewModel.centerRA = (startCenter.ra + deltaRA).truncatingRemainder(dividingBy: 360.0)
-                if viewModel.centerRA < 0 { viewModel.centerRA += 360.0 }
-                viewModel.centerDec = max(-90, min(90, startCenter.dec + deltaDec))
+                if viewModel.mapMode == .altAz {
+                    if dragStartAltAz == nil {
+                        dragStart = value.startLocation
+                        dragStartAltAz = (viewModel.centerAz, viewModel.centerAlt)
+                    }
+                    guard let start = dragStartAltAz else { return }
+                    // East is left (same as equatorial), so drag right → az decreases (move west)
+                    let cosAlt = max(cos(viewModel.centerAlt * .pi / 180.0), 0.1)
+                    var newAz = (start.az - dx * degPerPx / cosAlt)
+                        .truncatingRemainder(dividingBy: 360.0)
+                    if newAz < 0 { newAz += 360.0 }
+                    viewModel.centerAz = newAz
+                    viewModel.centerAlt = max(-5, min(90, start.alt + dy * degPerPx))
+                } else {
+                    if dragStart == nil {
+                        dragStart = value.startLocation
+                        dragStartCenter = (viewModel.centerRA, viewModel.centerDec)
+                    }
+                    guard let startCenter = dragStartCenter else { return }
+                    let deltaRA = dx * degPerPx
+                    let deltaDec = dy * degPerPx
+                    viewModel.centerRA = (startCenter.ra + deltaRA).truncatingRemainder(dividingBy: 360.0)
+                    if viewModel.centerRA < 0 { viewModel.centerRA += 360.0 }
+                    viewModel.centerDec = max(-90, min(90, startCenter.dec + deltaDec))
+                }
             }
             .onEnded { _ in
                 dragStart = nil
                 dragStartCenter = nil
+                dragStartAltAz = nil
             }
     }
 

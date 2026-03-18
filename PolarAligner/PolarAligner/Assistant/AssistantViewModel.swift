@@ -82,6 +82,51 @@ final class AssistantViewModel: ObservableObject {
         }
     }
 
+    /// Opens the assistant and asks for imaging details about a specific sky object.
+    func askAboutTarget(name: String, raHours: Double, decDeg: Double) {
+        let focalLength = UserDefaults.standard.double(forKey: "focalLengthMM")
+        let pixelSize = UserDefaults.standard.double(forKey: "pixelSizeMicrons")
+        let binning = max(1, UserDefaults.standard.integer(forKey: "binning"))
+
+        var gearContext = ""
+        if focalLength > 0 && pixelSize > 0 {
+            // Unbinned plate scale — FOV is always physical sensor size, binning doesn't change it
+            let plateScaleUnbinned = pixelSize * 206.265 / focalLength  // arcsec/px
+            let plateScaleBinned = plateScaleUnbinned * Double(binning)  // arcsec/binned-px
+            gearContext += "Plate scale: \(String(format: "%.2f", plateScaleUnbinned)) arcsec/px"
+            if binning > 1 { gearContext += " (\(String(format: "%.2f", plateScaleBinned)) arcsec/px binned \(binning)×\(binning))" }
+            gearContext += ". "
+
+            let w = cameraViewModel.captureWidth
+            let h = cameraViewModel.captureHeight
+            if w > 0 && h > 0 {
+                // FOV uses unbinned plate scale × total sensor pixels (physical dimensions)
+                let totalW = w * binning
+                let totalH = h * binning
+                let fovW = plateScaleUnbinned * Double(totalW) / 3600.0
+                let fovH = plateScaleUnbinned * Double(totalH) / 3600.0
+                gearContext += "Imaging FOV: \(String(format: "%.2f", fovW))° × \(String(format: "%.2f", fovH))° (\(String(format: "%.0f", focalLength)) mm, \(totalW)×\(totalH) px sensor). "
+            } else {
+                gearContext += "Focal length: \(String(format: "%.0f", focalLength)) mm, pixel size: \(String(format: "%.2f", pixelSize)) μm. "
+            }
+        } else if focalLength > 0 {
+            gearContext += "Focal length: \(String(format: "%.0f", focalLength)) mm. "
+        }
+
+        let prompt = """
+        I want to image \(name) (RA \(String(format: "%.4f", raHours))h, Dec \(String(format: "%+.2f", decDeg))°). \(gearContext)
+        Cover these areas:
+
+        **What it is** — object type, physical size (light-years), distance, how it formed and what it's made of, any notable structure or interesting physics.
+
+        **Imaging with my gear** — angular size vs my FOV (fits or needs mosaic?), recommended filters (narrowband vs broadband, Ha/OIII/SII where applicable), typical sub lengths and total integration.
+
+        **Tonight from my location** — altitude, visibility window, any interference (moon, twilight).
+        """
+        inputText = prompt
+        send()
+    }
+
     func clearConversation() {
         messages.removeAll()
         conversationHistory.removeAll()
@@ -216,16 +261,35 @@ final class AssistantViewModel: ObservableObject {
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss z"
 
         var context = """
-        You are an expert astrophotography assistant integrated into PolarStation, a telescope control application.
-        You help the user plan observations, suggest targets, answer questions about deep sky objects and imaging techniques, and control equipment.
+        You are an expert astrophotography assistant integrated into PolarStation, a telescope control and imaging application.
+        You help the user plan imaging sessions, suggest targets, advise on filters, exposure strategy, mosaics, and processing.
+        This is a deep-sky imaging setup — never give visual observation or eyepiece advice. Focus on camera-based imaging.
 
         Current observation context:
         - Date/Time: \(formatter.string(from: now))
         - Observer location: \(String(format: "%.4f", lat))\u{00B0}N, \(String(format: "%.4f", lon))\u{00B0}E
         """
 
+        let pixelSize = UserDefaults.standard.double(forKey: "pixelSizeMicrons")
+        let binning = max(1, UserDefaults.standard.integer(forKey: "binning"))
         if focalLength > 0 {
-            context += "\n- Telescope focal length: \(String(format: "%.0f", focalLength))mm"
+            context += "\n- Telescope focal length: \(String(format: "%.0f", focalLength)) mm"
+        }
+        if focalLength > 0 && pixelSize > 0 {
+            let plateScaleUnbinned = pixelSize * 206.265 / focalLength
+            context += "\n- Pixel size: \(String(format: "%.2f", pixelSize)) μm → \(String(format: "%.2f", plateScaleUnbinned)) arcsec/px unbinned"
+            if binning > 1 {
+                context += ", \(String(format: "%.2f", plateScaleUnbinned * Double(binning))) arcsec/px at \(binning)×\(binning) binning"
+            }
+            let w = cameraViewModel.captureWidth
+            let h = cameraViewModel.captureHeight
+            if w > 0 && h > 0 {
+                let totalW = w * binning
+                let totalH = h * binning
+                let fovW = plateScaleUnbinned * Double(totalW) / 3600.0
+                let fovH = plateScaleUnbinned * Double(totalH) / 3600.0
+                context += "\n- Imaging FOV: \(String(format: "%.2f", fovW))° × \(String(format: "%.2f", fovH))° (\(totalW)×\(totalH) px sensor)"
+            }
         }
 
         // Mount status

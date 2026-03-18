@@ -2,6 +2,7 @@ import SwiftUI
 import PolarCore
 
 struct SettingsView: View {
+    @EnvironmentObject var dssTileService: DSSTileService
     @ObservedObject var mountService: MountService
     @ObservedObject var plateSolveService: PlateSolveService
     @ObservedObject var coordinator: AlignmentCoordinator
@@ -48,6 +49,9 @@ struct SettingsView: View {
     // Telescope & Optics
     @AppStorage("focalLengthMM") private var focalLengthMM: Double = 200.0
     @AppStorage("pixelSizeMicrons") private var pixelSizeMicrons: Double = 2.9
+    @AppStorage("sensorWidthPx") private var sensorWidthPx: Int = 1920
+    @AppStorage("sensorHeightPx") private var sensorHeightPx: Int = 1080
+    @AppStorage("bayerPattern") private var bayerPattern: String = "RGGB"
     @AppStorage("guideFocalLengthMM") private var guideFocalLengthMM: Double = 200.0
     @AppStorage("guidePixelSizeMicrons") private var guidePixelSizeMicrons: Double = 2.9
 
@@ -245,21 +249,6 @@ struct SettingsView: View {
                             Text("mm")
                                 .foregroundStyle(.secondary)
                         }
-                        HStack {
-                            Text("Pixel Size")
-                                .frame(width: 90, alignment: .trailing)
-                            TextField("μm", value: $pixelSizeMicrons, format: .number.precision(.fractionLength(2)))
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 80)
-                            Text("μm")
-                                .foregroundStyle(.secondary)
-                            if selectedCamera != nil {
-                                Image(systemName: "antenna.radiowaves.left.and.right")
-                                    .foregroundStyle(.green)
-                                    .font(.caption)
-                                    .help("Auto-detected from camera")
-                            }
-                        }
                         imagingOpticsSummary
                     }
                     .padding(.vertical, 4)
@@ -337,6 +326,27 @@ struct SettingsView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                }
+
+                // MARK: - Sky Imagery Cache
+                GroupBox("Sky Imagery (DSS)") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Disk cache: \(String(format: "%.1f", dssTileService.cacheSizeMB)) MB")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Purge Cache") {
+                                dssTileService.purgeCache()
+                            }
+                            .controlSize(.small)
+                        }
+                        Text("DSS2 sky imagery from STScI. Toggle on the sky map with the photo icon. Tiles are cached to disk for offline use.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.vertical, 4)
+                    .onAppear { dssTileService.updateCacheSize() }
                 }
 
                 // MARK: - Camera
@@ -450,6 +460,45 @@ struct SettingsView: View {
                                         : cameraViewModel.selectedAlpacaDevice < 0
                                 )
                             }
+                        }
+
+                        Divider()
+
+                        // Sensor properties
+                        HStack {
+                            Text("Pixel Size")
+                                .frame(width: 80, alignment: .trailing)
+                            TextField("μm", value: $pixelSizeMicrons, format: .number.precision(.fractionLength(2)))
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 80)
+                            Text("μm")
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Text("Sensor")
+                                .frame(width: 80, alignment: .trailing)
+                            TextField("W", value: $sensorWidthPx, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 60)
+                            Text("\u{00D7}")
+                            TextField("H", value: $sensorHeightPx, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 60)
+                            Text("px")
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Text("Bayer")
+                                .frame(width: 80, alignment: .trailing)
+                            Picker("", selection: $bayerPattern) {
+                                Text("RGGB").tag("RGGB")
+                                Text("BGGR").tag("BGGR")
+                                Text("GRBG").tag("GRBG")
+                                Text("GBRG").tag("GBRG")
+                                Text("Mono").tag("MONO")
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 90)
                         }
 
                         Divider()
@@ -1146,6 +1195,10 @@ struct SettingsView: View {
                         Text("PolarCore v\(PolarCore.polarCoreVersion())")
                         Text("Database: \(plateSolveService.databaseInfo ?? "Not loaded")")
                             .foregroundStyle(.secondary)
+                        Text("Sky imagery: Digitized Sky Survey (DSS2)")
+                            .foregroundStyle(.secondary)
+                        Text("The Digitized Sky Surveys were produced at the Space Telescope Science Institute under U.S. Government grant NAG W-2166. Images based on photographic data from the UK Schmidt Telescope (copyright \u{00A9} Royal Observatory Edinburgh) and Palomar Observatory (copyright \u{00A9} California Institute of Technology).")
+                            .foregroundStyle(.secondary)
                     }
                     .font(.caption)
                     .padding(.vertical, 4)
@@ -1159,15 +1212,47 @@ struct SettingsView: View {
             discoverCameras()
             discoverGuideCameras()
             syncLocationToCoordinator()
+            applyBayerPattern()
         }
         .onChange(of: observerLat) { syncLocationToCoordinator() }
         .onChange(of: observerLon) { syncLocationToCoordinator() }
         .onChange(of: focalLengthMM) {
-            plateSolveService.setFOV(focalLengthMM: focalLengthMM, sensorWidthMM: pixelSizeMicrons * Double(selectedCamera?.maxWidth ?? 3840) / 1000.0)
+            plateSolveService.setFOV(focalLengthMM: focalLengthMM, sensorWidthMM: pixelSizeMicrons * Double(sensorWidthPx) / 1000.0)
         }
         .onChange(of: selectedCameraIndex) {
             if let cam = selectedCamera {
                 pixelSizeMicrons = cam.pixelSize
+                sensorWidthPx = Int(cam.maxWidth)
+                sensorHeightPx = Int(cam.maxHeight)
+                if !cam.isColorCamera {
+                    bayerPattern = "MONO"
+                } else {
+                    switch cam.bayerPattern {
+                    case .rg: bayerPattern = "RGGB"
+                    case .bg: bayerPattern = "BGGR"
+                    case .gr: bayerPattern = "GRBG"
+                    case .gb: bayerPattern = "GBRG"
+                    }
+                }
+                applyBayerPattern()
+            }
+        }
+        .onChange(of: cameraViewModel.isConnected) {
+            if cameraViewModel.isConnected, let cam = cameraViewModel.selectedCamera {
+                pixelSizeMicrons = cam.pixelSize
+                sensorWidthPx = Int(cam.maxWidth)
+                sensorHeightPx = Int(cam.maxHeight)
+                if !cam.isColorCamera {
+                    bayerPattern = "MONO"
+                } else {
+                    switch cam.bayerPattern {
+                    case .rg: bayerPattern = "RGGB"
+                    case .bg: bayerPattern = "BGGR"
+                    case .gr: bayerPattern = "GRBG"
+                    case .gb: bayerPattern = "GBRG"
+                    }
+                }
+                applyBayerPattern()
             }
         }
         .onChange(of: guideSelectedCameraIndex) {
@@ -1175,6 +1260,20 @@ struct SettingsView: View {
                 guidePixelSizeMicrons = cam.pixelSize
             }
         }
+        .onChange(of: bayerPattern) {
+            applyBayerPattern()
+        }
+    }
+
+    private func applyBayerPattern() {
+        let (ox, oy): (UInt32, UInt32) = switch bayerPattern {
+        case "BGGR": (1, 1)
+        case "GRBG": (1, 0)
+        case "GBRG": (0, 1)
+        default:     (0, 0)  // RGGB or MONO
+        }
+        cameraViewModel.previewViewModel.bayerOffsetX = ox
+        cameraViewModel.previewViewModel.bayerOffsetY = oy
     }
 
     // MARK: - LX200 settings
@@ -1282,8 +1381,10 @@ struct SettingsView: View {
     private var imagingOpticsSummary: some View {
         let arcsecPerPix = pixelSizeMicrons * 206.265 / focalLengthMM
         let effectiveArcsec = arcsecPerPix * Double(binning)
-        let imageWidth = selectedCamera.map { Int($0.maxWidth) / binning } ?? (1920 / binning)
-        let imageHeight = selectedCamera.map { Int($0.maxHeight) / binning } ?? (1080 / binning)
+        let imageWidth = sensorWidthPx / binning
+        let imageHeight = sensorHeightPx / binning
+        let sensorW = pixelSizeMicrons * Double(sensorWidthPx) / 1000.0
+        let sensorH = pixelSizeMicrons * Double(sensorHeightPx) / 1000.0
         let fovW = effectiveArcsec * Double(imageWidth) / 3600.0
         let fovH = effectiveArcsec * Double(imageHeight) / 3600.0
         return VStack(alignment: .leading, spacing: 2) {
@@ -1291,6 +1392,9 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(String(format: "FOV: %.2f\u{00B0} \u{00D7} %.2f\u{00B0} (%dx%d px)", fovW, fovH, imageWidth, imageHeight))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(String(format: "Sensor: %.1f \u{00D7} %.1f mm", sensorW, sensorH))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

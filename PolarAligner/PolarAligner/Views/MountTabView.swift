@@ -16,6 +16,8 @@ struct MountTabView: View {
     @AppStorage("observerLon") private var observerLon: Double = 24.94
     @AppStorage("focalLengthMM") private var focalLengthMM: Double = 200.0
     @AppStorage("pixelSizeMicrons") private var pixelSizeMicrons: Double = 2.9
+    @AppStorage("sensorWidthPx") private var sensorWidthPx: Int = 1920
+    @AppStorage("sensorHeightPx") private var sensorHeightPx: Int = 1080
 
     // GoTo inputs
     @State private var gotoRAText: String = "0.0"
@@ -92,7 +94,7 @@ struct MountTabView: View {
             if vm.showSolvePanel || vm.showCatalog {
                 VSplitView {
                     ZStack(alignment: .topLeading) {
-                        SkyMapView(viewModel: skyMapVM) { raHours, decDeg in
+                        SkyMapView(viewModel: skyMapVM, onAskAI: askAIAboutTarget) { raHours, decDeg in
                             if vm.isLiveTime { gotoTarget(raHours: raHours, decDeg: decDeg) }
                         }
                         panelToggleButtons
@@ -124,7 +126,7 @@ struct MountTabView: View {
                 .frame(minWidth: 400)
             } else {
                 ZStack(alignment: .topLeading) {
-                    SkyMapView(viewModel: skyMapVM) { raHours, decDeg in
+                    SkyMapView(viewModel: skyMapVM, onAskAI: askAIAboutTarget) { raHours, decDeg in
                         gotoTarget(raHours: raHours, decDeg: decDeg)
                     }
                     panelToggleButtons
@@ -687,8 +689,14 @@ struct MountTabView: View {
         VStack(spacing: 0) {
             Divider()
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
+                if vm.isCatalogLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                }
                 TextField("Search objects...", text: $vm.catalogSearch)
                     .textFieldStyle(.plain)
 
@@ -1092,8 +1100,7 @@ struct MountTabView: View {
 
     private func centerOnObject(raHours: Double, decDeg: Double) {
         skyMapVM.followMount = false
-        skyMapVM.centerRA = raHours * 15.0
-        skyMapVM.centerDec = decDeg
+        skyMapVM.centerMap(raDeg: raHours * 15.0, decDeg: decDeg)
     }
 
     // MARK: - Helpers
@@ -1124,6 +1131,12 @@ struct MountTabView: View {
         let m = Int(minTotal)
         let s = (minTotal - Double(m)) * 60.0
         return String(format: "%@%02d° %02d' %04.1f\"", sign, d, m, s)
+    }
+
+    private func askAIAboutTarget(name: String, raHours: Double, decDeg: Double) {
+        let binding = Binding(get: { vm.showAssistant }, set: { vm.showAssistant = $0 })
+        assistantWindowController.show(viewModel: assistantVM, showBinding: binding)
+        assistantVM.askAboutTarget(name: name, raHours: raHours, decDeg: decDeg)
     }
 
     private func gotoTarget(raHours: Double, decDeg: Double) {
@@ -1163,9 +1176,11 @@ struct MountTabView: View {
 
     private func updateCameraFOV() {
         let arcsecPerPix = pixelSizeMicrons * 206.265 / focalLengthMM
-        let imageWidth = max(Double(cameraViewModel.captureWidth), 3840)
-        let fov = arcsecPerPix * imageWidth / 3600.0
+        let w = max(Double(cameraViewModel.captureWidth), Double(sensorWidthPx))
+        let h = max(Double(cameraViewModel.captureHeight), Double(sensorHeightPx))
+        let fov = arcsecPerPix * w / 3600.0
         skyMapVM.cameraFOVDeg = fov
+        skyMapVM.sensorAspect = w / h
     }
 }
 

@@ -157,6 +157,10 @@ final class CameraPreviewViewModel: ObservableObject {
     var stfWhitePoint: Float = 1.0
     var stfMidtones: Float = 0.5
 
+    /// Bayer pattern offsets (set from camera info or settings).
+    var bayerOffsetX: UInt32 = 0
+    var bayerOffsetY: UInt32 = 0
+
     /// Nonisolated-safe flag for reading autoStretchEnabled from capture thread.
     private let _autoStretchFlag = UnsafeMutablePointer<Int32>.allocate(capacity: 1)
     var frameCount: UInt64 = 0
@@ -248,7 +252,9 @@ final class CameraPreviewViewModel: ObservableObject {
                     blackPoint: bp,
                     whitePoint: wp,
                     midtones: mid,
-                    useSTF: useSTF
+                    useSTF: useSTF,
+                    bayerOffsetX: self.bayerOffsetX,
+                    bayerOffsetY: self.bayerOffsetY
                 )
             }
 

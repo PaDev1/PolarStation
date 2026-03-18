@@ -109,6 +109,9 @@
 		B2C3D4E5F6A7B8C9D0E1F7A1 /* SkyInfoTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F7 /* SkyInfoTool.swift */; };
 		B2C3D4E5F6A7B8C9D0E1F8A1 /* SkyMapTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F8 /* SkyMapTool.swift */; };
 		WS000101 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = WS000001 /* WeatherService.swift */; };
+		DS000101 /* DSSTileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DS000001 /* DSSTileService.swift */; };
+		MT000101 /* DSSMetalTileLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = MT000001 /* DSSMetalTileLayer.swift */; };
+		MT000102 /* DSSShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = MT000002 /* DSSShaders.metal */; };
 		CA7B10001 /* OpenNGC.csv in Resources */ = {isa = PBXBuildFile; fileRef = CA7A10001 /* OpenNGC.csv */; };
 		CA7B10002 /* OpenNGC_addendum.csv in Resources */ = {isa = PBXBuildFile; fileRef = CA7A10002 /* OpenNGC_addendum.csv */; };
 		CA7B10003 /* NamedStars.csv in Resources */ = {isa = PBXBuildFile; fileRef = CA7A10003 /* NamedStars.csv */; };
@@ -231,6 +234,9 @@
 		A1B2C3D4E5F6A7B8C9D0E1F7 /* SkyInfoTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyInfoTool.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F8 /* SkyMapTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyMapTool.swift; sourceTree = "<group>"; };
 		WS000001 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
+		DS000001 /* DSSTileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSSTileService.swift; sourceTree = "<group>"; };
+		MT000001 /* DSSMetalTileLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSSMetalTileLayer.swift; sourceTree = "<group>"; };
+		MT000002 /* DSSShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = DSSShaders.metal; sourceTree = "<group>"; };
 		CA7A10001 /* OpenNGC.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = OpenNGC.csv; sourceTree = "<group>"; };
 		CA7A10002 /* OpenNGC_addendum.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = OpenNGC_addendum.csv; sourceTree = "<group>"; };
 		CA7A10003 /* NamedStars.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = NamedStars.csv; sourceTree = "<group>"; };
@@ -301,6 +307,7 @@
 			isa = PBXGroup;
 			children = (
 				BB000001 /* LLMService.swift */,
+				DS000001 /* DSSTileService.swift */,
 				3DD4E82877A64F47BA88252B /* MountService.swift */,
 				75CDB4454434C2EE32680E95 /* PlateSolveService.swift */,
 				75CDB4454434C2EE32680E96 /* CenteringSolveService.swift */,
@@ -355,6 +362,7 @@
 				12A257B2A4BEFB6EDA1109FB /* CoreMLDetector.swift */,
 				23B64395D489E6194B8A6985 /* MetalPipeline.swift */,
 				7A942BA6F5E4F184838080A6 /* Preprocessing.metal */,
+				MT000002 /* DSSShaders.metal */,
 				933B9AD5E58347FB4183514D /* StarDetector.swift */,
 			);
 			path = Pipeline;
@@ -419,6 +427,7 @@
 				05956573492084AE57AB3317 /* SimulatedAlignmentView.swift */,
 				AA000005 /* PolarAlignmentView.swift */,
 				C2415B2AA600FBE33D227163 /* SkyMapView.swift */,
+				MT000001 /* DSSMetalTileLayer.swift */,
 
 			);
 			path = Views;
@@ -774,6 +783,9 @@
 				B2C3D4E5F6A7B8C9D0E1F7A1 /* SkyInfoTool.swift in Sources */,
 				B2C3D4E5F6A7B8C9D0E1F8A1 /* SkyMapTool.swift in Sources */,
 				WS000101 /* WeatherService.swift in Sources */,
+				DS000101 /* DSSTileService.swift in Sources */,
+				MT000101 /* DSSMetalTileLayer.swift in Sources */,
+				MT000102 /* DSSShaders.metal in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

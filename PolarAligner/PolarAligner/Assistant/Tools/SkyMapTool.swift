@@ -87,8 +87,7 @@ final class SkyMapTool: AssistantTool {
                 return "Error: Provide either object_name or ra_hours + dec_degrees."
             }
 
-            skyMapViewModel.centerRA = raDeg
-            skyMapViewModel.centerDec = decDeg
+            skyMapViewModel.centerMap(raDeg: raDeg, decDeg: decDeg)
 
             if let fov = arguments["fov_degrees"] as? Double {
                 skyMapViewModel.mapFOV = max(1, min(360, fov))
