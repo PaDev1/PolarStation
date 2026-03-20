@@ -157,6 +157,10 @@ final class CameraPreviewViewModel: ObservableObject {
     var stfWhitePoint: Float = 1.0
     var stfMidtones: Float = 0.5
 
+    /// Image flip settings (applied in debayer shader).
+    var flipX: Bool = false
+    var flipY: Bool = false
+
     /// Bayer pattern offsets (set from camera info or settings).
     var bayerOffsetX: UInt32 = 0
     var bayerOffsetY: UInt32 = 0
@@ -254,7 +258,9 @@ final class CameraPreviewViewModel: ObservableObject {
                     midtones: mid,
                     useSTF: useSTF,
                     bayerOffsetX: self.bayerOffsetX,
-                    bayerOffsetY: self.bayerOffsetY
+                    bayerOffsetY: self.bayerOffsetY,
+                    flipX: self.flipX,
+                    flipY: self.flipY
                 )
             }
 

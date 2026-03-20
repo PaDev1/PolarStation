@@ -103,6 +103,7 @@ struct GuideTabView: View {
             } else {
                 cameraViewModel.discoverCameras()
             }
+            cameraViewModel.starDetectionEnabled = true
             cameraViewModel.resumeLiveView()
         }
         .onDisappear {
@@ -376,6 +377,7 @@ struct GuideTabView: View {
                 } else {
                     HStack(spacing: 8) {
                         Button("Calibrate") {
+                            cameraViewModel.starDetectionEnabled = true
                             calibrator.startCalibration()
                         }
                         .buttonStyle(.borderedProminent)
@@ -387,6 +389,7 @@ struct GuideTabView: View {
                                 calibrator.guideStarPosition = nil
                                 calibrator.stepPositions = []
                                 calibrator.statusMessage = "Not calibrated"
+                                GuideCalibration.clear()
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
@@ -422,6 +425,25 @@ struct GuideTabView: View {
                                         cal.decAngle * 180.0 / .pi, cal.decRate))
                                 .font(.system(.caption, design: .monospaced))
                         }
+                        HStack(spacing: 6) {
+                            Text(cal.ageString)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                            if !cal.isValid {
+                                HStack(spacing: 2) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(.yellow)
+                                        .font(.system(size: 9))
+                                    Text(String(format: "axes %.0f° apart", cal.axisOrthogonality))
+                                        .foregroundStyle(.yellow)
+                                }
+                                .font(.caption2)
+                            } else {
+                                Text(String(format: "%.0f° ortho", cal.axisOrthogonality))
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
                     }
                 } else if !calibrator.isCalibrating {
                     Text(calibrator.statusMessage)
@@ -449,6 +471,7 @@ struct GuideTabView: View {
                         .tint(.red)
                     } else {
                         Button {
+                            cameraViewModel.starDetectionEnabled = true
                             // Pixel scale: from simulator or computed from guide optics settings
                             session.pixelScaleArcsecPerPix = simulatedGuideEngine.isRunning
                                 ? simulatedGuideEngine.pixelScaleArcsecPerPix
@@ -728,8 +751,10 @@ struct GuideTabView: View {
         // not detected in one frame.
         if let star = bestStar, bestDist < 20.0 {
             let pos = CGPoint(x: star.x, y: star.y)
-            // Update anchor to track the star's movement frame-to-frame
-            calibrator.guideStarPosition = pos
+            // Don't overwrite during calibration — calibrator manages its own position
+            if !calibrator.isCalibrating {
+                calibrator.guideStarPosition = pos
+            }
             return pos
         }
         // Star not found nearby — keep showing the last known position
@@ -810,6 +835,7 @@ struct GuideTabView: View {
             gain: Int(guideGain),
             binning: guideBinning
         )
+        cameraViewModel.starDetectionEnabled = true
         cameraViewModel.startLive(settings: settings)
     }
 
@@ -877,7 +903,9 @@ private struct GuidePreviewPanel: View {
                 }
 
                 // Guide star crosshair overlay
-                if let pos = trackedGuideStarPosition, cameraViewModel.isConnected {
+                // During calibration, use calibrator's position directly (it manages its own tracking)
+                let displayStarPos = calibrator.isCalibrating ? calibrator.guideStarPosition : trackedGuideStarPosition
+                if let pos = displayStarPos, cameraViewModel.isConnected {
                     guideStarOverlay(at: pos)
                 }
 
@@ -1021,8 +1049,11 @@ private struct GuidePreviewPanel: View {
 
         if let star = bestStar, bestDist < 80.0 {
             let newPos = CGPoint(x: star.x, y: star.y)
-            DispatchQueue.main.async {
-                self.calibrator.guideStarPosition = newPos
+            // Don't overwrite during calibration — calibrator manages its own position
+            if !calibrator.isCalibrating {
+                DispatchQueue.main.async {
+                    self.calibrator.guideStarPosition = newPos
+                }
             }
             return newPos
         }

@@ -37,7 +37,13 @@ final class AppState: ObservableObject {
     }()
     let assistantWindowController = AssistantWindowController()
     lazy var guideCalibrator: GuideCalibrator = {
-        GuideCalibrator(mountService: mountService, cameraViewModel: guideCameraViewModel)
+        let cal = GuideCalibrator(mountService: mountService, cameraViewModel: guideCameraViewModel)
+        // Restore saved calibration
+        if let saved = GuideCalibration.load() {
+            cal.calibration = saved
+            cal.statusMessage = "Restored: " + saved.summary + " (\(saved.ageString))"
+        }
+        return cal
     }()
     lazy var alignmentCoordinator: AlignmentCoordinator = {
         let coord = AlignmentCoordinator(

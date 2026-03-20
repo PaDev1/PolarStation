@@ -64,7 +64,9 @@ final class MetalPipeline {
         midtones: Float = 0.5,
         useSTF: Bool = false,
         bayerOffsetX: UInt32 = 0,
-        bayerOffsetY: UInt32 = 0
+        bayerOffsetY: UInt32 = 0,
+        flipX: Bool = false,
+        flipY: Bool = false
     ) -> MTLTexture? {
         let dataSize = width * height * bytesPerPixel
         ensureRawBuffer(size: dataSize)
@@ -104,7 +106,9 @@ final class MetalPipeline {
             height: UInt32(height),
             bytesPerPixel: UInt32(bytesPerPixel),
             bayerOffsetX: bayerOffsetX,
-            bayerOffsetY: bayerOffsetY
+            bayerOffsetY: bayerOffsetY,
+            flipX: flipX ? 1 : 0,
+            flipY: flipY ? 1 : 0
         )
         encoder.setBytes(&params, length: MemoryLayout<DebayerParams>.size, index: 1)
 
@@ -163,6 +167,8 @@ struct DebayerParams {
     var bytesPerPixel: UInt32
     var bayerOffsetX: UInt32
     var bayerOffsetY: UInt32
+    var flipX: UInt32
+    var flipY: UInt32
 }
 
 struct StretchParams {

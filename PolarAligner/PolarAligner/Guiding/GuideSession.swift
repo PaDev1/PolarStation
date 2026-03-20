@@ -157,13 +157,18 @@ final class GuideSession: ObservableObject {
     ) async {
         var cycleCount = 0
 
-        while !Task.isCancelled && isGuiding {
-            // Wait for next guide cycle
-            try? await Task.sleep(nanoseconds: UInt64(guideIntervalSec * 1_000_000_000))
+        var lastStarSnapshot = cameraViewModel.detectedStars
 
-            guard !Task.isCancelled && isGuiding else { break }
+        while !Task.isCancelled && isGuiding {
             guard let refPos = referencePosition,
                   let searchPos = lastKnownStarPosition else { break }
+
+            // Wait for fresh star detection before computing corrections.
+            // This prevents sending multiple corrections from the same stale frame.
+            let freshStars = await waitForFreshStars(cameraViewModel: cameraViewModel, previous: lastStarSnapshot)
+            lastStarSnapshot = freshStars
+
+            guard !Task.isCancelled && isGuiding else { break }
 
             cycleCount += 1
 
@@ -176,8 +181,7 @@ final class GuideSession: ObservableObject {
             let currentDecMode = decMode
 
             // Find current guide star near its LAST KNOWN position (not the reference)
-            let stars = cameraViewModel.detectedStars
-            guard let currentStar = findNearestStar(stars: stars, near: searchPos, radius: 30.0) else {
+            guard let currentStar = findNearestStar(stars: freshStars, near: searchPos, radius: 30.0) else {
                 statusMessage = "Guide star lost!"
                 log("[Guide] LOST star near (\(String(format:"%.1f,%.1f", searchPos.x, searchPos.y)))")
                 continue
@@ -229,24 +233,23 @@ final class GuideSession: ObservableObject {
             // Clamp corrections
             let maxPulseMs = 1000.0
 
-            // Send corrections
+            // Send corrections using PulseGuide (ASCOM standard for guiding)
+            // Directions: 0=North, 1=South, 2=East, 3=West
             if raCorrMs != 0 {
-                let raRate = raCorrMs > 0 ? 0.00208 : -0.00208
-                let clampedMs = min(abs(raCorrMs), maxPulseMs)
+                let clampedMs = UInt32(min(abs(raCorrMs), maxPulseMs))
+                let direction: UInt8 = raCorrMs > 0 ? 3 : 2  // positive correction = West, negative = East
                 do {
-                    try await sendPulse(calibrator: calibrator, axis: 0, rate: raRate, durationMs: clampedMs)
+                    try await calibrator.mountService.pulseGuide(direction: direction, durationMs: clampedMs)
                 } catch {
                     statusMessage = "Mount error: \(error.localizedDescription)"
                 }
             }
 
             if decCorrMs != 0 {
-                // Dec calibration used +rate (North), so correction is OPPOSITE:
-                // positive error (drifted North) → correct South (-rate)
-                let decRate = decCorrMs > 0 ? -0.00208 : 0.00208
-                let clampedMs = min(abs(decCorrMs), maxPulseMs)
+                let clampedMs = UInt32(min(abs(decCorrMs), maxPulseMs))
+                let direction: UInt8 = decCorrMs > 0 ? 1 : 0  // positive correction = South, negative = North
                 do {
-                    try await sendPulse(calibrator: calibrator, axis: 1, rate: decRate, durationMs: clampedMs)
+                    try await calibrator.mountService.pulseGuide(direction: direction, durationMs: clampedMs)
                 } catch {
                     statusMessage = "Mount error: \(error.localizedDescription)"
                 }
@@ -264,11 +267,10 @@ final class GuideSession: ObservableObject {
 
             statusMessage = String(format: "Guiding: RA %.2f\" Dec %.2f\"", raErrorArcsec, decErrorArcsec)
 
-            // Debug log every 5th cycle to avoid spam
-            if cycleCount % 5 == 0 {
-                log(String(format: "[Guide] err RA=%.2f\" Dec=%.2f\" corr RA=%.0fms Dec=%.0fms star=(%.1f,%.1f)",
-                           raErrorArcsec, decErrorArcsec, raCorrMs, decCorrMs, currentPos.x, currentPos.y))
-            }
+            // Debug log every cycle to diagnose
+            log(String(format: "[Guide] dx=%.1f dy=%.1f err RA=%.2f\" Dec=%.2f\" corr RA=%.0fms Dec=%.0fms star=(%.1f,%.1f) ref=(%.1f,%.1f)",
+                       dx, dy, raErrorArcsec, decErrorArcsec, raCorrMs, decCorrMs,
+                       currentPos.x, currentPos.y, refPos.x, refPos.y))
         }
     }
 
@@ -283,6 +285,31 @@ final class GuideSession: ObservableObject {
             try? await Task.sleep(nanoseconds: UInt64(durationMs) * 1_000_000)
             try await calibrator.mountService.moveAxis(axis, rateDegPerSec: 0)
         }
+    }
+
+    /// Wait for star detection to produce a new frame (different from previous snapshot).
+    private func waitForFreshStars(cameraViewModel: CameraViewModel, previous: [DetectedStar]) async -> [DetectedStar] {
+        let startTime = ContinuousClock.now
+        let timeout = Duration.seconds(30)
+
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 200_000_000) // poll every 200ms
+            let current = cameraViewModel.detectedStars
+
+            // Detect change: different count or different positions
+            if current.count != previous.count {
+                return current
+            }
+            if !current.isEmpty, !previous.isEmpty,
+               current[0].x != previous[0].x || current[0].y != previous[0].y {
+                return current
+            }
+
+            if ContinuousClock.now - startTime > timeout {
+                return current
+            }
+        }
+        return []
     }
 
     /// Find the nearest detected star to a position.

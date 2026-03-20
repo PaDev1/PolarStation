@@ -16,7 +16,7 @@ struct PolarAlignmentView: View {
     @ObservedObject var errorTracker: ErrorTracker
 
     @State private var mode: AlignmentMode = .real
-    @StateObject private var skyMapVM = SkyMapViewModel()
+    @ObservedObject var skyMapVM: SkyMapViewModel
     @AppStorage("exposureMs") private var exposureMs: Double = 500
     @AppStorage("gain") private var gain: Double = 300
     @AppStorage("binning") private var binning: Int = 2
@@ -363,7 +363,7 @@ struct PolarAlignmentView: View {
                     } else if cameraViewModel.isConnected {
                         placeholder(icon: "camera", message: "Press Start to begin live preview")
                     } else {
-                        placeholder(icon: "camera.fill", message: "Connect a camera in Camera tab")
+                        placeholder(icon: "camera.fill", message: "Connect a camera in Settings tab")
                     }
                 }
 
@@ -660,7 +660,7 @@ struct PolarAlignmentView: View {
                     met: cameraViewModel.isConnected,
                     detail: cameraViewModel.isConnected
                         ? (cameraViewModel.isCapturing ? "Connected, live" : "Connected")
-                        : "Connect in Camera tab"
+                        : "Connect in Settings tab"
                 )
                 PrerequisiteRow(
                     name: "Mount",
@@ -753,6 +753,7 @@ struct PolarAlignmentView: View {
     // MARK: - Actions
 
     private func startRealAlignment() {
+        cameraViewModel.starDetectionEnabled = true
         if cameraViewModel.isConnected && !cameraViewModel.isCapturing {
             let settings = CameraSettings(
                 exposureMs: exposureMs,

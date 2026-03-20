@@ -152,6 +152,7 @@ struct MountTabView: View {
             updateCameraFOV()
             skyMapVM.observerLatDeg = observerLat
             skyMapVM.observerLonDeg = observerLon
+            skyMapVM.mountConnected = mountService.isConnected
             // Initialize map center to observer's latitude so the visible pole is near top
             if skyMapVM.mountRA == nil {
                 skyMapVM.centerDec = observerLat
@@ -169,6 +170,7 @@ struct MountTabView: View {
                 return
             }
             skyMapVM.syncToMount(status: newStatus)
+            skyMapVM.mountConnected = mountService.isConnected
         }
         .onChange(of: centeringSolveService.lastSolveResult) { _, result in
             guard let result, result.success else { return }
@@ -291,21 +293,30 @@ struct MountTabView: View {
                 HStack(spacing: 8) {
                     Button("Solve") {
                         Task {
-                            await centeringSolveService.solveOnce(stars: cameraViewModel.detectedStars)
+                            centeringSolveService.statusMessage = "Capturing frame and detecting stars..."
+                            ensureCameraLive()
+                            let stars = await cameraViewModel.waitForFreshDetection()
+                            if stars.isEmpty {
+                                centeringSolveService.statusMessage = "No stars detected — check camera connection and exposure"
+                                return
+                            }
+                            centeringSolveService.statusMessage = "Solving with \(stars.count) stars..."
+                            await centeringSolveService.solveOnce(stars: stars)
                         }
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(centeringSolveService.state.isActive)
-                    .help("One-shot plate solve — updates sky map FOV overlay")
+                    .help("One-shot plate solve — captures frame, detects stars, solves")
 
                     Button("Center") {
                         guard let target = currentGoToTarget else { return }
+                        ensureCameraLive()
                         centeringSolveService.centerOnTarget(
                             targetRAHours: target.raHours,
                             targetDecDeg: target.decDeg,
                             starProvider: { [weak cameraViewModel] in
-                                cameraViewModel?.detectedStars ?? []
+                                await cameraViewModel?.waitForFreshDetection() ?? []
                             }
                         )
                     }
@@ -1207,6 +1218,9 @@ struct MountTabView: View {
     private func centerOnObject(raHours: Double, decDeg: Double) {
         skyMapVM.followMount = false
         skyMapVM.centerMap(raDeg: raHours * 15.0, decDeg: decDeg)
+        // Show RED target FOV
+        skyMapVM.targetRA = raHours * 15.0
+        skyMapVM.targetDec = decDeg
     }
 
     // MARK: - Helpers
@@ -1246,9 +1260,12 @@ struct MountTabView: View {
     }
 
     private func gotoTarget(raHours: Double, decDeg: Double) {
-        guard mountService.isConnected else { return }
         gotoRAText = String(format: "%.4f", raHours)
         gotoDecText = String(format: "%.4f", decDeg)
+        // Show RED target FOV on sky map
+        skyMapVM.targetRA = raHours * 15.0  // hours → degrees
+        skyMapVM.targetDec = decDeg
+        guard mountService.isConnected else { return }
         Task {
             do {
                 try await mountService.gotoRADec(raHours: raHours, decDeg: decDeg)
@@ -1278,6 +1295,21 @@ struct MountTabView: View {
             skyMapVM.catalogStars = stars
             skyMapVM.catalogLoaded = true
         }
+    }
+
+    /// Start live capture if not already running.
+    private func ensureCameraLive() {
+        guard cameraViewModel.isConnected, !cameraViewModel.isCapturing else { return }
+        let defaults = UserDefaults.standard
+        let exp = defaults.double(forKey: "exposureMs")
+        let g = defaults.double(forKey: "gain")
+        let b = defaults.integer(forKey: "binning")
+        let settings = CameraSettings(
+            exposureMs: exp > 0 ? exp : 500,
+            gain: Int(g > 0 ? g : 300),
+            binning: b > 0 ? b : 2
+        )
+        cameraViewModel.startLive(settings: settings)
     }
 
     private func updateCameraFOV() {

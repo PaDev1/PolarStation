@@ -66,15 +66,21 @@ final class SkyMapViewModel: ObservableObject {
     @Published var mountRA: Double?
     @Published var mountDec: Double?
 
-    // Last plate solve (for FOV overlay)
+    // Last plate solve (for GREEN actual FOV overlay)
     @Published var solvedRA: Double?
     @Published var solvedDec: Double?
     @Published var solvedRollDeg: Double?
     @Published var solvedFOVDeg: Double?
 
+    // Target position (for RED target FOV overlay)
+    @Published var targetRA: Double = 0.0    // degrees
+    @Published var targetDec: Double = 90.0  // degrees — default to celestial pole
+
     // Selection for GoTo
     @Published var selectedTarget: (name: String, raHours: Double, decDeg: Double)?
     @Published var showGoToConfirm = false
+    /// Whether a mount is connected (controls GoTo button visibility in target dialog).
+    var mountConnected = false
 
     // Observer location for horizon cardinal directions
     @Published var observerLatDeg: Double = 60.17
@@ -576,6 +582,11 @@ struct SkyMapView: View {
     @State private var dragStart: CGPoint?
     @State private var dragStartCenter: (ra: Double, dec: Double)?
     @State private var dragStartAltAz: (az: Double, alt: Double)?
+    @State private var draggingTarget = false
+    @State private var dragStartTarget: (ra: Double, dec: Double)?
+    @State private var dragStartTargetScreen: CGPoint?
+    /// Offset between mouse click position and target center at drag start
+    @State private var dragTargetGrabOffset: CGSize = .zero
     @State private var isHovering = false
     @State private var scrollMonitor: Any?
 
@@ -665,6 +676,23 @@ struct SkyMapView: View {
                             .buttonStyle(.plain)
                             .help(dssTileService.isEnabled ? "Hide sky imagery" : "Show DSS sky imagery")
 
+                            // "Go to target" button — slews mount to RED target (mount connected), or centers map on RED target
+                            Button {
+                                if viewModel.mountConnected {
+                                    onGoTo?(viewModel.targetRA / 15.0, viewModel.targetDec)
+                                }
+                                viewModel.centerMap(raDeg: viewModel.targetRA, decDeg: viewModel.targetDec)
+                            } label: {
+                                Image(systemName: "target")
+                                    .font(.system(size: 14))
+                                    .padding(8)
+                                    .background(.black.opacity(0.6))
+                                    .clipShape(Circle())
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                            .help(viewModel.mountConnected ? "Slew mount to target" : "Center map on target")
+
                             // "Find Camera" button
                             if !viewModel.followMount, viewModel.mountRA != nil {
                                 Button {
@@ -705,10 +733,20 @@ struct SkyMapView: View {
                 scrollMonitor = nil
             }
         }
-        .alert("GoTo Target", isPresented: $viewModel.showGoToConfirm) {
-            Button("GoTo") {
+        .alert("Target", isPresented: $viewModel.showGoToConfirm) {
+            Button("Set Target") {
                 if let target = viewModel.selectedTarget {
-                    onGoTo?(target.raHours, target.decDeg)
+                    viewModel.targetRA = target.raHours * 15.0
+                    viewModel.targetDec = target.decDeg
+                }
+            }
+            if viewModel.mountConnected {
+                Button("GoTo") {
+                    if let target = viewModel.selectedTarget {
+                        viewModel.targetRA = target.raHours * 15.0
+                        viewModel.targetDec = target.decDeg
+                        onGoTo?(target.raHours, target.decDeg)
+                    }
                 }
             }
             Button("Ask AI") {
@@ -719,7 +757,7 @@ struct SkyMapView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             if let target = viewModel.selectedTarget {
-                Text("Slew to \(target.name)?\nRA: \(String(format: "%.4f", target.raHours))h  Dec: \(String(format: "%+.3f", target.decDeg))°")
+                Text("RA: \(String(format: "%.4f", target.raHours))h  Dec: \(String(format: "%+.3f", target.decDeg))°")
             }
         }
     }
@@ -1138,39 +1176,54 @@ struct SkyMapView: View {
     }
 
     private func drawCameraFOV(context: GraphicsContext, size: CGSize) {
-        // Use solved position if available, otherwise mount position
-        let cRA: Double
-        let cDec: Double
-        let roll: Double
-        let fov: Double
+        // RED = target FOV (where we want to point)
+        drawFOVRect(context: context, size: size,
+                    raDeg: viewModel.targetRA, decDeg: viewModel.targetDec,
+                    rollDeg: 0.0, fovDeg: viewModel.cameraFOVDeg,
+                    strokeColor: .red, fillColor: .red)
 
-        if let sRA = viewModel.solvedRA, let sDec = viewModel.solvedDec {
-            cRA = sRA
-            cDec = sDec
-            roll = viewModel.solvedRollDeg ?? 0.0
-            fov = viewModel.solvedFOVDeg ?? viewModel.cameraFOVDeg
-        } else if let mRA = viewModel.mountRA, let mDec = viewModel.mountDec {
-            cRA = mRA
-            cDec = mDec
-            roll = 0.0
-            fov = viewModel.cameraFOVDeg
-        } else {
-            return
+        // GREEN = actual camera position
+        // Priority: mount position (live) → plate solve result (last known)
+        let roll = viewModel.solvedRollDeg ?? 0.0
+        let fov = viewModel.solvedFOVDeg ?? viewModel.cameraFOVDeg
+        if let mRA = viewModel.mountRA, let mDec = viewModel.mountDec {
+            drawFOVRect(context: context, size: size,
+                        raDeg: mRA, decDeg: mDec,
+                        rollDeg: roll, fovDeg: fov,
+                        strokeColor: .green, fillColor: .green)
+            // CYAN = plate solve result if it differs from mount (shows pointing error)
+            if let sRA = viewModel.solvedRA, let sDec = viewModel.solvedDec {
+                drawFOVRect(context: context, size: size,
+                            raDeg: sRA, decDeg: sDec,
+                            rollDeg: roll, fovDeg: fov,
+                            strokeColor: .cyan, fillColor: .cyan)
+            }
+        } else if let sRA = viewModel.solvedRA, let sDec = viewModel.solvedDec {
+            // No mount — use plate solve as green
+            drawFOVRect(context: context, size: size,
+                        raDeg: sRA, decDeg: sDec,
+                        rollDeg: roll, fovDeg: fov,
+                        strokeColor: .green, fillColor: .green)
         }
+    }
 
-        let halfW = fov / 2.0 * .pi / 180.0   // radians
+    private func drawFOVRect(
+        context: GraphicsContext, size: CGSize,
+        raDeg: Double, decDeg: Double,
+        rollDeg: Double, fovDeg: Double,
+        strokeColor: Color, fillColor: Color
+    ) {
+        let halfW = fovDeg / 2.0 * .pi / 180.0
         let halfH = halfW / viewModel.sensorAspect
-        let rollRad = roll * .pi / 180.0
-        let ra0 = cRA * .pi / 180.0
-        let dec0 = cDec * .pi / 180.0
+        let rollRad = rollDeg * .pi / 180.0
+        let ra0 = raDeg * .pi / 180.0
+        let dec0 = decDeg * .pi / 180.0
 
-        // 4 corners in tangent-plane coordinates (xi=east, eta=north) in radians
         let corners: [(xi: Double, eta: Double)] = [
             (-halfW, -halfH), (halfW, -halfH),
             (halfW, halfH), (-halfW, halfH)
         ]
 
-        // Draw each edge with interpolated points for correct curvature
         var path = Path()
         var first = true
         let edgeSteps = 16
@@ -1182,12 +1235,9 @@ struct SkyMapView: View {
                 let xi = c1.xi + (c2.xi - c1.xi) * t
                 let eta = c1.eta + (c2.eta - c1.eta) * t
 
-                // Apply roll rotation in tangent plane
                 let rx = xi * cos(rollRad) - eta * sin(rollRad)
                 let ry = xi * sin(rollRad) + eta * cos(rollRad)
 
-                // Gnomonic inverse: tangent-plane (rx, ry) → celestial (ra, dec)
-                // This works correctly at all declinations including the pole
                 let rho = sqrt(rx * rx + ry * ry)
                 let c = atan(rho)
                 let dec: Double
@@ -1212,8 +1262,8 @@ struct SkyMapView: View {
         }
         path.closeSubpath()
 
-        context.stroke(path, with: .color(Color.green.opacity(0.8)), lineWidth: 1.5)
-        context.fill(path, with: .color(Color.green.opacity(0.05)))
+        context.stroke(path, with: .color(strokeColor.opacity(0.8)), lineWidth: 1.5)
+        context.fill(path, with: .color(fillColor.opacity(0.05)))
     }
 
     private func drawMountCrosshair(context: GraphicsContext, size: CGSize) {
@@ -1440,22 +1490,73 @@ struct SkyMapView: View {
     }
 
 
+    /// Check if a screen point is inside the RED target FOV rectangle.
+    private func isInsideTargetFOV(_ point: CGPoint, size: CGSize) -> Bool {
+        guard let projected = viewModel.projectFast(raDeg: viewModel.targetRA, decDeg: viewModel.targetDec) else { return false }
+        let center = viewModel.toScreen(projected, size: size)
+
+        // Estimate FOV rectangle size on screen
+        let halfSize = min(size.width, size.height) / 2.0
+        let pxPerDeg = halfSize / (viewModel.mapFOV / 2.0)
+        let fovW = viewModel.cameraFOVDeg * pxPerDeg
+        let fovH = fovW / viewModel.sensorAspect
+
+        let dx = abs(point.x - center.x)
+        let dy = abs(point.y - center.y)
+        return dx < fovW / 2.0 && dy < fovH / 2.0
+    }
+
     private func dragGesture(size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 5)
             .onChanged { value in
-                viewModel.followMount = false
                 let dx = value.translation.width
                 let dy = value.translation.height
                 let halfSize = min(size.width, size.height) / 2.0
                 let degPerPx = viewModel.mapFOV / 2.0 / halfSize
 
-                if viewModel.mapMode == .altAz {
-                    if dragStartAltAz == nil {
+                // On first move, decide: drag target FOV or pan map
+                if dragStart == nil && dragStartTarget == nil {
+                    if isInsideTargetFOV(value.startLocation, size: size) {
+                        draggingTarget = true
+                        dragStartTarget = (viewModel.targetRA, viewModel.targetDec)
+                        // Store screen position of target center and grab offset
+                        if let proj = viewModel.projectFast(raDeg: viewModel.targetRA, decDeg: viewModel.targetDec) {
+                            let targetScreen = viewModel.toScreen(proj, size: size)
+                            dragStartTargetScreen = targetScreen
+                            dragTargetGrabOffset = CGSize(
+                                width: value.startLocation.x - targetScreen.x,
+                                height: value.startLocation.y - targetScreen.y
+                            )
+                        }
+                    } else {
+                        draggingTarget = false
                         dragStart = value.startLocation
+                        viewModel.followMount = false
+                    }
+                }
+
+                if draggingTarget {
+                    guard let origScreen = dragStartTargetScreen else { return }
+                    // Current mouse position minus grab offset = new target center
+                    let mouseX = value.startLocation.x + dx
+                    let mouseY = value.startLocation.y + dy
+                    let targetX = mouseX - dragTargetGrabOffset.width
+                    let targetY = mouseY - dragTargetGrabOffset.height
+                    // Alt-az projection has opposite X convention from screenToRADec
+                    let cx = size.width / 2.0
+                    let adjustedX = viewModel.mapMode == .altAz ? (2 * cx - targetX) : targetX
+                    let newScreen = CGPoint(x: adjustedX, y: targetY)
+                    if let newCoord = viewModel.screenToRADec(newScreen, size: size) {
+                        var newRA = newCoord.raDeg.truncatingRemainder(dividingBy: 360.0)
+                        if newRA < 0 { newRA += 360.0 }
+                        viewModel.targetRA = newRA
+                        viewModel.targetDec = max(-90, min(90, newCoord.decDeg))
+                    }
+                } else if viewModel.mapMode == .altAz {
+                    if dragStartAltAz == nil {
                         dragStartAltAz = (viewModel.centerAz, viewModel.centerAlt)
                     }
                     guard let start = dragStartAltAz else { return }
-                    // East is left (same as equatorial), so drag right → az decreases (move west)
                     let cosAlt = max(cos(viewModel.centerAlt * .pi / 180.0), 0.1)
                     var newAz = (start.az - dx * degPerPx / cosAlt)
                         .truncatingRemainder(dividingBy: 360.0)
@@ -1463,8 +1564,7 @@ struct SkyMapView: View {
                     viewModel.centerAz = newAz
                     viewModel.centerAlt = max(-5, min(90, start.alt + dy * degPerPx))
                 } else {
-                    if dragStart == nil {
-                        dragStart = value.startLocation
+                    if dragStartCenter == nil {
                         dragStartCenter = (viewModel.centerRA, viewModel.centerDec)
                     }
                     guard let startCenter = dragStartCenter else { return }
@@ -1479,6 +1579,10 @@ struct SkyMapView: View {
                 dragStart = nil
                 dragStartCenter = nil
                 dragStartAltAz = nil
+                draggingTarget = false
+                dragStartTarget = nil
+                dragStartTargetScreen = nil
+                dragTargetGrabOffset = .zero
             }
     }
 

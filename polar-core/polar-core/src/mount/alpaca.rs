@@ -201,6 +201,17 @@ impl AlpacaClient {
         ])
     }
 
+    /// ASCOM PulseGuide: direction 0=North, 1=South, 2=East, 3=West.
+    /// The mount handles the timing internally — this blocks until the pulse completes.
+    pub fn pulse_guide(&self, direction: u8, duration_ms: u32) -> Result<(), MountError> {
+        let dir_str = direction.to_string();
+        let dur_str = duration_ms.to_string();
+        self.put("pulseguide", &[
+            ("Direction", &dir_str),
+            ("Duration", &dur_str),
+        ])
+    }
+
     pub fn park(&self) -> Result<(), MountError> {
         self.put("park", &[])
     }
@@ -258,6 +269,10 @@ impl super::MountBackendTrait for AlpacaClient {
 
     fn move_axis(&mut self, axis: u8, rate_deg_per_sec: f64) -> Result<(), MountError> {
         AlpacaClient::move_axis(self, axis, rate_deg_per_sec)
+    }
+
+    fn pulse_guide(&mut self, direction: u8, duration_ms: u32) -> Result<(), MountError> {
+        AlpacaClient::pulse_guide(self, direction, duration_ms)
     }
 
     fn park(&mut self) -> Result<(), MountError> {

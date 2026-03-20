@@ -42,7 +42,60 @@ struct GuideCalibration: Codable {
     var summary: String {
         let raDeg = raAngle * 180.0 / .pi
         let decDeg = decAngle * 180.0 / .pi
-        return String(format: "RA %.1f° (%.3f px/ms)  Dec %.1f° (%.3f px/ms)",
+        return String(format: "RA %.1f° (%.4f px/ms)  Dec %.1f° (%.4f px/ms)",
                        raDeg, raRate, decDeg, decRate)
+    }
+
+    /// Angle between RA and Dec axes in degrees. Should be close to 90°.
+    var axisOrthogonality: Double {
+        var diff = abs(raAngle - decAngle) * 180.0 / .pi
+        if diff > 180 { diff = 360 - diff }
+        return diff
+    }
+
+    /// Whether the calibration looks valid.
+    var isValid: Bool {
+        // Axes should be roughly perpendicular (70°-110°)
+        let ortho = axisOrthogonality
+        guard ortho > 70 && ortho < 110 else { return false }
+        // Rates should be positive and reasonable
+        guard raRate > 0.0001 && decRate > 0.0001 else { return false }
+        return true
+    }
+
+    /// Age of this calibration.
+    var age: TimeInterval { Date().timeIntervalSince(timestamp) }
+
+    /// Human-readable age string.
+    var ageString: String {
+        let hours = age / 3600
+        if hours < 1 { return String(format: "%.0f min ago", age / 60) }
+        if hours < 24 { return String(format: "%.1f hours ago", hours) }
+        return String(format: "%.0f days ago", hours / 24)
+    }
+
+    // MARK: - Persistence
+
+    private static let storageKey = "guideCalibration"
+
+    /// Save to UserDefaults.
+    func save() {
+        if let data = try? JSONEncoder().encode(self) {
+            UserDefaults.standard.set(data, forKey: Self.storageKey)
+        }
+    }
+
+    /// Load from UserDefaults.
+    static func load() -> GuideCalibration? {
+        guard let data = UserDefaults.standard.data(forKey: Self.storageKey),
+              let cal = try? JSONDecoder().decode(GuideCalibration.self, from: data) else {
+            return nil
+        }
+        return cal
+    }
+
+    /// Remove saved calibration.
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: Self.storageKey)
     }
 }

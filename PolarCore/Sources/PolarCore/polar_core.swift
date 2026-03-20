@@ -2688,6 +2688,11 @@ public protocol MountControllerProtocol: AnyObject, Sendable {
     func park() throws 
     
     /**
+     * Send a guide pulse. direction: 0=North, 1=South, 2=East, 3=West.
+     */
+    func pulseGuide(direction: UInt8, durationMs: UInt32) throws 
+    
+    /**
      * Start or stop sidereal tracking.
      */
     func setTracking(enabled: Bool) throws 
@@ -2926,6 +2931,17 @@ open func moveAxis(axis: UInt8, rateDegPerSec: Double)throws   {try rustCallWith
      */
 open func park()throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
     uniffi_polar_core_fn_method_mountcontroller_park(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
+     * Send a guide pulse. direction: 0=North, 1=South, 2=East, 3=West.
+     */
+open func pulseGuide(direction: UInt8, durationMs: UInt32)throws   {try rustCallWithError(FfiConverterTypeMountError_lift) {
+    uniffi_polar_core_fn_method_mountcontroller_pulse_guide(self.uniffiClonePointer(),
+        FfiConverterUInt8.lower(direction),
+        FfiConverterUInt32.lower(durationMs),$0
     )
 }
 }
@@ -6777,6 +6793,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_method_mountcontroller_park() != 47362) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_mountcontroller_pulse_guide() != 28897) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_method_mountcontroller_set_tracking() != 3707) {

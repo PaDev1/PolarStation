@@ -7,6 +7,8 @@ struct DebayerParams {
     uint bytesPerPixel;
     uint bayerOffsetX;  // 0 or 1: column offset for Red pixel
     uint bayerOffsetY;  // 0 or 1: row offset for Red pixel
+    uint flipX;         // 1 = mirror horizontally
+    uint flipY;         // 1 = flip vertically
 };
 
 struct StretchParams {
@@ -41,8 +43,9 @@ kernel void debayer_rggb(
 ) {
     if (gid.x >= params.width || gid.y >= params.height) return;
 
-    uint x = gid.x;
-    uint y = gid.y;
+    // Read from flipped source coordinates, write to normal output position
+    uint x = params.flipX ? (params.width - 1 - gid.x) : gid.x;
+    uint y = params.flipY ? (params.height - 1 - gid.y) : gid.y;
     uint w = params.width;
     uint h = params.height;
     uint bpp = params.bytesPerPixel;

@@ -239,6 +239,20 @@ final class MountService: ObservableObject {
         }
     }
 
+    /// Send a guide pulse. direction: 0=North, 1=South, 2=East, 3=West.
+    func pulseGuide(direction: UInt8, durationMs: UInt32) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            mountQueue.async { [controller] in
+                do {
+                    try controller.pulseGuide(direction: direction, durationMs: durationMs)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Park the mount.
     func park() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in

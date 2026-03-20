@@ -120,8 +120,17 @@ final class GuideCalibrator: ObservableObject {
         state = .selectingStar
         statusMessage = "Selecting guide star..."
 
-        let star: DetectedStar?
-        if let preSelected = guideStarPosition {
+        // Wait for star detection if no stars available yet
+        var star: DetectedStar?
+        if cameraViewModel.detectedStars.isEmpty {
+            statusMessage = "Waiting for star detection..."
+            let freshStars = await waitForFreshStars()
+            if let preSelected = guideStarPosition {
+                star = findGuideStar(near: preSelected, in: freshStars) ?? freshStars.first { $0.snr > 3.0 } ?? freshStars.first
+            } else {
+                star = freshStars.first { $0.snr > 3.0 } ?? freshStars.first
+            }
+        } else if let preSelected = guideStarPosition {
             // User clicked a star — find the current detection nearest to that position
             star = findGuideStar(near: preSelected) ?? selectGuideStar()
         } else {
@@ -162,6 +171,14 @@ final class GuideCalibrator: ObservableObject {
 
         guard !Task.isCancelled else { return }
 
+        // Re-acquire guide star after recenter (wait for stable frame)
+        statusMessage = "Re-acquiring star..."
+        let postRecenterStars = await waitForStableStars()
+        if let star = findGuideStar(near: guideStarPosition ?? startPos, in: postRecenterStars) {
+            let pos = CGPoint(x: star.x, y: star.y)
+            guideStarPosition = pos
+        }
+
         // Step 4: Clear Dec backlash
         state = .clearBacklash
         statusMessage = "Clearing Dec backlash..."
@@ -169,9 +186,17 @@ final class GuideCalibrator: ObservableObject {
 
         guard !Task.isCancelled else { return }
 
+        // Re-acquire guide star after backlash clearing (wait for stable frame)
+        statusMessage = "Re-acquiring star..."
+        let postBacklashStars = await waitForStableStars()
+        if let star = findGuideStar(near: guideStarPosition ?? startPos, in: postBacklashStars) {
+            let pos = CGPoint(x: star.x, y: star.y)
+            guideStarPosition = pos
+        }
+
         // Step 5: Calibrate Dec (North)
         state = .goNorth
-        let currentPos = await currentGuideStarPos(near: startPos) ?? startPos
+        let currentPos = guideStarPosition ?? startPos
         let decResult = await calibrateAxis(
             axis: 1,
             rate: guideRateDegPerSec,  // North = positive Dec
@@ -193,6 +218,12 @@ final class GuideCalibrator: ObservableObject {
 
         guard !Task.isCancelled else { return }
 
+        // Re-acquire guide star at final position
+        let finalStars = await waitForFreshStars()
+        if let star = findGuideStar(near: guideStarPosition ?? startPos, in: finalStars) {
+            guideStarPosition = CGPoint(x: star.x, y: star.y)
+        }
+
         // Step 7: Compute calibration
         let binning = cameraViewModel.selectedCamera?.supportedBins.first ?? 1
 
@@ -206,9 +237,15 @@ final class GuideCalibrator: ObservableObject {
         )
 
         calibration = cal
+        cal.save()
         state = .complete
         progress = 1.0
-        statusMessage = "Calibrated: " + cal.summary
+
+        if cal.isValid {
+            statusMessage = "Calibrated: " + cal.summary
+        } else {
+            statusMessage = "Warning: axes \(String(format: "%.0f°", cal.axisOrthogonality)) apart (expect ~90°). " + cal.summary
+        }
     }
 
     // MARK: - Axis Calibration
@@ -227,6 +264,7 @@ final class GuideCalibrator: ObservableObject {
         label: String
     ) async -> AxisResult? {
         var stepCount = 0
+        var lastKnownPos = startPos  // track star at last known position
 
         while stepCount < maxSteps {
             guard !Task.isCancelled else { return nil }
@@ -256,16 +294,25 @@ final class GuideCalibrator: ObservableObject {
                 return nil
             }
 
-            // Wait for star detection to update
-            try? await Task.sleep(nanoseconds: 200_000_000) // 200ms settle
+            // Wait for mount to settle, then get next fresh frame
+            statusMessage = String(format: "Calibrating %@: step %d — waiting for frame...", label, stepCount)
+            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms settle
+            let freshStars = await waitForFreshStars(timeoutSeconds: 30.0)
 
-            // Find guide star
-            guard let currentStar = findGuideStar(near: startPos) else {
+            // Find guide star near its last known position (not start — star moves during cal)
+            guard let currentStar = findGuideStar(near: lastKnownPos, in: freshStars) else {
+                cameraViewModel.appendDebug(String(format: "[Cal] %@ step %d LOST near (%.1f,%.1f) stars=%d",
+                                                    label, stepCount, lastKnownPos.x, lastKnownPos.y, freshStars.count))
                 statusMessage = String(format: "Calibrating %@: step %d — star lost, retrying", label, stepCount)
                 continue
             }
 
             let currentPos = CGPoint(x: currentStar.x, y: currentStar.y)
+            let jumpDist = hypot(currentPos.x - lastKnownPos.x, currentPos.y - lastKnownPos.y)
+            cameraViewModel.appendDebug(String(format: "[Cal] %@ step %d star=(%.1f,%.1f) last=(%.1f,%.1f) jump=%.1fpx snr=%.1f",
+                                                label, stepCount, currentPos.x, currentPos.y, lastKnownPos.x, lastKnownPos.y, jumpDist, currentStar.snr))
+            lastKnownPos = currentPos
+            guideStarPosition = currentPos
             stepPositions.append(currentPos)
 
             let dx = currentPos.x - startPos.x
@@ -309,8 +356,8 @@ final class GuideCalibrator: ObservableObject {
             return
         }
 
-        // Settle time
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        // Settle time — wait for mount to stop
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
     }
 
     // MARK: - Backlash Clearing
@@ -331,11 +378,53 @@ final class GuideCalibrator: ObservableObject {
                 try await sendMoveAxis(1, rateDegPerSec: 0)
             } catch { return }
 
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            // Track guide star position after each backlash pulse
+            let stars = await waitForFreshStars(timeoutSeconds: 15.0)
+            if let pos = guideStarPosition,
+               let star = findGuideStar(near: pos, in: stars) {
+                guideStarPosition = CGPoint(x: star.x, y: star.y)
+            }
         }
     }
 
     // MARK: - Star Finding
+
+    /// Wait for the next fresh star detection update from the camera.
+    /// Returns the new stars array, or empty if timed out or cancelled.
+    private func waitForFreshStars(timeoutSeconds: Double = 30.0) async -> [DetectedStar] {
+        let oldStars = cameraViewModel.detectedStars
+        let startTime = ContinuousClock.now
+        let timeout = Duration.seconds(timeoutSeconds)
+
+        // Wait for detectedStars to change (new frame processed)
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+
+            let currentStars = cameraViewModel.detectedStars
+            let changed: Bool
+            if currentStars.count != oldStars.count {
+                changed = true
+            } else if !currentStars.isEmpty, !oldStars.isEmpty,
+                      currentStars[0].x != oldStars[0].x || currentStars[0].y != oldStars[0].y {
+                changed = true
+            } else {
+                changed = false
+            }
+
+            if changed { return currentStars }
+            if ContinuousClock.now - startTime > timeout { return currentStars }
+        }
+        return []
+    }
+
+    /// Wait for a stable frame: waits for fresh stars, then confirms the next frame
+    /// gives consistent positions (star moved < 2px). This ensures the mount has stopped.
+    private func waitForStableStars(timeoutSeconds: Double = 30.0) async -> [DetectedStar] {
+        let first = await waitForFreshStars(timeoutSeconds: timeoutSeconds)
+        guard !first.isEmpty, !Task.isCancelled else { return first }
+        let second = await waitForFreshStars(timeoutSeconds: timeoutSeconds)
+        return second
+    }
 
     /// Select the brightest star with good SNR as the guide star.
     private func selectGuideStar() -> DetectedStar? {
@@ -346,8 +435,8 @@ final class GuideCalibrator: ObservableObject {
     }
 
     /// Find the guide star near a known position.
-    private func findGuideStar(near pos: CGPoint) -> DetectedStar? {
-        let stars = cameraViewModel.detectedStars
+    private func findGuideStar(near pos: CGPoint, in stars: [DetectedStar]? = nil) -> DetectedStar? {
+        let stars = stars ?? cameraViewModel.detectedStars
         let searchRadius: Double = 50.0  // pixels — generous for calibration moves
 
         var best: DetectedStar?

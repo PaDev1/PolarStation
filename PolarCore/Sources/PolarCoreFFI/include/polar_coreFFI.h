@@ -946,6 +946,11 @@ void uniffi_polar_core_fn_method_mountcontroller_move_axis(void*_Nonnull ptr, ui
 void uniffi_polar_core_fn_method_mountcontroller_park(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_MOUNTCONTROLLER_PULSE_GUIDE
+#define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_MOUNTCONTROLLER_PULSE_GUIDE
+void uniffi_polar_core_fn_method_mountcontroller_pulse_guide(void*_Nonnull ptr, uint8_t direction, uint32_t duration_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_MOUNTCONTROLLER_SET_TRACKING
 #define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_MOUNTCONTROLLER_SET_TRACKING
 void uniffi_polar_core_fn_method_mountcontroller_set_tracking(void*_Nonnull ptr, int8_t enabled, RustCallStatus *_Nonnull out_status
@@ -2131,6 +2136,12 @@ uint16_t uniffi_polar_core_checksum_method_mountcontroller_move_axis(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_MOUNTCONTROLLER_PARK
 #define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_MOUNTCONTROLLER_PARK
 uint16_t uniffi_polar_core_checksum_method_mountcontroller_park(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_MOUNTCONTROLLER_PULSE_GUIDE
+#define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_MOUNTCONTROLLER_PULSE_GUIDE
+uint16_t uniffi_polar_core_checksum_method_mountcontroller_pulse_guide(void
     
 );
 #endif

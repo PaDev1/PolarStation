@@ -245,6 +245,10 @@ interface MountController {
     [Throws=MountError]
     void move_axis(u8 axis, f64 rate_deg_per_sec);
 
+    /// Send a guide pulse. direction: 0=North, 1=South, 2=East, 3=West.
+    [Throws=MountError]
+    void pulse_guide(u8 direction, u32 duration_ms);
+
     /// Park the mount.
     [Throws=MountError]
     void park();

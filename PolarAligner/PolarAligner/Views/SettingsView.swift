@@ -52,6 +52,8 @@ struct SettingsView: View {
     @AppStorage("sensorWidthPx") private var sensorWidthPx: Int = 1920
     @AppStorage("sensorHeightPx") private var sensorHeightPx: Int = 1080
     @AppStorage("bayerPattern") private var bayerPattern: String = "RGGB"
+    @AppStorage("cameraFlipX") private var cameraFlipX: Bool = false
+    @AppStorage("cameraFlipY") private var cameraFlipY: Bool = false
     @AppStorage("guideFocalLengthMM") private var guideFocalLengthMM: Double = 200.0
     @AppStorage("guidePixelSizeMicrons") private var guidePixelSizeMicrons: Double = 2.9
 
@@ -571,6 +573,14 @@ struct SettingsView: View {
                             }
                             .pickerStyle(.menu)
                             .frame(width: 90)
+                        }
+                        HStack {
+                            Text("Flip")
+                                .frame(width: 80, alignment: .trailing)
+                            Toggle("Horizontal", isOn: $cameraFlipX)
+                                .toggleStyle(.checkbox)
+                            Toggle("Vertical", isOn: $cameraFlipY)
+                                .toggleStyle(.checkbox)
                         }
 
                         Divider()
@@ -1285,6 +1295,7 @@ struct SettingsView: View {
             discoverGuideCameras()
             syncLocationToCoordinator()
             applyBayerPattern()
+            applyCameraFlip()
         }
         .onChange(of: observerLat) { syncLocationToCoordinator() }
         .onChange(of: observerLon) { syncLocationToCoordinator() }
@@ -1335,6 +1346,12 @@ struct SettingsView: View {
         .onChange(of: bayerPattern) {
             applyBayerPattern()
         }
+        .onChange(of: cameraFlipX) {
+            applyCameraFlip()
+        }
+        .onChange(of: cameraFlipY) {
+            applyCameraFlip()
+        }
     }
 
     private func applyBayerPattern() {
@@ -1346,6 +1363,11 @@ struct SettingsView: View {
         }
         cameraViewModel.previewViewModel.bayerOffsetX = ox
         cameraViewModel.previewViewModel.bayerOffsetY = oy
+    }
+
+    private func applyCameraFlip() {
+        cameraViewModel.previewViewModel.flipX = cameraFlipX
+        cameraViewModel.previewViewModel.flipY = cameraFlipY
     }
 
     // MARK: - LX200 settings

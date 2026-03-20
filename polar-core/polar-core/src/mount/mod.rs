@@ -80,6 +80,22 @@ pub trait MountBackendTrait: Send {
     /// axis: 0 = RA/Az, 1 = Dec/Alt.
     fn move_axis(&mut self, axis: u8, rate_deg_per_sec: f64) -> Result<(), MountError>;
 
+    /// Send a guide pulse. direction: 0=North, 1=South, 2=East, 3=West.
+    /// duration_ms: pulse length in milliseconds.
+    /// Default: falls back to move_axis start/sleep/stop.
+    fn pulse_guide(&mut self, direction: u8, duration_ms: u32) -> Result<(), MountError> {
+        let (axis, rate) = match direction {
+            0 => (1,  0.00208),  // North
+            1 => (1, -0.00208),  // South
+            2 => (0,  0.00208),  // East
+            3 => (0, -0.00208),  // West
+            _ => return Err(MountError::CommandRejected),
+        };
+        self.move_axis(axis, rate)?;
+        std::thread::sleep(std::time::Duration::from_millis(duration_ms as u64));
+        self.move_axis(axis, 0.0)
+    }
+
     /// Park the mount. Default: not supported.
     fn park(&mut self) -> Result<(), MountError> {
         Err(MountError::CommandRejected)
@@ -250,6 +266,15 @@ impl MountController {
         let mut guard = self.backend.lock().unwrap();
         match guard.as_mut() {
             Some(backend) => backend.move_axis(axis, rate_deg_per_sec),
+            None => Err(MountError::NotConnected),
+        }
+    }
+
+    /// Send a guide pulse. direction: 0=North, 1=South, 2=East, 3=West.
+    pub fn pulse_guide(&self, direction: u8, duration_ms: u32) -> Result<(), MountError> {
+        let mut guard = self.backend.lock().unwrap();
+        match guard.as_mut() {
+            Some(backend) => backend.pulse_guide(direction, duration_ms),
             None => Err(MountError::NotConnected),
         }
     }

@@ -118,7 +118,7 @@ struct AlignmentView: View {
                             .foregroundStyle(.tertiary)
                         Text("Connect a camera to see the sky")
                             .foregroundStyle(.secondary)
-                        Text("Go to Camera tab to connect")
+                        Text("Go to Settings tab to connect")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
@@ -146,7 +146,7 @@ struct AlignmentView: View {
                     met: cameraViewModel.isConnected,
                     detail: cameraViewModel.isConnected
                         ? (cameraViewModel.isCapturing ? "Connected, live" : "Connected")
-                        : "Connect in Camera tab"
+                        : "Connect in Settings tab"
                 )
                 PrerequisiteRow(
                     name: "Mount",
@@ -224,6 +224,7 @@ struct AlignmentView: View {
 
     private func startAlignment() {
         // Auto-start camera live preview if not already capturing
+        cameraViewModel.starDetectionEnabled = true
         if cameraViewModel.isConnected && !cameraViewModel.isCapturing {
             let settings = CameraSettings(
                 exposureMs: exposureMs,

@@ -21,19 +21,25 @@ struct GuideGraphView: View {
                 Spacer()
 
                 if !session.samples.isEmpty {
-                    HStack(spacing: 12) {
-                        HStack(spacing: 4) {
+                    HStack(spacing: 8) {
+                        HStack(spacing: 3) {
                             Circle().fill(.blue).frame(width: 6, height: 6)
                             Text(String(format: "RA %.2f\"", session.raRMSArcsec))
                                 .font(.system(.caption2, design: .monospaced))
                                 .foregroundStyle(.blue)
+                            Text(String(format: "pk %.1f\"", session.raPeakArcsec))
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.blue.opacity(0.5))
                         }
 
-                        HStack(spacing: 4) {
+                        HStack(spacing: 3) {
                             Circle().fill(.red).frame(width: 6, height: 6)
                             Text(String(format: "Dec %.2f\"", session.decRMSArcsec))
                                 .font(.system(.caption2, design: .monospaced))
                                 .foregroundStyle(.red)
+                            Text(String(format: "pk %.1f\"", session.decPeakArcsec))
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.red.opacity(0.5))
                         }
 
                         Text(String(format: "Total %.2f\"", session.totalRMSArcsec))
@@ -111,34 +117,34 @@ struct GuideGraphView: View {
             gridVal += gridStep
         }
 
-        // PHD2-style correction bars: vertical bars from center line, height = correction magnitude
+        // Correction bars: drawn on OPPOSITE side of error to show compensation
         // Drawn BEFORE error lines so they appear behind
         let maxCorrMs = visibleSamples.reduce(100.0) { maxVal, s in
             max(maxVal, abs(s.raCorrectionMs), abs(s.decCorrectionMs))
         }
-        let corrScale = maxCorrMs * 1.2  // headroom
-        let barWidth: CGFloat = max(1, w / CGFloat(max(visibleSamples.count, 1)) * 0.6)
+        let corrScale = maxCorrMs * 1.2
+        let barWidth: CGFloat = max(1, w / CGFloat(max(visibleSamples.count, 1)) * 0.3)
 
         for sample in visibleSamples {
             let t = sample.timestamp.timeIntervalSince(windowStart) / timeWindowSec
             let x = CGFloat(t) * w
 
-            // RA correction bar (blue) — positive = up, negative = down
+            // RA correction bar (blue) — flipped: positive correction draws DOWN (opposing positive error)
             if abs(sample.raCorrectionMs) > 1 {
                 let barH = CGFloat(abs(sample.raCorrectionMs) / corrScale) * midY
-                let barY = sample.raCorrectionMs > 0 ? midY - barH : midY
+                let barY = sample.raCorrectionMs > 0 ? midY : midY - barH
                 var bar = Path()
-                bar.addRect(CGRect(x: x - barWidth / 2, y: barY, width: barWidth, height: barH))
-                context.fill(bar, with: .color(.blue.opacity(0.25)))
+                bar.addRect(CGRect(x: x - barWidth, y: barY, width: barWidth, height: barH))
+                context.fill(bar, with: .color(.blue.opacity(0.3)))
             }
 
-            // Dec correction bar (red) — offset slightly right to avoid overlap
+            // Dec correction bar (red) — flipped, offset right
             if abs(sample.decCorrectionMs) > 1 {
                 let barH = CGFloat(abs(sample.decCorrectionMs) / corrScale) * midY
-                let barY = sample.decCorrectionMs > 0 ? midY - barH : midY
+                let barY = sample.decCorrectionMs > 0 ? midY : midY - barH
                 var bar = Path()
-                bar.addRect(CGRect(x: x + barWidth / 2, y: barY, width: barWidth, height: barH))
-                context.fill(bar, with: .color(.red.opacity(0.25)))
+                bar.addRect(CGRect(x: x, y: barY, width: barWidth, height: barH))
+                context.fill(bar, with: .color(.red.opacity(0.3)))
             }
         }
 

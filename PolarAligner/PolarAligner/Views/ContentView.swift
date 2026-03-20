@@ -24,7 +24,8 @@ struct ContentView: View {
                         cameraViewModel: appState.cameraViewModel,
                         engine: appState.simulatedAlignmentEngine,
                         plateSolveService: appState.plateSolveService,
-                        errorTracker: appState.errorTracker
+                        errorTracker: appState.errorTracker,
+                        skyMapVM: appState.skyMapViewModel
                     )
                 case "mount":
                     MountTabView(

@@ -43,7 +43,7 @@ final class CameraViewModel: ObservableObject {
 
     // Star detection
     @Published var detectedStars: [DetectedStar] = []
-    @Published var starDetectionEnabled = false
+    @Published var starDetectionEnabled = true
     @Published var starDetectorModelLoaded = false
     @Published var starDetectorStatus = "Model not loaded"
 
@@ -72,7 +72,6 @@ final class CameraViewModel: ObservableObject {
     /// When true, bypass CoreML and use ClassicalDetector directly.
     @Published var forceClassicalDetector = true
     private let classicalDetector = ClassicalDetector()
-    private var detectionFrameSkip: UInt64 = 0
     private var tempPollTimer: Timer?
 
     var selectedCamera: ASICameraInfo? {
@@ -84,14 +83,10 @@ final class CameraViewModel: ObservableObject {
         frameForwarder.previewViewModel = previewViewModel
         loadStarDetectorModel()
 
-        // Run star detection every few frames (not every frame to save CPU)
+        // Run star detection on every frame.
         previewViewModel.onFrameProcessed = { [weak self] in
             guard let self else { return }
-            self.detectionFrameSkip += 1
-            // Detect every 5th frame (~2-6 Hz depending on camera FPS)
-            if self.detectionFrameSkip % 5 == 0 {
-                self.runStarDetection()
-            }
+            self.runStarDetection()
         }
     }
 
@@ -111,10 +106,22 @@ final class CameraViewModel: ObservableObject {
 
     /// Run star detection on the current display texture.
     func runStarDetection() {
-        guard starDetectionEnabled,
-              let texture = previewViewModel.displayTexture,
-              let device = previewViewModel.device,
-              let commandQueue = previewViewModel.commandQueue else { return }
+        if !starDetectionEnabled {
+            appendDebug("[Det] skip: detection disabled")
+            return
+        }
+        guard let texture = previewViewModel.displayTexture else {
+            appendDebug("[Det] skip: no displayTexture")
+            return
+        }
+        guard let device = previewViewModel.device else {
+            appendDebug("[Det] skip: no Metal device")
+            return
+        }
+        guard let commandQueue = previewViewModel.commandQueue else {
+            appendDebug("[Det] skip: no commandQueue")
+            return
+        }
 
         runStarDetection(on: texture, device: device, commandQueue: commandQueue)
     }
@@ -148,6 +155,31 @@ final class CameraViewModel: ObservableObject {
         } catch {
             appendDebug("[Det] ERROR: \(error)")
         }
+    }
+
+    /// Wait for the next fresh star detection result.
+    /// Polls until `detectedStars` changes from its current value, or times out after 30s.
+    /// Returns the detected stars (may be empty on timeout with no detection).
+    func waitForFreshDetection(timeoutSeconds: Double = 30.0) async -> [DetectedStar] {
+        let oldStars = detectedStars
+        let startTime = ContinuousClock.now
+        let timeout = Duration.seconds(timeoutSeconds)
+
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            let current = detectedStars
+            if current.count != oldStars.count {
+                return current
+            }
+            if !current.isEmpty, !oldStars.isEmpty,
+               current[0].x != oldStars[0].x || current[0].y != oldStars[0].y {
+                return current
+            }
+            if ContinuousClock.now - startTime > timeout {
+                return current
+            }
+        }
+        return []
     }
 
     /// Append a line to the visible debug log.
@@ -455,6 +487,7 @@ final class CameraViewModel: ObservableObject {
 
     func startLive(settings: CameraSettings) {
         lastLiveSettings = settings
+        appendDebug("[Live] startLive exp=\(settings.exposureMs)ms gain=\(settings.gain) bin=\(settings.binning) detEnabled=\(starDetectionEnabled) device=\(previewViewModel.device != nil) queue=\(previewViewModel.commandQueue != nil)")
         ensureConnected { [weak self] in
             guard let self else { return }
             self.frameForwarder.onSaveFrame = nil
