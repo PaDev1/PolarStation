@@ -322,29 +322,30 @@ struct SequencerView: View {
         )
     }
 
-    @ViewBuilder
-    private func containerRow(_ container: SequenceContainer, path: [Int]) -> some View {
-        DisclosureGroup(isExpanded: isExpanded(container.id)) {
-            ForEach(Array(container.items.enumerated()), id: \.element.id) { index, item in
-                let childPath = path + [index]
-                switch item {
-                case .container(let child):
-                    containerRow(child, path: childPath)
-                case .instruction(let instruction):
-                    instructionRow(instruction, path: childPath)
+    private func containerRow(_ container: SequenceContainer, path: [Int]) -> AnyView {
+        AnyView(
+            DisclosureGroup(isExpanded: isExpanded(container.id)) {
+                ForEach(Array(container.items.enumerated()), id: \.element.id) { index, item in
+                    let childPath = path + [index]
+                    switch item {
+                    case .container(let child):
+                        containerRow(child, path: childPath)
+                    case .instruction(let instruction):
+                        instructionRow(instruction, path: childPath)
+                    }
                 }
+            } label: {
+                containerLabel(container, path: path)
             }
-        } label: {
-            containerLabel(container, path: path)
-        }
-        // Drop onto container — inserts into it
-        .onDrop(of: [.utf8PlainText], delegate: ContainerDropDelegate(
-            containerId: container.id,
-            draggedItemId: $draggedItemId,
-            dropTargetId: $dropTargetId,
-            dropInsideContainer: $dropInsideContainer,
-            document: $document
-        ))
+            // Drop onto container — inserts into it
+            .onDrop(of: [.utf8PlainText], delegate: ContainerDropDelegate(
+                containerId: container.id,
+                draggedItemId: $draggedItemId,
+                dropTargetId: $dropTargetId,
+                dropInsideContainer: $dropInsideContainer,
+                document: $document
+            ))
+        )
     }
 
     @ViewBuilder
