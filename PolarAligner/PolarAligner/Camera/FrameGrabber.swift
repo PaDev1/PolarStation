@@ -46,7 +46,7 @@ final class FrameGrabber {
         deallocateBuffer()
     }
 
-    /// Configure the camera and start the capture loop.
+    /// Configure the camera and start the snap-mode capture loop.
     func start() throws {
         guard let info = camera.info else {
             throw ASICameraError.cameraClosed
@@ -79,10 +79,7 @@ final class FrameGrabber {
         // Allocate frame buffer
         allocateBuffer()
 
-        // Start video mode
-        try camera.startVideoCapture()
-
-        // Start capture thread
+        // Start capture thread (snap mode — no video capture)
         isRunning = true
         frameCount = 0
         let thread = Thread { [weak self] in
@@ -94,15 +91,14 @@ final class FrameGrabber {
         thread.start()
     }
 
-    /// Stop the capture loop and video mode.
+    /// Stop the capture loop.
     func stop() {
         isRunning = false
         captureThread?.cancel()
         captureThread = nil
 
-        if camera.isCapturing {
-            try? camera.stopVideoCapture()
-        }
+        // Stop any in-progress exposure
+        try? camera.stopExposure()
     }
 
     /// Update settings while capturing. Stops and restarts the capture.
@@ -131,12 +127,44 @@ final class FrameGrabber {
         guard let buffer = frameBuffer else { return }
 
         while isRunning && !Thread.current.isCancelled {
-            let success = camera.getVideoData(
-                buffer: buffer,
-                bufferSize: bufferSize,
-                waitMs: settings.captureTimeoutMs
-            )
+            // Start exposure
+            do {
+                try camera.startExposure()
+            } catch {
+                droppedFrames += 1
+                Thread.sleep(forTimeInterval: 0.1)
+                continue
+            }
 
+            // Poll for exposure completion
+            var completed = false
+            let timeoutMs = settings.captureTimeoutMs
+            let startTime = CFAbsoluteTimeGetCurrent()
+
+            while isRunning && !Thread.current.isCancelled {
+                let status = camera.getExposureStatus()
+                if status == 1 { // ASI_EXP_SUCCESS
+                    completed = true
+                    break
+                }
+                if status == 2 { // ASI_EXP_FAILED
+                    break
+                }
+                // Check timeout
+                let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+                if elapsed > Double(timeoutMs) { break }
+
+                // Poll interval: short for fast exposures, longer for slow
+                Thread.sleep(forTimeInterval: settings.exposureMs > 500 ? 0.1 : 0.01)
+            }
+
+            guard completed else {
+                droppedFrames += 1
+                continue
+            }
+
+            // Download the frame
+            let success = camera.getDataAfterExp(buffer: buffer, bufferSize: bufferSize)
             if success {
                 frameCount += 1
                 let ubp = UnsafeBufferPointer(start: UnsafePointer(buffer), count: bufferSize)

@@ -43,7 +43,7 @@ final class CameraViewModel: ObservableObject {
 
     // Star detection
     @Published var detectedStars: [DetectedStar] = []
-    @Published var starDetectionEnabled = true
+    @Published var starDetectionEnabled = false
     @Published var starDetectorModelLoaded = false
     @Published var starDetectorStatus = "Model not loaded"
 
@@ -72,6 +72,7 @@ final class CameraViewModel: ObservableObject {
     /// When true, bypass CoreML and use ClassicalDetector directly.
     @Published var forceClassicalDetector = true
     private let classicalDetector = ClassicalDetector()
+    private var lastDetectionNanos: UInt64 = 0
     private var tempPollTimer: Timer?
 
     var selectedCamera: ASICameraInfo? {
@@ -83,9 +84,11 @@ final class CameraViewModel: ObservableObject {
         frameForwarder.previewViewModel = previewViewModel
         loadStarDetectorModel()
 
-        // Run star detection on every frame.
+        // Notify when a new frame is processed (for star detection on demand)
         previewViewModel.onFrameProcessed = { [weak self] in
             guard let self else { return }
+            // Only run automatic detection when explicitly enabled (guide tab visible)
+            guard self.starDetectionEnabled else { return }
             self.runStarDetection()
         }
     }
@@ -158,9 +161,12 @@ final class CameraViewModel: ObservableObject {
     }
 
     /// Wait for the next fresh star detection result.
-    /// Polls until `detectedStars` changes from its current value, or times out after 30s.
-    /// Returns the detected stars (may be empty on timeout with no detection).
+    /// Temporarily enables detection, waits for results, then restores previous state.
     func waitForFreshDetection(timeoutSeconds: Double = 30.0) async -> [DetectedStar] {
+        let wasEnabled = starDetectionEnabled
+        starDetectionEnabled = true
+        defer { starDetectionEnabled = wasEnabled }
+
         let oldStars = detectedStars
         let startTime = ContinuousClock.now
         let timeout = Duration.seconds(timeoutSeconds)
@@ -307,7 +313,10 @@ final class CameraViewModel: ObservableObject {
 
     func discoverCameras() {
         DispatchQueue.global(qos: .userInitiated).async {
-            let cameras = (try? ASICameraBridge.listCameras()) ?? []
+            var cameras = (try? ASICameraBridge.listCameras()) ?? []
+            // Deduplicate by camera ID
+            var seen = Set<Int32>()
+            cameras = cameras.filter { seen.insert($0.cameraID).inserted }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.discoveredCameras = cameras

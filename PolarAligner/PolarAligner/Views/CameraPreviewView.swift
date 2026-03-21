@@ -264,6 +264,10 @@ final class CameraPreviewViewModel: ObservableObject {
                 )
             }
 
+            if self.displayTexture == nil {
+                self.debugMessage = "[Preview] pipeline returned nil texture! \(width)x\(height) bpp=\(bytesPerPixel) pipe=\(self.pipeline != nil)"
+            }
+
             // Frame rate: exponential moving average using capture-thread timestamp
             if self.lastFrameTime > 0 {
                 let dt = captureTime - self.lastFrameTime
@@ -280,10 +284,11 @@ final class CameraPreviewViewModel: ObservableObject {
             self.lastFrameTimestamp = captureTime
             self.frameCount = captureCount
 
-            // Allow next frame to be queued
+            // Allow next frame to be queued BEFORE star detection
+            // so capture thread can grab the next frame while detection runs
             OSAtomicCompareAndSwap32(1, 0, self._processing)
 
-            // Trigger star detection callback
+            // Trigger star detection callback (may be slow — runs after unlocking)
             self.onFrameProcessed?()
         }
     }

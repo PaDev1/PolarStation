@@ -114,6 +114,7 @@ struct GuideTabView: View {
             savedMinMove = session.minMoveArcsec
             savedDecMode = session.decMode
 
+            cameraViewModel.starDetectionEnabled = false
             cameraViewModel.pauseLiveView()
         }
         .onChange(of: mode) { _, newMode in

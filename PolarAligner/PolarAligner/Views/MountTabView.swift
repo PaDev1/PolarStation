@@ -862,10 +862,11 @@ struct MountTabView: View {
                 } label: {
                     Image(systemName: obsWindowEnabled ? "camera.viewfinder" : "viewfinder")
                         .font(.system(size: 12))
+                        .foregroundStyle(obsWindowEnabled ? .green : .secondary)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .tint(obsWindowEnabled ? .cyan : nil)
+                .tint(obsWindowEnabled ? .green : nil)
                 .help("Observation window — limit by altitude and azimuth")
                 .popover(isPresented: $showObsWindowPopover) {
                     observationWindowPopover

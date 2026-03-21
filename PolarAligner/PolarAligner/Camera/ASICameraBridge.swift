@@ -163,6 +163,9 @@ final class ASICameraBridge {
 
     // MARK: - Discovery
 
+    /// Serial queue for all ASI SDK calls — the SDK is not thread-safe.
+    static let sdkQueue = DispatchQueue(label: "com.polarstation.asi-sdk")
+
     static func connectedCameraCount() -> Int {
         Int(ASIGetNumOfConnectedCameras())
     }
@@ -175,8 +178,10 @@ final class ASICameraBridge {
     }
 
     static func listCameras() throws -> [ASICameraInfo] {
-        let count = connectedCameraCount()
-        return try (0..<count).map { try cameraInfo(at: $0) }
+        try sdkQueue.sync {
+            let count = connectedCameraCount()
+            return try (0..<count).map { try cameraInfo(at: $0) }
+        }
     }
 
     // MARK: - Lifecycle
@@ -290,6 +295,31 @@ final class ASICameraBridge {
         var dropped: Int32 = 0
         try check(ASIGetDroppedFrames(cameraID, &dropped))
         return Int(dropped)
+    }
+
+    // MARK: - Snap Mode (single exposure)
+
+    /// Start a single exposure.
+    func startExposure(isDark: Bool = false) throws {
+        try check(ASIStartExposure(cameraID, isDark ? kASI_TRUE : kASI_FALSE))
+    }
+
+    /// Stop an in-progress exposure.
+    func stopExposure() throws {
+        try check(ASIStopExposure(cameraID))
+    }
+
+    /// Check exposure status. Returns: 0=idle, 1=success, 2=failed.
+    func getExposureStatus() -> Int {
+        var status: ASI_EXPOSURE_STATUS = ASI_EXP_IDLE
+        ASIGetExpStatus(cameraID, &status)
+        return Int(status.rawValue)
+    }
+
+    /// Download the completed exposure into the buffer.
+    func getDataAfterExp(buffer: UnsafeMutablePointer<UInt8>, bufferSize: Int) -> Bool {
+        let code = ASIGetDataAfterExp(cameraID, buffer, CLong(bufferSize))
+        return code == 0
     }
 
     // MARK: - SDK Info

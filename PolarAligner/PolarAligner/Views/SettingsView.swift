@@ -1575,7 +1575,10 @@ struct SettingsView: View {
     private func discoverGuideCameras() {
         isDiscoveringGuideCameras = true
         DispatchQueue.global(qos: .userInitiated).async {
-            let cameras = (try? ASICameraBridge.listCameras()) ?? []
+            var cameras = (try? ASICameraBridge.listCameras()) ?? []
+            // Deduplicate by camera ID (ASI SDK can return same camera twice)
+            var seen = Set<Int32>()
+            cameras = cameras.filter { seen.insert($0.cameraID).inserted }
             DispatchQueue.main.async {
                 guideDiscoveredCameras = cameras
                 if guideSelectedCameraIndex < 0, !cameras.isEmpty {
