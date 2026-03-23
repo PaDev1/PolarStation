@@ -73,10 +73,15 @@ impl PlateSolver {
 
         // Convert our centroids to tetra3 format.
         // tetra3 expects origin at image center; our centroids have origin at top-left.
+        // Limit to 30 brightest — tetra3 performance degrades with too many stars.
         let half_w = image_width as f32 / 2.0;
         let half_h = image_height as f32 / 2.0;
 
-        let t3_centroids: Vec<tetra3::Centroid> = centroids
+        let mut sorted_centroids = centroids;
+        sorted_centroids.sort_by(|a, b| b.brightness.partial_cmp(&a.brightness).unwrap_or(std::cmp::Ordering::Equal));
+        sorted_centroids.truncate(90);
+
+        let t3_centroids: Vec<tetra3::Centroid> = sorted_centroids
             .iter()
             .map(|c| tetra3::Centroid {
                 x: c.x as f32 - half_w,
@@ -91,7 +96,10 @@ impl PlateSolver {
         if fov_tolerance_deg > 0.0 {
             config.fov_max_error_rad = Some((fov_tolerance_deg as f32).to_radians());
         }
-        config.solve_timeout_ms = Some(5000);
+        config.solve_timeout_ms = Some(10000);
+        // Relax match parameters for noisy real-world centroids
+        config.match_radius = 0.02;      // 2% of FOV (default 1% is very tight)
+        config.match_threshold = 1e-4;   // more lenient false-positive threshold
 
         let result = db.solve_from_centroids(&t3_centroids, &config);
 

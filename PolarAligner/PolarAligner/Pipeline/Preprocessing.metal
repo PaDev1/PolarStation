@@ -118,10 +118,26 @@ vertex BlitVertexOut blit_vertex(uint vid [[vertex_id]]) {
     return out;
 }
 
+struct BlitParams {
+    float rotationRad;  // display rotation in radians
+};
+
 fragment half4 blit_fragment(BlitVertexOut in [[stage_in]],
-                              texture2d<half> tex [[texture(0)]]) {
+                              texture2d<half> tex [[texture(0)]],
+                              constant BlitParams &params [[buffer(0)]]) {
     constexpr sampler s(filter::linear, address::clamp_to_edge);
-    return tex.sample(s, in.texCoord);
+
+    // Rotate UV around center
+    float2 uv = in.texCoord;
+    if (abs(params.rotationRad) > 0.001) {
+        float2 center = float2(0.5, 0.5);
+        float2 offset = uv - center;
+        float cosR = cos(params.rotationRad);
+        float sinR = sin(params.rotationRad);
+        uv = float2(offset.x * cosR - offset.y * sinR,
+                     offset.x * sinR + offset.y * cosR) + center;
+    }
+    return tex.sample(s, uv);
 }
 
 /// Midtone Transfer Function (MTF).

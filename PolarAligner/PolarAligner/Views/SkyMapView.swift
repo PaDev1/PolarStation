@@ -1179,31 +1179,25 @@ struct SkyMapView: View {
         // RED = target FOV (where we want to point)
         drawFOVRect(context: context, size: size,
                     raDeg: viewModel.targetRA, decDeg: viewModel.targetDec,
-                    rollDeg: 0.0, fovDeg: viewModel.cameraFOVDeg,
+                    rollDeg: viewModel.cameraRollDeg, fovDeg: viewModel.cameraFOVDeg,
                     strokeColor: .red, fillColor: .red)
 
-        // GREEN = actual camera position
-        // Priority: mount position (live) → plate solve result (last known)
-        let roll = viewModel.solvedRollDeg ?? 0.0
-        let fov = viewModel.solvedFOVDeg ?? viewModel.cameraFOVDeg
+        // GREEN = mount position (uses configured FOV and rotation)
         if let mRA = viewModel.mountRA, let mDec = viewModel.mountDec {
             drawFOVRect(context: context, size: size,
                         raDeg: mRA, decDeg: mDec,
-                        rollDeg: roll, fovDeg: fov,
+                        rollDeg: viewModel.cameraRollDeg, fovDeg: viewModel.cameraFOVDeg,
                         strokeColor: .green, fillColor: .green)
-            // CYAN = plate solve result if it differs from mount (shows pointing error)
-            if let sRA = viewModel.solvedRA, let sDec = viewModel.solvedDec {
-                drawFOVRect(context: context, size: size,
-                            raDeg: sRA, decDeg: sDec,
-                            rollDeg: roll, fovDeg: fov,
-                            strokeColor: .cyan, fillColor: .cyan)
-            }
-        } else if let sRA = viewModel.solvedRA, let sDec = viewModel.solvedDec {
-            // No mount — use plate solve as green
+        }
+
+        // CYAN = plate solve result (shows where camera actually sees)
+        if let sRA = viewModel.solvedRA, let sDec = viewModel.solvedDec {
+            let solvedRoll = viewModel.solvedRollDeg ?? 0.0
             drawFOVRect(context: context, size: size,
                         raDeg: sRA, decDeg: sDec,
-                        rollDeg: roll, fovDeg: fov,
-                        strokeColor: .green, fillColor: .green)
+                        rollDeg: solvedRoll, fovDeg: viewModel.cameraFOVDeg,
+                        strokeColor: viewModel.mountRA != nil ? .cyan : .green,
+                        fillColor: viewModel.mountRA != nil ? .cyan : .green)
         }
     }
 
@@ -1424,7 +1418,7 @@ struct SkyMapView: View {
         } else {
             centerStr = "RA \(String(format: "%.1f", viewModel.centerRA / 15.0))h  Dec \(String(format: "%+.1f", viewModel.centerDec))°"
         }
-        let infoText = Text("FOV: \(String(format: "%.1f", viewModel.mapFOV))°  \(centerStr)")
+        let infoText = Text("Map FOV: \(String(format: "%.1f", viewModel.mapFOV))°  \(centerStr)")
             .font(.system(size: 10, design: .monospaced))
             .foregroundColor(.white.opacity(0.6))
         context.draw(infoText, at: CGPoint(x: 8, y: 8), anchor: .topLeading)

@@ -22,7 +22,7 @@ else
     exit 1
 fi
 
-CONFIGURATION="${1:-Debug}"
+CONFIGURATION="${1:-Release}"
 echo "=== PolarAligner Build (${CONFIGURATION}) ==="
 
 # Step 1: Build Rust library
@@ -54,9 +54,23 @@ echo "  ✓ libpolar_core.a + Swift bindings copied"
 # Step 4: Build Xcode project
 echo ""
 echo "--- [4/4] Building Xcode project ---"
+DIST_BUILD="$SCRIPT_DIR/dist/build"
 xcodebuild -project "$XCODE_PROJECT" -scheme PolarAligner \
-    -configuration "$CONFIGURATION" build 2>&1 | \
+    -configuration "$CONFIGURATION" \
+    SYMROOT="$DIST_BUILD" \
+    build 2>&1 | \
     grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+
+# Step 5: Package app for release
+echo ""
+echo "--- [5/5] Packaging app ---"
+APP_PATH="$DIST_BUILD/$CONFIGURATION/PolarStation.app"
+ZIP_PATH="$SCRIPT_DIR/dist/PolarStation.zip"
+mkdir -p "$SCRIPT_DIR/dist"
+rm -f "$ZIP_PATH"
+ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+echo "  ✓ PolarStation.zip created at dist/PolarStation.zip"
 
 echo ""
 echo "=== Build complete ==="
+echo "    To create a GitHub release: gh release create vX.Y.Z dist/PolarStation.zip --repo Padev1/PolarStation --title 'PolarStation vX.Y.Z' --notes ''"

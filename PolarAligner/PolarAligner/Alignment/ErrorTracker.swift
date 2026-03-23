@@ -144,6 +144,24 @@ final class ErrorTracker: ObservableObject {
         statusMessage = String(format: "%.1f' (solve)", error.totalErrorArcmin)
     }
 
+    /// Update from centroid drift (no plate solve).
+    func updateFromDrift(error: PolarError) {
+        currentError = error
+        framesSinceSolve += 1
+
+        let sample = ErrorSample(
+            timestamp: Date(),
+            altArcmin: error.altErrorArcmin,
+            azArcmin: error.azErrorArcmin,
+            totalArcmin: error.totalErrorArcmin,
+            source: .interpolated
+        )
+        errorHistory.append(sample)
+        trimHistory()
+
+        statusMessage = String(format: "%.1f' (drift)", error.totalErrorArcmin)
+    }
+
     // MARK: - Private
 
     /// Estimate error change from centroid displacement using plate scale.

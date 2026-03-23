@@ -143,7 +143,7 @@ struct ASIControlInfo {
 /// Thread safety: All SDK calls are serialized on an internal queue.
 /// The `getVideoData` method is designed to be called from a capture thread.
 final class ASICameraBridge {
-    private let cameraID: Int32
+    let cameraID: Int32
     private(set) var info: ASICameraInfo?
     private(set) var isOpen = false
     private(set) var isCapturing = false

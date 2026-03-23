@@ -110,6 +110,8 @@ struct CameraPreviewView: NSViewRepresentable {
             }
             encoder.setRenderPipelineState(pipeline)
             encoder.setFragmentTexture(texture, index: 0)
+            var blitParams = SIMD4<Float>(viewModel.displayRotationRad, 0, 0, 0)
+            encoder.setFragmentBytes(&blitParams, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             encoder.endEncoding()
 
@@ -160,6 +162,9 @@ final class CameraPreviewViewModel: ObservableObject {
     /// Image flip settings (applied in debayer shader).
     var flipX: Bool = false
     var flipY: Bool = false
+
+    /// Display rotation in radians (applied in blit shader for visual orientation).
+    var displayRotationRad: Float = 0.0
 
     /// Bayer pattern offsets (set from camera info or settings).
     var bayerOffsetX: UInt32 = 0

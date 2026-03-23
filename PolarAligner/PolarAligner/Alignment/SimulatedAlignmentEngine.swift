@@ -66,6 +66,8 @@ final class SimulatedAlignmentEngine: ObservableObject {
     var imageHeight: Int = 1080
     var fovDeg: Double = 3.2
     let slewDeg: Double = 30.0
+    /// Number of detection frames for consensus (mirrors AlignmentCoordinator).
+    var detectionFrames: Int = 3
 
     // Observer location (matches AlignmentCoordinator defaults)
     var observerLatDeg: Double = 60.17
@@ -119,6 +121,14 @@ final class SimulatedAlignmentEngine: ObservableObject {
                 desc.storageMode = .shared
                 starFieldTexture = dev.makeTexture(descriptor: desc)
             }
+        }
+    }
+
+    /// Set initial position from mount if connected.
+    func syncFromMount(_ mountService: MountService) {
+        if let status = mountService.status, status.connected {
+            initialRA = status.raHours * 15.0
+            initialDec = status.decDeg
         }
     }
 
@@ -209,50 +219,74 @@ final class SimulatedAlignmentEngine: ObservableObject {
 
         var solvedCoords: [CelestialCoord] = []
 
+        var solvedFOV: Double? = plateSolveService.lastResult?.fovDeg
+
         for step in 1...3 {
             currentStep = step
-            statusMessage = "Step \(step)/3: Generating star field..."
 
-            // Publish current camera position for sky map FOV overlay
-            self.currentCameraRA = cameraRA
-            self.currentCameraDec = cameraDec
+            // Iterative solve: render → detect → solve → if fail, nudge and retry
+            let maxAttempts = 3
+            let nudgeDeg = 3.0
+            var solved = false
 
-            // 1. Project catalog stars onto virtual sensor
-            let visibleStars = projectCatalogStars(
-                cameraRA: cameraRA, cameraDec: cameraDec,
-                rollDeg: cameraRollDeg
-            )
-            previewStarCount = visibleStars.count
+            for attempt in 1...maxAttempts {
+                if attempt > 1 {
+                    // Nudge: rotate camera slightly for a different star field
+                    statusMessage = "Step \(step)/3: Nudging \(String(format: "%.0f", nudgeDeg))° (attempt \(attempt)/\(maxAttempts))..."
+                    let nudged = GnomonicProjection.rotateAroundAxis(
+                        pointingRA: cameraRA, pointingDec: cameraDec,
+                        axisRA: pole.raDeg, axisDec: pole.decDeg,
+                        angleDeg: nudgeDeg
+                    )
+                    cameraRA = nudged.raDeg
+                    cameraDec = nudged.decDeg
+                }
 
-            guard visibleStars.count >= 4 else {
-                statusMessage = "Step \(step): Only \(visibleStars.count) stars visible — try different Dec"
+                statusMessage = "Step \(step)/3: Generating star field..."
+                self.currentCameraRA = cameraRA
+                self.currentCameraDec = cameraDec
+
+                // 1. Project catalog stars onto virtual sensor
+                let visibleStars = projectCatalogStars(
+                    cameraRA: cameraRA, cameraDec: cameraDec,
+                    rollDeg: cameraRollDeg
+                )
+                previewStarCount = visibleStars.count
+                guard visibleStars.count >= 4 else { continue }
+
+                // 2. Render and detect with consensus
+                lastRenderedStars = visibleStars
+                renderStarField(stars: visibleStars)
+                uploadTexture()
+                generatePreviewImage()
+
+                // Use locked FOV if available
+                if let knownFOV = solvedFOV {
+                    plateSolveService.fovDeg = knownFOV
+                    plateSolveService.fovToleranceDeg = 0.5
+                }
+
+                // 3. Multi-frame consensus detect + solve
+                if let result = await detectAndSolve(step: step, plateSolveService: plateSolveService) {
+                    solvedPositions[step - 1] = result
+                    solvedCoords.append(CelestialCoord(raDeg: result.raDeg, decDeg: result.decDeg))
+                    if solvedFOV == nil { solvedFOV = result.fovDeg }
+                    print("[SimAlign] Step \(step): Solved RA=\(String(format: "%.4f", result.raDeg)) Dec=\(String(format: "%.4f", result.decDeg)) matched=\(result.matchedStars)")
+                    statusMessage = "Step \(step)/3: Solved — RA \(String(format: "%.2f", result.raDeg))° Dec \(String(format: "%.2f", result.decDeg))°"
+                    solved = true
+                    break
+                }
+            }
+
+            guard solved else {
+                plateSolveService.fovToleranceDeg = 1.0
+                statusMessage = "Step \(step): Solve failed after \(maxAttempts) attempts (\(lastDetectedCount) stars, FOV \(String(format: "%.1f", fovDeg))°)"
                 isRunning = false
                 return
             }
-
-            // 2. Render star field and upload to Metal texture
-            renderStarField(stars: visibleStars)
-            uploadTexture()
-
-            // Update display
-            generatePreviewImage()
-
-            // 3. Detect stars + 4. Plate solve (with fallback to other detector)
-            guard let result = await detectAndSolve(step: step, plateSolveService: plateSolveService) else {
-                statusMessage = "Step \(step): Solve failed with both detectors (\(lastDetectedCount) stars, FOV \(String(format: "%.1f", fovDeg))°)"
-                isRunning = false
-                return
-            }
-
-            solvedPositions[step - 1] = result
-            solvedCoords.append(CelestialCoord(raDeg: result.raDeg, decDeg: result.decDeg))
-            print("[SimAlign] Step \(step): Camera RA=\(String(format: "%.4f", cameraRA)) Dec=\(String(format: "%.4f", cameraDec)) → Solved RA=\(String(format: "%.4f", result.raDeg)) Dec=\(String(format: "%.4f", result.decDeg)) matched=\(result.matchedStars)")
-
-            statusMessage = "Step \(step)/3: Solved — RA \(String(format: "%.2f", result.raDeg))° Dec \(String(format: "%.2f", result.decDeg))°"
 
             // 5. Rotate camera around the MISALIGNED axis for next step
             if step < 3 {
-                print("[SimAlign] Step \(step): Rotating from RA=\(String(format: "%.4f", cameraRA)) Dec=\(String(format: "%.4f", cameraDec))")
                 let newPointing = GnomonicProjection.rotateAroundAxis(
                     pointingRA: cameraRA, pointingDec: cameraDec,
                     axisRA: pole.raDeg, axisDec: pole.decDeg,
@@ -266,6 +300,9 @@ final class SimulatedAlignmentEngine: ObservableObject {
             // Brief pause so UI updates
             try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
         }
+
+        // Restore default tolerance
+        plateSolveService.fovToleranceDeg = 1.0
 
         // 6. Compute polar error
         statusMessage = "Computing polar error..."
@@ -538,43 +575,81 @@ final class SimulatedAlignmentEngine: ObservableObject {
         step: Int,
         plateSolveService: PlateSolveService
     ) async -> SolveResult? {
-        // Primary detection
-        let primaryLabel = (useClassicalDetector || coremlDetector == nil) ? "classical" : "CoreML"
-        statusMessage = "Step \(step)/3: Detecting stars (\(primaryLabel))..."
-        let detected = detectStars()
-        lastDetectedCount = detected.count
+        // Multi-frame consensus detection (simulated: run detection multiple times
+        // with slight noise variation to mimic real multi-frame behaviour)
+        let frameCount = max(1, detectionFrames)
+        var allDetections: [[DetectedStar]] = []
 
-        if detected.count >= 4 {
-            statusMessage = "Step \(step)/3: Plate solving (\(detected.count) stars)..."
-            if let result = try? await plateSolveService.solveRobust(centroids: detected),
-               result.success {
-                return result
+        for i in 0..<frameCount {
+            statusMessage = "Step \(step)/3: Detecting stars (frame \(i+1)/\(frameCount))..."
+
+            // Re-render with slightly different noise for each frame
+            if i > 0, let visibleStars = lastRenderedStars {
+                renderStarField(stars: visibleStars)
+                uploadTexture()
             }
-            print("[SimAlign] Step \(step): Primary solve failed with \(primaryLabel) (\(detected.count) stars)")
+
+            let detected = detectStars(useClassical: true)
+            if !detected.isEmpty {
+                allDetections.append(detected)
+            }
         }
 
-        // Fallback: try the other detector
-        let hasFallback = coremlDetector != nil
-        guard hasFallback else { return nil }
+        // Build consensus from multiple frames
+        let consensus: [DetectedStar]
+        if allDetections.count >= 2 {
+            consensus = buildConsensus(detections: allDetections, matchRadius: 5.0, minAppearances: 2)
+            print("[SimAlign] Step \(step): Consensus \(allDetections.count) frames → \(consensus.count) stars")
+        } else {
+            consensus = allDetections.first ?? []
+        }
 
-        let fallbackClassical = !(useClassicalDetector || coremlDetector == nil)
-        let fallbackLabel = fallbackClassical ? "classical" : "CoreML"
-        statusMessage = "Step \(step)/3: Retrying with \(fallbackLabel) detector..."
-        print("[SimAlign] Step \(step): Falling back to \(fallbackLabel) detector")
+        lastDetectedCount = consensus.count
+        guard consensus.count >= 4 else { return nil }
 
-        let fallbackDetected = detectStars(useClassical: fallbackClassical)
-        lastDetectedCount = fallbackDetected.count
-
-        guard fallbackDetected.count >= 4 else { return nil }
-
-        statusMessage = "Step \(step)/3: Plate solving (\(fallbackDetected.count) stars, \(fallbackLabel))..."
-        if let result = try? await plateSolveService.solveRobust(centroids: fallbackDetected),
+        statusMessage = "Step \(step)/3: Plate solving (\(consensus.count) stars)..."
+        if let result = try? await plateSolveService.solveRobust(centroids: consensus),
            result.success {
             return result
         }
 
+        print("[SimAlign] Step \(step): Solve failed with \(consensus.count) consensus stars")
         return nil
     }
+
+    /// Build consensus star list from multiple detection frames.
+    private func buildConsensus(
+        detections: [[DetectedStar]],
+        matchRadius: Double,
+        minAppearances: Int
+    ) -> [DetectedStar] {
+        guard let reference = detections.first else { return [] }
+
+        var scores: [(star: DetectedStar, count: Int, totalBrightness: Double)] =
+            reference.map { ($0, 1, $0.brightness) }
+
+        for frameStars in detections.dropFirst() {
+            for (i, entry) in scores.enumerated() {
+                for star in frameStars {
+                    let dx = star.x - entry.star.x
+                    let dy = star.y - entry.star.y
+                    if sqrt(dx * dx + dy * dy) < matchRadius {
+                        scores[i].count += 1
+                        scores[i].totalBrightness += star.brightness
+                        break
+                    }
+                }
+            }
+        }
+
+        return scores
+            .filter { $0.count >= minAppearances }
+            .sorted { $0.totalBrightness > $1.totalBrightness }
+            .map { $0.star }
+    }
+
+    /// Last rendered stars for re-rendering with different noise.
+    private var lastRenderedStars: [(x: Double, y: Double, brightness: Float)]?
 
     // MARK: - Star Field Rendering
 

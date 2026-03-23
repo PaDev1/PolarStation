@@ -54,6 +54,7 @@ struct SettingsView: View {
     @AppStorage("bayerPattern") private var bayerPattern: String = "RGGB"
     @AppStorage("cameraFlipX") private var cameraFlipX: Bool = false
     @AppStorage("cameraFlipY") private var cameraFlipY: Bool = false
+    @AppStorage("cameraRotationDeg") private var cameraRotationDeg: Double = 0.0
     @AppStorage("guideFocalLengthMM") private var guideFocalLengthMM: Double = 200.0
     @AppStorage("guidePixelSizeMicrons") private var guidePixelSizeMicrons: Double = 2.9
 
@@ -581,6 +582,18 @@ struct SettingsView: View {
                                 .toggleStyle(.checkbox)
                             Toggle("Vertical", isOn: $cameraFlipY)
                                 .toggleStyle(.checkbox)
+                        }
+                        HStack {
+                            Text("Rotation")
+                                .frame(width: 80, alignment: .trailing)
+                            TextField("°", value: $cameraRotationDeg, format: .number.precision(.fractionLength(1)))
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 60)
+                            Text("°")
+                                .foregroundStyle(.secondary)
+                            Text("(from plate solve: \(solvedRotationLabel))")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
 
                         Divider()
@@ -1368,6 +1381,11 @@ struct SettingsView: View {
     private func applyCameraFlip() {
         cameraViewModel.previewViewModel.flipX = cameraFlipX
         cameraViewModel.previewViewModel.flipY = cameraFlipY
+    }
+
+    private var solvedRotationLabel: String {
+        let roll = UserDefaults.standard.double(forKey: "lastSolvedRotation")
+        return roll != 0 ? String(format: "%.1f°", roll) : "—"
     }
 
     // MARK: - LX200 settings

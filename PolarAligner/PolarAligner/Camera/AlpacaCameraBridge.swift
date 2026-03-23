@@ -24,6 +24,12 @@ final class AlpacaCameraBridge {
         info = nil
     }
 
+    /// Check if the ASCOM device reports itself as connected.
+    /// Uses the standard Alpaca GET /connected property.
+    func healthCheck() -> Bool {
+        controller.isConnected()
+    }
+
     /// Configure binning and gain.
     func configure(bin: Int, gain: Int) throws {
         try controller.setBinning(bin: UInt8(bin))

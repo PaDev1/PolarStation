@@ -11,9 +11,19 @@ final class PlateSolveService: ObservableObject {
     @Published var databaseInfo: String?
     @Published var lastResult: SolveResult?
     @Published var isSolving = false
+    @Published var debugLog: String = ""
+    private var debugLines: [String] = []
+    private let maxDebugLines = 50
 
     private let solver = PlateSolver()
     private let solveQueue = DispatchQueue(label: "com.polaraligner.platesolve", qos: .userInitiated)
+
+    func log(_ msg: String) {
+        let ts = String(format: "%.1f", Date.now.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000))
+        debugLines.append("[\(ts)] \(msg)")
+        if debugLines.count > maxDebugLines { debugLines.removeFirst(debugLines.count - maxDebugLines) }
+        debugLog = debugLines.joined(separator: "\n")
+    }
 
     /// Camera sensor dimensions (ASI585MC at 2x2 binning).
     var imageWidth: UInt32 = 1920
@@ -24,7 +34,7 @@ final class PlateSolveService: ObservableObject {
     /// At 200mm FL: FOV = 2 * atan(11.14 / (2*200)) * 180/π ≈ 3.19°
     var fovDeg: Double = 3.2
 
-    /// FOV tolerance in degrees.
+    /// FOV tolerance in degrees. Wider = more likely to solve but slower.
     var fovToleranceDeg: Double = 1.0
 
     /// Load the solver database from the app bundle or a file path.
@@ -58,6 +68,8 @@ final class PlateSolveService: ObservableObject {
         isSolving = true
         defer { Task { @MainActor in isSolving = false } }
 
+        log("[Solve] stars=\(centroids.count) img=\(imageWidth)x\(imageHeight) fov=\(String(format: "%.2f", fovDeg))° tol=\(String(format: "%.2f", fovToleranceDeg))°")
+
         // Convert DetectedStar to PolarCore's StarCentroid
         let starCentroids = centroids.map { star in
             StarCentroid(x: star.x, y: star.y, brightness: star.brightness)
@@ -80,6 +92,7 @@ final class PlateSolveService: ObservableObject {
             }
         }
 
+        log("[Solve] \(result.success ? "OK" : "FAIL") matched=\(result.matchedStars) time=\(String(format: "%.0f", result.solveTimeMs))ms fov=\(String(format: "%.2f", result.fovDeg))°")
         lastResult = result
         return result
     }
@@ -90,18 +103,13 @@ final class PlateSolveService: ObservableObject {
     /// marginal conditions (few stars, faint stars, slight FOV mismatch).
     func solveRobust(centroids: [DetectedStar]) async throws -> SolveResult {
         let sorted = centroids.sorted { $0.brightness > $1.brightness }
+        log("[Robust] stars=\(centroids.count) SNR=\(String(format: "%.1f", sorted.first?.snr ?? 0)) img=\(imageWidth)x\(imageHeight) fov=\(String(format: "%.2f", fovDeg))° tol=\(String(format: "%.1f", fovToleranceDeg))°")
 
-        // Tier 1: All stars
-        if let r = try? await solve(centroids: centroids), r.success {
-            print("[PlateSolve] Solved with all \(centroids.count) stars")
-            return r
-        }
-
-        // Tier 2: Brightest subsets
-        for k in [16, 12, 10, 8] where k < sorted.count {
+        // Tier 1: Brightest subsets (tetra3 works best with 8-20 stars, not hundreds)
+        for k in [20, 16, 12, 10, 8] where k <= sorted.count {
             let subset = Array(sorted.prefix(k))
             if let r = try? await solve(centroids: subset), r.success {
-                print("[PlateSolve] Solved with top-\(k) brightest")
+                log("[Robust] T1: top-\(k) brightest")
                 return r
             }
         }
@@ -115,37 +123,34 @@ final class PlateSolveService: ObservableObject {
         }
         if interior.count >= 4 {
             if let r = try? await solve(centroids: interior), r.success {
-                print("[PlateSolve] Solved with \(interior.count) interior stars")
+                log("[Robust] T3: \(interior.count) interior stars")
                 return r
             }
         }
 
-        // Tier 4: FOV grid search with brightest stars
-        let bestSubset = Array(sorted.prefix(min(14, sorted.count)))
+        // Tier 4: Widen tolerance with best stars
+        let bestSubset = Array(sorted.prefix(min(16, sorted.count)))
         let savedFOV = fovDeg
-        defer { fovDeg = savedFOV }
+        let savedTol = fovToleranceDeg
+        defer { fovDeg = savedFOV; fovToleranceDeg = savedTol }
 
-        for mult in [0.92, 0.96, 1.04, 1.08] {
-            fovDeg = savedFOV * mult
+        for tol in [2.0, 3.0, 5.0] where tol > savedTol {
+            fovToleranceDeg = tol
             if let r = try? await solve(centroids: bestSubset), r.success {
-                print("[PlateSolve] Solved with FOV=\(String(format: "%.2f", fovDeg))° (×\(mult))")
+                log("[Robust] T4: tol=\(String(format: "%.1f", tol))°")
                 return r
             }
         }
 
-        // Tier 5: Drop each star one at a time (leave-one-out)
+        // Tier 5: No FOV constraint (tolerance=0 lets tetra3 try everything)
         fovDeg = savedFOV
-        if sorted.count >= 5 && sorted.count <= 16 {
-            for i in 0..<sorted.count {
-                var subset = sorted
-                subset.remove(at: i)
-                if let r = try? await solve(centroids: subset), r.success {
-                    print("[PlateSolve] Solved by dropping star \(i) (of \(sorted.count))")
-                    return r
-                }
-            }
+        fovToleranceDeg = 0
+        if let r = try? await solve(centroids: bestSubset), r.success {
+            log("[Robust] T5: unconstrained, solved at FOV=\(String(format: "%.2f", r.fovDeg))°")
+            return r
         }
 
+        log("[Robust] ALL TIERS FAILED with \(centroids.count) stars")
         throw PlateSolveServiceError.robustSolveFailed(starCount: centroids.count)
     }
 

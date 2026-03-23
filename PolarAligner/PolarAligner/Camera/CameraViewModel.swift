@@ -74,6 +74,8 @@ final class CameraViewModel: ObservableObject {
     private let classicalDetector = ClassicalDetector()
     private var lastDetectionNanos: UInt64 = 0
     private var tempPollTimer: Timer?
+    private var healthCheckTimer: Timer?
+    private var healthCheckCounter: Int = 0
 
     var selectedCamera: ASICameraInfo? {
         guard selectedCameraIndex >= 0, selectedCameraIndex < discoveredCameras.count else { return nil }
@@ -376,6 +378,7 @@ final class CameraViewModel: ObservableObject {
                     self.cameraBridge = bridge
                     self.isConnected = true
                     self.statusMessage = "Connected to \(name)"
+                    self.startHealthCheck()
                     if self.hasCooler {
                         self.startTemperaturePolling()
                     }
@@ -411,6 +414,7 @@ final class CameraViewModel: ObservableObject {
                         self.selectedCameraIndex = 0
                     }
                     self.statusMessage = "Connected to \(bridge.info?.name ?? "Alpaca camera")"
+                    self.startHealthCheck()
                     if self.hasCooler {
                         self.startTemperaturePolling()
                     }
@@ -445,7 +449,67 @@ final class CameraViewModel: ObservableObject {
         coolerPowerPercent = nil
         coolerTargetC = nil
         previewViewModel.displayTexture = nil
+        stopHealthCheck()
         statusMessage = "Disconnected"
+    }
+
+    // MARK: - Connection Health Check
+
+    func startHealthCheck() {
+        stopHealthCheck()
+        // Check once per minute
+        healthCheckTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.checkConnectionHealth()
+            }
+        }
+    }
+
+    func stopHealthCheck() {
+        healthCheckTimer?.invalidate()
+        healthCheckTimer = nil
+    }
+
+    private func checkConnectionHealth() {
+        guard isConnected else { return }
+
+        if let bridge = alpacaCameraBridge {
+            // Alpaca: try a lightweight GET
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let alive = bridge.healthCheck()
+                Task { @MainActor [weak self] in
+                    guard let self, self.isConnected else { return }
+                    if !alive {
+                        self.appendDebug("[Health] Alpaca camera lost")
+                        self.stopCapture()
+                        self.disconnect()
+                        self.errorMessage = "Camera disconnected"
+                    }
+                }
+            }
+        } else if let bridge = cameraBridge {
+            // USB: check if camera ID still in connected list
+            let cameraID = bridge.cameraID
+            ASICameraBridge.sdkQueue.async { [weak self] in
+                let count = ASICameraBridge.connectedCameraCount()
+                var found = false
+                for i in 0..<count {
+                    if let info = try? ASICameraBridge.cameraInfo(at: i), info.cameraID == cameraID {
+                        found = true
+                        break
+                    }
+                }
+                Task { @MainActor [weak self] in
+                    guard let self, self.isConnected else { return }
+                    if !found {
+                        self.appendDebug("[Health] USB camera unplugged")
+                        self.stopCapture()
+                        self.disconnect()
+                        self.errorMessage = "Camera disconnected"
+                    }
+                }
+            }
+        }
     }
 
     /// Connect if needed, then call completion on main actor.

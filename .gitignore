@@ -37,5 +37,8 @@ __pycache__/
 # Xcode SPM workspace data
 *.xcworkspace/xcshareddata/swiftpm/
 
+# Release packaging (GitHub Releases, not committed)
+dist/
+
 # Claude
 .claude/

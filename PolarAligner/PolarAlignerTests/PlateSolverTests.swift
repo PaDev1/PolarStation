@@ -391,6 +391,136 @@ final class PlateSolverTests: XCTestCase {
         }
     }
 
+    // MARK: - Robustness Test: 100 Random Positions
+
+    /// Test plate solving reliability across 100 random sky positions.
+    /// Uses both perfect centroids (from catalog) and full pipeline (render → detect → solve).
+    /// Reports success rate and identifies failure patterns.
+    func testSolveRobustness100Positions() throws {
+        let solver = try requireSolver()
+
+        guard let device = MTLCreateSystemDefaultDevice(),
+              let commandQueue = device.makeCommandQueue() else {
+            throw XCTSkip("No Metal device available")
+        }
+
+        let fovDeg = 2.42  // realistic FOV for ASI585MC + 256mm
+        let w = 1920, h = 1080
+        let numTests = 100
+
+        var perfectSolveSuccess = 0
+        var pipelineSolveSuccess = 0
+        var perfectFailures: [(ra: Double, dec: Double, stars: Int)] = []
+        var pipelineFailures: [(ra: Double, dec: Double, detected: Int, projected: Int)] = []
+
+        let detector = ClassicalDetector()
+
+        // Generate random positions uniformly on the sphere
+        let seed: UInt64 = 42  // deterministic
+        srand48(Int(seed))
+
+        for i in 0..<numTests {
+            // Uniform random on sphere: RA uniform [0,360), Dec = asin(uniform[-1,1])
+            let ra = drand48() * 360.0
+            let dec = asin(2.0 * drand48() - 1.0) * 180.0 / .pi
+            let roll = drand48() * 360.0
+
+            // Test 1: Perfect centroids (no detection pipeline)
+            let centroids = projectCatalogToCentroids(
+                cameraRA: ra, cameraDec: dec,
+                rollDeg: roll, fovDeg: fovDeg, imageWidth: w, imageHeight: h
+            )
+
+            if centroids.count >= 4 {
+                let result = try? solver.solve(
+                    centroids: centroids,
+                    imageWidth: UInt32(w), imageHeight: UInt32(h),
+                    fovDeg: fovDeg, fovToleranceDeg: 1.0
+                )
+                if result?.success == true {
+                    perfectSolveSuccess += 1
+                } else {
+                    perfectFailures.append((ra, dec, centroids.count))
+                }
+            } else {
+                perfectFailures.append((ra, dec, centroids.count))
+            }
+
+            // Test 2: Full pipeline (render → detect → solve)
+            let visibleStars = projectVisibleStars(
+                cameraRA: ra, cameraDec: dec,
+                rollDeg: roll, fovDeg: fovDeg, imageWidth: w, imageHeight: h
+            )
+
+            if visibleStars.count >= 4 {
+                let texDesc = MTLTextureDescriptor.texture2DDescriptor(
+                    pixelFormat: .rgba16Float, width: w, height: h, mipmapped: false
+                )
+                texDesc.usage = [.shaderRead, .shaderWrite]
+                texDesc.storageMode = .shared
+                if let texture = device.makeTexture(descriptor: texDesc) {
+                    let pixelBuffer = renderStarFieldToBuffer(
+                        stars: visibleStars, width: w, height: h,
+                        fovDeg: fovDeg, seeingFWHM: 2.5
+                    )
+                    let bytesPerRow = w * 4 * MemoryLayout<UInt16>.size
+                    let region = MTLRegion(origin: MTLOrigin(), size: MTLSize(width: w, height: h, depth: 1))
+                    texture.replace(region: region, mipmapLevel: 0, withBytes: pixelBuffer, bytesPerRow: bytesPerRow)
+
+                    let detected = (try? detector.detectStars(in: texture, device: device, commandQueue: commandQueue)) ?? []
+                    let detectedCentroids = detected.map { StarCentroid(x: $0.x, y: $0.y, brightness: $0.brightness) }
+
+                    if detectedCentroids.count >= 4 {
+                        let result = try? solver.solve(
+                            centroids: detectedCentroids,
+                            imageWidth: UInt32(w), imageHeight: UInt32(h),
+                            fovDeg: fovDeg, fovToleranceDeg: 1.0
+                        )
+                        if result?.success == true {
+                            pipelineSolveSuccess += 1
+                        } else {
+                            pipelineFailures.append((ra, dec, detected.count, visibleStars.count))
+                        }
+                    } else {
+                        pipelineFailures.append((ra, dec, detected.count, visibleStars.count))
+                    }
+                }
+            } else {
+                pipelineFailures.append((ra, dec, 0, visibleStars.count))
+            }
+
+            if (i + 1) % 10 == 0 {
+                print("[Robustness] \(i+1)/\(numTests): perfect=\(perfectSolveSuccess) pipeline=\(pipelineSolveSuccess)")
+            }
+        }
+
+        // Report
+        print("\n=== ROBUSTNESS TEST RESULTS ===")
+        print("Perfect centroids: \(perfectSolveSuccess)/\(numTests) (\(perfectSolveSuccess * 100 / numTests)%)")
+        print("Full pipeline:     \(pipelineSolveSuccess)/\(numTests) (\(pipelineSolveSuccess * 100 / numTests)%)")
+
+        if !perfectFailures.isEmpty {
+            print("\nPerfect centroid failures (\(perfectFailures.count)):")
+            for f in perfectFailures.prefix(20) {
+                print("  RA=\(String(format: "%.1f", f.ra))° Dec=\(String(format: "%+.1f", f.dec))° stars=\(f.stars)")
+            }
+        }
+
+        if !pipelineFailures.isEmpty {
+            print("\nPipeline failures (\(pipelineFailures.count)):")
+            for f in pipelineFailures.prefix(20) {
+                print("  RA=\(String(format: "%.1f", f.ra))° Dec=\(String(format: "%+.1f", f.dec))° detected=\(f.detected) projected=\(f.projected)")
+            }
+        }
+
+        // Expect at least 80% success with perfect centroids
+        XCTAssertGreaterThanOrEqual(perfectSolveSuccess, 80,
+            "Perfect centroid solve rate should be >= 80% (got \(perfectSolveSuccess)%)")
+        // Pipeline can be lower due to detection noise
+        XCTAssertGreaterThanOrEqual(pipelineSolveSuccess, 60,
+            "Pipeline solve rate should be >= 60% (got \(pipelineSolveSuccess)%)")
+    }
+
     // MARK: - Helpers
 
     /// Project catalog stars to pixel centroids at a given camera pointing.

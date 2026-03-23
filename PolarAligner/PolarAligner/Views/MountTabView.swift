@@ -47,6 +47,7 @@ struct MountTabView: View {
 
     // Ephemeral UI state
     @State private var showObsWindowPopover = false
+    @State private var showDebugConsole = false
     var assistantVM: AssistantViewModel
     var assistantWindowController: AssistantWindowController
     // Observation window (persisted via AppStorage)
@@ -128,8 +129,14 @@ struct MountTabView: View {
                     .frame(minHeight: 200)
 
                     if vm.showSolvePanel {
-                        solvePanel
-                            .frame(minHeight: 120, idealHeight: 180)
+                        VStack(spacing: 0) {
+                            solvePanel
+                            if showDebugConsole {
+                                Divider()
+                                solverDebugConsole
+                            }
+                        }
+                        .frame(minHeight: 120, idealHeight: showDebugConsole ? 300 : 180)
                     }
                     if vm.showCatalog {
                         catalogPanel
@@ -178,6 +185,7 @@ struct MountTabView: View {
             skyMapVM.solvedDec = result.decDeg
             skyMapVM.solvedRollDeg = result.rollDeg
             skyMapVM.solvedFOVDeg = result.fovDeg
+            UserDefaults.standard.set(result.rollDeg, forKey: "lastSolvedRotation")
             // Re-center sky map at solved position so overlay is visible
             skyMapVM.followMount = false
             skyMapVM.centerMap(raDeg: result.raDeg, decDeg: result.decDeg)
@@ -215,6 +223,8 @@ struct MountTabView: View {
     }
 
     private var panelToggleButtons: some View {
+        VStack {
+            Spacer().frame(height: 22)
         HStack(spacing: 4) {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -254,6 +264,7 @@ struct MountTabView: View {
             .help("Toggle object catalog")
         }
         .padding(8)
+        }
     }
 
     // MARK: - Center & Solve Panel
@@ -293,6 +304,7 @@ struct MountTabView: View {
                 HStack(spacing: 8) {
                     Button("Solve") {
                         Task {
+                            updateCameraFOV()
                             centeringSolveService.statusMessage = "Capturing frame and detecting stars..."
                             ensureCameraLive()
                             let stars = await cameraViewModel.waitForFreshDetection()
@@ -451,11 +463,24 @@ struct MountTabView: View {
                             Text("Solved").foregroundStyle(.secondary)
                             Text(String(format: "RA %.4fh  Dec %+.3f°", result.raDeg / 15.0, result.decDeg))
                         }
+                        // Mount vs solve error
+                        if let mStatus = mountService.status {
+                            let mountRADeg = mStatus.raHours * 15.0
+                            let cosDec = cos(mStatus.decDeg * .pi / 180.0)
+                            let raErrArcmin = (result.raDeg - mountRADeg) * 60.0 * cosDec
+                            let decErrArcmin = (result.decDeg - mStatus.decDeg) * 60.0
+                            let totalErrArcmin = sqrt(raErrArcmin * raErrArcmin + decErrArcmin * decErrArcmin)
+                            GridRow {
+                                Text("Error").foregroundStyle(.secondary)
+                                Text(String(format: "%.1f′  (RA %+.1f′  Dec %+.1f′)", totalErrArcmin, raErrArcmin, decErrArcmin))
+                                    .foregroundStyle(totalErrArcmin < 5 ? .green : .orange)
+                            }
+                        }
                         if let offset = centeringSolveService.lastOffsetArcmin,
                            let raOff = centeringSolveService.lastRAOffsetArcmin,
                            let decOff = centeringSolveService.lastDecOffsetArcmin {
                             GridRow {
-                                Text("Offset").foregroundStyle(.secondary)
+                                Text("Target Δ").foregroundStyle(.secondary)
                                 Text(String(format: "%.1f′  (RA %+.1f′  Dec %+.1f′)", offset, raOff, decOff))
                                     .foregroundStyle(offset < centeringSolveService.toleranceArcmin ? .green : .orange)
                             }
@@ -471,6 +496,20 @@ struct MountTabView: View {
                     }
                     .font(.system(size: 11, design: .monospaced))
                 }
+
+                // Debug console toggle
+                HStack {
+                    Spacer()
+                    Button {
+                        showDebugConsole.toggle()
+                    } label: {
+                        Image(systemName: "terminal")
+                            .font(.system(size: 10))
+                            .foregroundStyle(showDebugConsole ? .green : .secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Toggle solver debug log")
+                }
             }
             .padding(10)
         }
@@ -482,6 +521,41 @@ struct MountTabView: View {
         case .failed: return .red
         case .solving, .centering: return .primary
         case .idle: return .secondary
+        }
+    }
+
+    private var solverDebugConsole: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Solver Log")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(plateSolveService.debugLog, forType: .string)
+                }
+                .font(.caption2)
+                .buttonStyle(.borderless)
+                Button("Clear") {
+                    plateSolveService.debugLog = ""
+                }
+                .font(.caption2)
+                .buttonStyle(.borderless)
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
+
+            ScrollView {
+                Text(plateSolveService.debugLog)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.green)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .textSelection(.enabled)
+            }
+            .frame(maxHeight: 120)
+            .background(.black.opacity(0.8))
         }
     }
 
@@ -1314,12 +1388,23 @@ struct MountTabView: View {
     }
 
     private func updateCameraFOV() {
+        // FOV uses native sensor dimensions (physical size doesn't change with binning)
+        let nativeW = Double(sensorWidthPx > 0 ? sensorWidthPx : 3840)
+        let nativeH = Double(sensorHeightPx > 0 ? sensorHeightPx : 2160)
         let arcsecPerPix = pixelSizeMicrons * 206.265 / focalLengthMM
-        let w = max(Double(cameraViewModel.captureWidth), Double(sensorWidthPx))
-        let h = max(Double(cameraViewModel.captureHeight), Double(sensorHeightPx))
-        let fov = arcsecPerPix * w / 3600.0
+        let fov = arcsecPerPix * nativeW / 3600.0
+
         skyMapVM.cameraFOVDeg = fov
-        skyMapVM.sensorAspect = w / h
+        skyMapVM.sensorAspect = nativeW / nativeH
+        skyMapVM.cameraRollDeg = UserDefaults.standard.double(forKey: "cameraRotationDeg")
+
+        // Solver FOV = physical FOV (constant regardless of binning)
+        plateSolveService.fovDeg = fov
+        // Solver image dimensions = actual capture resolution (star centroids are in these coords)
+        if cameraViewModel.captureWidth > 0 {
+            plateSolveService.imageWidth = UInt32(cameraViewModel.captureWidth)
+            plateSolveService.imageHeight = UInt32(cameraViewModel.captureHeight)
+        }
     }
 }
 

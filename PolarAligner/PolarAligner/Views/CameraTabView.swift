@@ -58,6 +58,7 @@ private struct CameraViewerContent: View {
     @AppStorage("capturePrefix") private var capturePrefix: String = "capture"
 
     @State private var captureCount: Int = 1
+    @State private var displayRotationDeg: Double = 0.0
 
     private var effectiveExposureMs: Double {
         selectedSource == .main ? exposureMs : guideExposureMs
@@ -247,6 +248,48 @@ private struct CameraViewerContent: View {
                 .tint(viewModel.previewViewModel.autoStretchEnabled ? .cyan : nil)
                 .foregroundStyle(viewModel.previewViewModel.autoStretchEnabled ? .cyan : .secondary)
                 .help("Auto-stretch — adjusts display to reveal faint detail")
+
+                Divider().frame(height: 20)
+
+                // Rotation control
+                HStack(spacing: 4) {
+                    Button {
+                        displayRotationDeg = 0
+                        viewModel.previewViewModel.displayRotationRad = 0
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 10))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Reset rotation")
+
+                    TextField("", value: Binding(
+                        get: { displayRotationDeg },
+                        set: { newVal in
+                            displayRotationDeg = newVal
+                            viewModel.previewViewModel.displayRotationRad = Float(newVal * .pi / 180.0)
+                        }
+                    ), format: .number.precision(.fractionLength(1)))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 50)
+                    .font(.system(.caption, design: .monospaced))
+
+                    Text("°")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    // Auto-rotate from last plate solve
+                    Button("Auto") {
+                        let solvedRot = UserDefaults.standard.double(forKey: "lastSolvedRotation")
+                        if solvedRot != 0 {
+                            displayRotationDeg = -solvedRot  // negate to counter camera rotation
+                            viewModel.previewViewModel.displayRotationRad = Float(-solvedRot * .pi / 180.0)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .help("Auto-rotate using last plate solve rotation")
+                }
 
                 Spacer()
 

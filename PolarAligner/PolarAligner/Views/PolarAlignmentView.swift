@@ -20,6 +20,9 @@ struct PolarAlignmentView: View {
     @AppStorage("exposureMs") private var exposureMs: Double = 500
     @AppStorage("gain") private var gain: Double = 300
     @AppStorage("binning") private var binning: Int = 2
+    @AppStorage("polarAlignSlewDeg") private var slewAngle: Double = 15.0
+    @AppStorage("polarAlignUseRemote") private var useRemoteFallback: Bool = false
+    @AppStorage("polarAlignDetFrames") private var detectionFrames: Int = 3
 
     enum AlignmentMode: String, CaseIterable {
         case real = "Real"
@@ -702,6 +705,37 @@ struct PolarAlignmentView: View {
                 }
             }
 
+            if !realIsRunning && !isCorrectingPhase {
+                HStack {
+                    Text("Slew angle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $slewAngle) {
+                        Text("10°").tag(10.0)
+                        Text("15°").tag(15.0)
+                        Text("20°").tag(20.0)
+                        Text("30°").tag(30.0)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 220)
+                }
+                HStack {
+                    Text("Detection frames")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $detectionFrames) {
+                        Text("1").tag(1)
+                        Text("3").tag(3)
+                        Text("5").tag(5)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 120)
+                }
+                Toggle("Use remote solver as fallback", isOn: $useRemoteFallback)
+                    .font(.caption)
+                    .toggleStyle(.checkbox)
+            }
+
             HStack(spacing: 16) {
                 if !realIsRunning && !isCorrectingPhase {
                     Button("Start Alignment") {
@@ -733,6 +767,18 @@ struct PolarAlignmentView: View {
             } else {
                 Button {
                     Task {
+                        // Priority: mount position → target position → sky map center
+                        if let status = coordinator.mountService.status, status.connected {
+                            engine.initialRA = status.raHours * 15.0
+                            engine.initialDec = status.decDeg
+                        } else if skyMapVM.targetRA != 0 || skyMapVM.targetDec != 90 {
+                            engine.initialRA = skyMapVM.targetRA
+                            engine.initialDec = skyMapVM.targetDec
+                        }
+                        // Sync FOV from settings
+                        engine.fovDeg = plateSolveService.fovDeg
+                        engine.imageWidth = Int(plateSolveService.imageWidth)
+                        engine.imageHeight = Int(plateSolveService.imageHeight)
                         await engine.run(plateSolveService: plateSolveService)
                     }
                 } label: {
@@ -762,6 +808,9 @@ struct PolarAlignmentView: View {
             )
             cameraViewModel.startLive(settings: settings)
         }
+        coordinator.slewDeg = slewAngle
+        coordinator.useRemoteFallback = useRemoteFallback
+        coordinator.detectionFrames = detectionFrames
         coordinator.runAutoAlignment(cameraViewModel: cameraViewModel)
     }
 
