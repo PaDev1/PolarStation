@@ -121,7 +121,7 @@ struct SettingsView: View {
     // Database generation
     @AppStorage("genCatalogType") private var genCatalogType: String = "hipparcos"
     @AppStorage("genCatalogPath") private var genCatalogPath: String = ""
-    @AppStorage("genMaxMagnitude") private var genMaxMagnitude: Double = 9.0
+    @AppStorage("genMaxMagnitude") private var genMaxMagnitude: Double = 10.0
     private let genMinFOV: Double = 0.5
     private let genMaxFOV: Double = 5.0
     @State private var isGeneratingDB = false
@@ -390,9 +390,10 @@ struct SettingsView: View {
                             Text("Star density")
                                 .frame(width: 80, alignment: .trailing)
                             Picker("", selection: $genMaxMagnitude) {
-                                Text("Low — mag≤7 (15K stars, fast, ~50 MB)").tag(7.0)
-                                Text("Medium — mag≤8 (63K stars, ~480 MB)").tag(8.0)
-                                Text("High — mag≤9 (177K stars, recommended, ~1.5 GB)").tag(9.0)
+                                Text("Low — mag≤8 (63K stars, fast, ~480 MB)").tag(8.0)
+                                Text("Medium — mag≤9 (177K stars, ~1.5 GB)").tag(9.0)
+                                Text("High — mag≤10 (480K stars, recommended, ~4 GB)").tag(10.0)
+                                Text("Very high — mag≤11 (950K stars, ~8 GB)").tag(11.0)
                             }
                             .frame(maxWidth: 320)
                         }

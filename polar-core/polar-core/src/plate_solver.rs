@@ -474,7 +474,8 @@ mod tests {
 
         let db = tetra3::SolverDatabase::load_from_file(&db_path).expect("load db");
         let catalog: Vec<_> = db.star_catalog.stars().to_vec();
-        println!("Catalog: {} stars", catalog.len());
+        let max_mag = db.props.star_max_magnitude;
+        println!("Catalog: {} stars, max_mag={:.1}", catalog.len(), max_mag);
         println!("DB: patterns={} FOV={:.2}°–{:.2}°",
                  db.props.num_patterns,
                  db.props.min_fov_rad.to_degrees(),
@@ -486,14 +487,16 @@ mod tests {
         let half_w = image_width as f32 / 2.0;
         let half_h = image_height as f32 / 2.0;
 
+        let mut ok_count = 0;
         let mut default_ok = 0;
-        let mut relaxed_ok = 0;
-        let mut notol_ok = 0;
-        let total = 50;
+        let mut tuned_ok = 0;
+        let total = 100;
+        let mut min_stars_ok = 999;
+        let mut max_stars_fail = 0;
 
-        // Deterministic random positions
+        // Deterministic positions using golden angle for uniform sky coverage
         let positions: Vec<(f64, f64)> = (0..total).map(|i| {
-            let ra = (i as f64 * 137.508) % 360.0; // golden angle spread
+            let ra = (i as f64 * 137.508) % 360.0;
             let dec = ((i as f64 / total as f64) * 2.0 - 1.0).asin().to_degrees();
             (ra, dec)
         }).collect();
@@ -505,7 +508,6 @@ mod tests {
 
             let mut centroids: Vec<tetra3::Centroid> = Vec::new();
             for star in &catalog {
-                if star.mag > 10.0 { continue; }
                 let ra_s = star.ra_rad as f64;
                 let dec_s = star.dec_rad as f64;
                 let cos_c = dec0.sin() * dec_s.sin() + dec0.cos() * dec_s.cos() * (ra_s - ra0).cos();
@@ -525,39 +527,53 @@ mod tests {
 
             let n = centroids.len();
 
-            // Test 1: Default config
+            // Sort by brightness (mass), keep top 20 for solving
+            centroids.sort_by(|a, b| b.mass.unwrap_or(0.0).partial_cmp(&a.mass.unwrap_or(0.0)).unwrap());
+
             let fov_rad = (fov_deg as f32).to_radians();
+
+            // Test with all centroids
             let mut cfg = tetra3::SolveConfig::new(fov_rad, image_width, image_height);
             cfg.fov_max_error_rad = Some((1.0_f32).to_radians());
             cfg.solve_timeout_ms = Some(5000);
             let r1 = db.solve_from_centroids(&centroids, &cfg);
             let d = r1.status == tetra3::SolveStatus::MatchFound;
+
+            // Test with top-20 brightest only (avoids cluster-buster starvation)
+            let top20: Vec<_> = centroids.iter().take(20).cloned().collect();
+            let r2 = db.solve_from_centroids(&top20, &cfg);
+            let t = r2.status == tetra3::SolveStatus::MatchFound;
+
+            // Test with top-12
+            let top12: Vec<_> = centroids.iter().take(12).cloned().collect();
+            let r3 = db.solve_from_centroids(&top12, &cfg);
+            let t12 = r3.status == tetra3::SolveStatus::MatchFound;
+
+            let solved = d || t || t12;
+            if solved {
+                ok_count += 1;
+                if n < min_stars_ok { min_stars_ok = n; }
+            } else {
+                if n > max_stars_fail { max_stars_fail = n; }
+            }
+
             if d { default_ok += 1; }
+            if t { tuned_ok += 1; }
+            let mut top12_ok_count = if t12 { 1 } else { 0 };
 
-            // Test 2: Relaxed config
-            cfg.match_radius = 0.02;
-            cfg.match_threshold = 1e-4;
-            let r2 = db.solve_from_centroids(&centroids, &cfg);
-            let r = r2.status == tetra3::SolveStatus::MatchFound;
-            if r { relaxed_ok += 1; }
-
-            // Test 3: No FOV constraint
-            let mut cfg3 = tetra3::SolveConfig::new(fov_rad, image_width, image_height);
-            cfg3.solve_timeout_ms = Some(10000);
-            let r3 = db.solve_from_centroids(&centroids, &cfg3);
-            let u = r3.status == tetra3::SolveStatus::MatchFound;
-            if u { notol_ok += 1; }
-
-            println!("[{:2}] RA={:6.1} Dec={:+6.1} stars={:2} default={} relaxed={} noFOV={}",
+            println!("[{:3}] RA={:6.1} Dec={:+6.1} stars={:3} all={} top20={} top12={}",
                      i, target_ra, target_dec, n,
                      if d { "OK" } else { "--" },
-                     if r { "OK" } else { "--" },
-                     if u { "OK" } else { "--" });
+                     if t { "OK" } else { "--" },
+                     if t12 { "OK" } else { "--" });
         }
 
-        println!("\n=== RESULTS ({} positions, FOV={:.2}°) ===", total, fov_deg);
-        println!("Default:     {}/{} ({:.0}%)", default_ok, total, default_ok as f64 / total as f64 * 100.0);
-        println!("Relaxed:     {}/{} ({:.0}%)", relaxed_ok, total, relaxed_ok as f64 / total as f64 * 100.0);
-        println!("No FOV tol:  {}/{} ({:.0}%)", notol_ok, total, notol_ok as f64 / total as f64 * 100.0);
+        println!("\n=== RESULTS ({} positions, FOV={:.2}°, catalog mag≤{:.0}) ===",
+                 total, fov_deg, max_mag);
+        println!("All stars: {}/{} ({:.0}%)", default_ok, total, default_ok as f64 / total as f64 * 100.0);
+        println!("Top-20:   {}/{} ({:.0}%)", tuned_ok, total, tuned_ok as f64 / total as f64 * 100.0);
+        println!("Combined: {}/{} ({:.0}%)", ok_count, total, ok_count as f64 / total as f64 * 100.0);
+        println!("Min stars for success: {}", min_stars_ok);
+        println!("Max stars for failure: {}", max_stars_fail);
     }
 }

@@ -10,7 +10,7 @@ name = "polar_core"
 [dependencies]
 uniffi = { version = "0.29", features = ["cli"] }
 thiserror = "2"
-tetra3 = "0.3.2"
+tetra3 = { path = "../tetra3" }
 nalgebra = "0.34"
 ureq = "3"
 serialport = "4"

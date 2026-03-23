@@ -6,7 +6,7 @@ struct WelcomeView: View {
     @AppStorage("starCatalogPath") private var starCatalogPath: String = ""
     @Binding var showWelcome: Bool
 
-    @State private var selectedDensity: Double = 9.0
+    @State private var selectedDensity: Double = 10.0
     @State private var isWorking = false
     @State private var progress: Double = 0
     @State private var statusMessage: String = ""
@@ -48,9 +48,10 @@ struct WelcomeView: View {
                 HStack {
                     Text("Star density")
                     Picker("", selection: $selectedDensity) {
-                        Text("Low — mag\u{2264}7 (15K stars, ~50 MB, fast)").tag(7.0)
-                        Text("Medium — mag\u{2264}8 (63K stars, ~480 MB)").tag(8.0)
-                        Text("High — mag\u{2264}9 (177K stars, ~1.5 GB, recommended)").tag(9.0)
+                        Text("Low — mag\u{2264}8 (63K stars, fast, ~480 MB)").tag(8.0)
+                        Text("Medium — mag\u{2264}9 (177K stars, ~1.5 GB)").tag(9.0)
+                        Text("High — mag\u{2264}10 (480K stars, recommended, ~4 GB)").tag(10.0)
+                        Text("Very high — mag\u{2264}11 (950K stars, ~8 GB)").tag(11.0)
                     }
                     .frame(maxWidth: 380)
                 }

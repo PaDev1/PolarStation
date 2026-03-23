@@ -1,0 +1,242 @@
+# tetra3rs
+
+[![Crates.io](https://img.shields.io/crates/v/tetra3)](https://crates.io/crates/tetra3)
+[![PyPI](https://img.shields.io/pypi/v/tetra3rs)](https://pypi.org/project/tetra3rs/)
+[![docs.rs](https://img.shields.io/docsrs/tetra3)](https://docs.rs/tetra3)
+[![Docs](https://img.shields.io/badge/docs-guide-blue)](https://tetra3rs.dev/)
+[![License](https://img.shields.io/crates/l/tetra3)](LICENSE)
+[![Status](https://img.shields.io/badge/status-alpha-orange)]()
+
+A fast, robust lost-in-space star plate solver written in Rust.
+
+Given a set of star centroids extracted from a camera image, tetra3rs identifies the stars against a catalog and returns the camera's pointing direction as a quaternion — no prior attitude estimate required. The goal is to make this fast and robust enough for use in embedded systems such as star trackers on satellites.
+
+**Documentation:** For tutorials, concept guides, and Python API reference, see the [tetra3rs documentation](https://tetra3rs.dev/). For Rust API docs, see [docs.rs](https://docs.rs/tetra3).
+
+> [!IMPORTANT]
+> **Status: Alpha** — The core solver is based on well-vetted algorithms but has only been tested against a limited set of images. The API is not yet stable and may change between releases.  Having said that, I've made it work on both low-SNR images taken with a camera in my backyard and with high-star-density images from more-complex telescopes.
+
+
+## Features
+
+- **Lost-in-space solving** — determines attitude from star patterns with no initial guess
+- **Fast** — geometric hashing of 4-star patterns with breadth-first (brightest-first) search
+- **Robust** — statistical verification via binomial false-positive probability
+- **Multiscale** — supports a range of field-of-view scales in a single database
+- **Proper motion** — propagates Hipparcos catalog positions to any observation epoch
+- **Zero-copy deserialization** — databases serialize with [rkyv](https://github.com/rkyv/rkyv) for instant loading
+- **Centroid extraction** — detect stars from images with local background subtraction, connected-component labeling, and quadratic sub-pixel peak refinement (requires `image` feature)
+- **Camera model** — unified intrinsics struct (focal length, optical center, parity, distortion) used throughout the pipeline
+- **Distortion calibration** — fit SIP polynomial or radial distortion models from one or more solved images via `calibrate_camera`
+- **WCS output** — solve results include FITS-standard WCS fields (CD matrix, CRVAL) and pixel↔sky coordinate conversion methods
+- **Stellar aberration** — optional correction for the ~20" apparent shift in star positions caused by the observer's barycentric velocity, with a built-in convenience function for Earth's barycentric velocity
+
+## Installation
+
+### Rust
+
+The crate is published on [crates.io](https://crates.io/crates/tetra3) as `tetra3`:
+
+```sh
+cargo add tetra3
+```
+
+### Python
+
+Binary wheels are available on [PyPI](https://pypi.org/project/tetra3rs/) for Linux (x86_64, ARM64), macOS (ARM64), and Windows (x86_64):
+
+```sh
+pip install tetra3rs
+```
+
+To build from source (requires a Rust toolchain):
+
+```sh
+pip install .
+```
+
+
+
+> [!NOTE]
+> All Python objects (`SolverDatabase`, `CameraModel`, `SolveResult`, `CalibrateResult`, `ExtractionResult`, `Centroid`, `RadialDistortion`, `PolynomialDistortion`) support `pickle` serialization via zero-copy [rkyv](https://github.com/rkyv/rkyv).
+
+## Quick start
+
+### Hipparcos catalog
+
+**Python:** The Hipparcos catalog is bundled automatically via the [`hipparcos-catalog`](https://pypi.org/project/hipparcos-catalog/) dependency — no manual download needed.
+
+**Rust:** Download `hip2.dat` from the [Hipparcos, the New Reduction (I/311)](http://cdsarc.u-strasbg.fr/ftp/I/311/):
+
+```sh
+mkdir -p data
+curl -o data/hip2.dat.gz "http://cdsarc.u-strasbg.fr/ftp/I/311/hip2.dat.gz"
+gunzip data/hip2.dat.gz
+```
+> [!NOTE]
+> The Hipparcos catalog is also downloaded automatically when running the Rust integration tests (`cargo test --features image`).
+
+### Example
+
+```rust
+use tetra3::{GenerateDatabaseConfig, SolverDatabase, SolveConfig, Centroid, SolveStatus};
+
+// Generate a database from the Hipparcos catalog
+let config = GenerateDatabaseConfig {
+    max_fov_deg: 20.0,
+    epoch_proper_motion_year: Some(2025.0),
+    ..Default::default()
+};
+let db = SolverDatabase::generate_from_hipparcos("data/hip2.dat", &config)?;
+
+// Save the database to disk for fast loading later
+db.save_to_file("data/my_database.rkyv")?;
+
+// ... or load a previously saved database
+let db = SolverDatabase::load_from_file("data/my_database.rkyv")?;
+
+// Solve from image centroids (pixel coordinates, origin at image center)
+let centroids = vec![
+    Centroid { x: 100.0, y: 200.0, mass: Some(50.0), cov: None },
+    Centroid { x: -50.0, y: -10.0, mass: Some(45.0), cov: None },
+    // ...
+];
+
+let solve_config = SolveConfig {
+    fov_estimate_rad: (15.0_f32).to_radians(), // horizontal FOV
+    image_width: 1024,
+    image_height: 1024,
+    fov_max_error_rad: Some((2.0_f32).to_radians()),
+    ..Default::default()
+};
+
+let result = db.solve_from_centroids(&centroids, &solve_config);
+if result.status == SolveStatus::MatchFound {
+    let q = result.qicrs2cam.unwrap();
+    println!("Attitude: {q}");
+    println!("Matched {} stars in {:.1} ms",
+        result.num_matches.unwrap(), result.solve_time_ms);
+}
+```
+
+## Algorithm overview
+
+1. **Pattern generation** — select combinations of 4 bright centroids; compute 6 pairwise angular separations and normalize into 5 edge ratios (a geometric invariant)
+2. **Hash lookup** — quantize the edge ratios into a key and probe a precomputed hash table for matching catalog patterns
+3. **Attitude estimation** — solve Wahba's problem via SVD to find the rotation from catalog (ICRS) to camera frame
+4. **Verification** — project nearby catalog stars into the camera frame, count matches, and accept only if the false-positive probability (binomial CDF) is below threshold
+5. **Refinement** — re-estimate the rotation using all matched star pairs via iterative SVD passes
+6. **WCS fit** — constrained 3-DOF tangent-plane refinement (rotation angle θ + CRVAL offset) with sigma-clipping, producing FITS-standard WCS output (CD matrix, CRVAL)
+
+### Parity flip detection
+
+Some imaging systems produce mirror-reflected images (e.g. FITS files with `CDELT1 < 0`, or optics with an odd number of reflections). In these cases the initial rotation estimate yields a reflection (determinant < 0) rather than a proper rotation. The solver detects this by checking the determinant of the rotation matrix; when negative, it negates the x-coordinates of all centroid vectors and recomputes the rotation.
+
+The `SolveResult` includes a `parity_flip` flag (`bool` / `True`/`False` in Python) indicating whether this correction was applied. This is critical for pixel↔sky coordinate conversions: when `parity_flip` is `True`, the mapping between pixel x-coordinates and camera-frame x must include a sign flip.
+
+### Stellar aberration correction
+
+Stellar aberration is the apparent displacement of star positions caused by the finite speed of light combined with the observer's velocity — analogous to how rain appears to fall at an angle when you're moving. For Earth-based observers, this shifts apparent star positions by up to ~20" (v/c ≈ 10⁻⁴ rad). Without correction, the solved attitude is biased by up to ~20".
+
+To correct for aberration, pass the observer's barycentric velocity (ICRS, km/s) via `SolveConfig::observer_velocity_km_s`. The solver applies a first-order correction (s' = s + β − s(s·β)) to all catalog star vectors before matching and refinement, producing an unbiased attitude.
+
+The convenience function `earth_barycentric_velocity()` provides an approximate Earth velocity using a circular-orbit model (~0.5 km/s accuracy, sufficient for the ~20" effect):
+
+> [!NOTE]
+> Enabling aberration correction shifts the entire solved pointing by up to ~20", not just the within-field residuals. This is the physically correct result — without it, the reported attitude is biased by the observer's velocity. Most plate solvers (e.g. [astrometry.net](https://astrometry.net/)) do not account for aberration, so comparing results may show a systematic offset of up to ~20" when this correction is enabled.
+
+
+> [!NOTE]
+> For near-Earth observers, stellar aberration is dominated by Earth's orbital velocity around the Sun (~30 km/s). The surface velocity due to Earth's rotation (~0.46 km/s at the equator) and LEO orbital velocity (~7.5 km/s) are small by comparison and can usually be neglected.
+
+**Rust:**
+
+```rust
+use tetra3::{earth_barycentric_velocity, SolveConfig};
+
+// days since J2000.0 (2000 Jan 1 12:00 TT)
+let v = earth_barycentric_velocity(9321.0);
+
+let config = SolveConfig {
+    observer_velocity_km_s: Some(v),
+    ..SolveConfig::new((10.0_f32).to_radians(), 1024, 1024)
+};
+```
+
+**Python:**
+
+```python
+from datetime import datetime
+import tetra3rs
+
+v = tetra3rs.earth_barycentric_velocity(datetime(2025, 7, 10))
+result = db.solve_from_centroids(
+    centroids,
+    fov_estimate_deg=10.0,
+    image_shape=img.shape,
+    observer_velocity_km_s=v,
+)
+```
+
+## Catalog support
+
+| Catalog | File | Notes |
+|---------|------|-------|
+| Hipparcos | `data/hip2.dat` | Default; includes proper motion |
+| Gaia | `data/gaia_bright_stars.csv` | Requires `--features gaia` (incomplete) |
+
+## Tests
+
+Unit tests run with the default feature set:
+
+```sh
+cargo test
+```
+
+Integration tests require the `image` feature and test data files. Test data is automatically downloaded from Google Cloud Storage on first run and cached in `data/`:
+
+```sh
+cargo test --features image
+```
+
+### SkyView integration test
+
+Solves 10 synthetic star field images (10° FOV) generated from NASA's [SkyView](https://skyview.gsfc.nasa.gov/) virtual observatory, which composites archival survey data into FITS images at any sky position. These use simple CDELT WCS (orthogonal, uniform pixel scale). Each image is solved and the resulting RA/Dec/Roll is compared against the FITS header WCS.
+
+```sh
+cargo test --test skyview_solve_test --features image -- --nocapture
+```
+
+### TESS integration test
+
+Solves Full Frame Images (~12° FOV) from NASA's [TESS](https://tess.mit.edu/) (Transiting Exoplanet Survey Satellite), a space telescope that images large swaths of sky to detect exoplanets via stellar transits. TESS images have significant optical distortion and use CD-matrix WCS with SIP polynomial corrections. The science region is trimmed from the raw 2136×2078 frame to 2048×2048 before centroid extraction.
+
+The test suite includes:
+
+- **3-image basic solve** — solves each image and verifies the boresight is within 30' of the FITS WCS solution.
+- **3-image distortion fit** — fits a 4th-order polynomial distortion model from each solved image, re-solves, and verifies the center pixel RA/Dec is within 1' of the FITS WCS solution.
+- **10-image multi-image calibration** — solves 10 images from the same CCD (Camera 1, CCD 1) across different sectors with 4 tiered solve+calibrate passes (progressively tighter match radius and higher polynomial order). After calibration, all 10 images achieve RMSE < 9" and center pixel agreement with FITS WCS < 3".
+
+```sh
+cargo test --test tess_solve_test --features image -- --nocapture
+```
+
+## Roadmap (not in order)
+
+- **Tracking mode** — accept an initial attitude guess to restrict the search to nearby catalog stars, improving speed and robustness for sequential frames (e.g. star trackers solution on previous frame)
+- **Gaia catalog support** — complete the Gaia bright star catalog import (`--features gaia`)
+- **Tycho-2 catalog support** — import the Tycho-2 catalog (~2.5 million stars, fills the gap between Hipparcos and Gaia)
+
+## Credits
+
+This project is based upon the **tetra3** / **cedar-solve** algorithms.
+
+- **[cedar-solve](https://github.com/smroid/cedar-solve)** — Steven Rosenthal's Python plate solver, which this implementation closely follows for the star quad generation and matching.  (excellent work!)
+- **[tetra3](https://github.com/esa/tetra3)** — the original Python implementation by Gustav Pettersson at ESA
+- **Paper**: G. Pettersson, "Tetra3: a fast and robust star identification algorithm," ESA GNC Conference, 2023
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
+
+This project is a derivative of [tetra3](https://github.com/esa/tetra3) and [cedar-solve](https://github.com/smroid/cedar-solve), both licensed under Apache 2.0 (which in turn derive from [Tetra](https://github.com/brownj4/Tetra) by brownj4, MIT licensed). The upstream license notices are included in the LICENSE file.
