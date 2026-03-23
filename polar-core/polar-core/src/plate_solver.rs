@@ -65,9 +65,25 @@ impl PlateSolver {
         };
 
         let db = match catalog_type.as_str() {
-            "hipparcos" => {
-                tetra3::SolverDatabase::generate_from_hipparcos(&catalog_path, &config)
-                    .map_err(|_| SolverError::DatabaseLoadFailed)?
+            "hipparcos" | "gaia" => {
+                let result = std::panic::catch_unwind(|| {
+                    tetra3::SolverDatabase::generate_from_hipparcos(&catalog_path, &config)
+                });
+                match result {
+                    Ok(Ok(db)) => db,
+                    Ok(Err(e)) => {
+                        eprintln!("[generate] Generation error: {:?}", e);
+                        return Err(SolverError::DatabaseLoadFailed);
+                    }
+                    Err(panic) => {
+                        let msg = panic.downcast_ref::<String>()
+                            .map(|s| s.as_str())
+                            .or_else(|| panic.downcast_ref::<&str>().copied())
+                            .unwrap_or("unknown panic");
+                        eprintln!("[generate] Panic: {}", msg);
+                        return Err(SolverError::DatabaseLoadFailed);
+                    }
+                }
             }
             "tycho2" => {
                 // Convert Tycho-2 to hip2.dat format, then generate

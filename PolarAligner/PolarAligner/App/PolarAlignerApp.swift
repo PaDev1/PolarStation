@@ -50,15 +50,26 @@ struct PolarAlignerApp: App {
     @AppStorage("focuserAlpacaHost") private var focuserAlpacaHost: String = "192.168.8.30"
     @AppStorage("focuserAlpacaPort") private var focuserAlpacaPort: Int = 11111
 
+    @State private var showWelcome = false
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(appState)
-                .environmentObject(appState.dssTileService)
-                .task {
-                    await autoLoadCatalog()
-                    await autoConnectDevices()
+            Group {
+                if showWelcome {
+                    WelcomeView(showWelcome: $showWelcome)
+                        .environmentObject(appState)
+                } else {
+                    ContentView()
+                        .environmentObject(appState)
+                        .environmentObject(appState.dssTileService)
+                        .task {
+                            await autoConnectDevices()
+                        }
                 }
+            }
+            .task {
+                await autoLoadCatalog()
+            }
         }
         .defaultSize(width: 1200, height: 800)
     }
@@ -67,16 +78,14 @@ struct PolarAlignerApp: App {
         if !starCatalogPath.isEmpty {
             do {
                 try await appState.plateSolveService.loadDatabase(from: starCatalogPath)
+                showWelcome = false
                 return
             } catch {
                 print("Failed to load star catalog from \(starCatalogPath): \(error)")
             }
         }
-        do {
-            try await appState.plateSolveService.loadBundledDatabase()
-        } catch {
-            print("No star catalog loaded — set path in Settings")
-        }
+        // No saved path or load failed — show welcome screen
+        showWelcome = true
     }
 
     private func autoConnectDevices() async {

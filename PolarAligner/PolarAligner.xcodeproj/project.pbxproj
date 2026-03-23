@@ -47,6 +47,7 @@
 		B74C7687B01A9E54DF23EA7D /* GuideCalibrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9893F584A3FEAD595705876 /* GuideCalibrator.swift */; };
 		BC09104BBC6778B63121E36E /* SimulatedAlignmentEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B38427B8FD64DD2B9E55820 /* SimulatedAlignmentEngine.swift */; };
 		BEE42BABF6D89261F2CE7520 /* GuideTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9107D1DC80524BB24B4B05A /* GuideTabView.swift */; };
+		WV000001AAAA00000001 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WV000001AAAA00000002 /* WelcomeView.swift */; };
 		D0856F7FEF8D5AE06A34E116 /* AlignmentCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE48E0174955FBD82C3946DB /* AlignmentCoordinator.swift */; };
 		D0939FD13481E766555672F9 /* FrameGrabber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 209B042AB1812B5E1790130D /* FrameGrabber.swift */; };
 		D1F884FA2F204429C7C04EA3 /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66DDD3E49A40C59A164272C0 /* CameraViewModel.swift */; };
@@ -181,6 +182,7 @@
 		C886D4F7CB8232B4F0A94CF7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		DF047E62D240F991F3F88531 /* GuideGraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideGraphView.swift; sourceTree = "<group>"; };
 		E9107D1DC80524BB24B4B05A /* GuideTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideTabView.swift; sourceTree = "<group>"; };
+		WV000001AAAA00000002 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		EE48E0174955FBD82C3946DB /* AlignmentCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlignmentCoordinator.swift; sourceTree = "<group>"; };
 		EE8647E166C4E5E079F70E22 /* ASICameraBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASICameraBridge.swift; sourceTree = "<group>"; };
 		F0E9AF5568EBA1F962CBE50A /* MessierCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessierCatalog.swift; sourceTree = "<group>"; };
@@ -425,6 +427,7 @@
 				5C5165F3B4FE32DA23B94330 /* ContentView.swift */,
 				DF047E62D240F991F3F88531 /* GuideGraphView.swift */,
 				E9107D1DC80524BB24B4B05A /* GuideTabView.swift */,
+				WV000001AAAA00000002 /* WelcomeView.swift */,
 				F0E9AF5568EBA1F962CBE50A /* MessierCatalog.swift */,
 				7D083431597B495E99C4492C /* MountTabView.swift */,
 				7D083431597B495E99C4492D /* MountTabViewModel.swift */,
@@ -721,6 +724,7 @@
 				545C307E0AAC030BE128D282 /* GuideGraphView.swift in Sources */,
 				4AF9DB8A64B0EC5566B78867 /* GuideSession.swift in Sources */,
 				BEE42BABF6D89261F2CE7520 /* GuideTabView.swift in Sources */,
+				WV000001AAAA00000001 /* WelcomeView.swift in Sources */,
 				9C19EEC55DA98D06F2B366FD /* MessierCatalog.swift in Sources */,
 				DD9EDA67FE9A1DCCD95A9C31 /* MetalPipeline.swift in Sources */,
 				B609C83F7FFF8ED7774A5B9D /* MountService.swift in Sources */,

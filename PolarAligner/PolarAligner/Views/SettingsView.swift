@@ -121,9 +121,9 @@ struct SettingsView: View {
     // Database generation
     @AppStorage("genCatalogType") private var genCatalogType: String = "hipparcos"
     @AppStorage("genCatalogPath") private var genCatalogPath: String = ""
-    @AppStorage("genMaxMagnitude") private var genMaxMagnitude: Double = 11.0
-    private let genMinFOV: Double = 1.0
-    private let genMaxFOV: Double = 15.0
+    @AppStorage("genMaxMagnitude") private var genMaxMagnitude: Double = 9.0
+    private let genMinFOV: Double = 0.5
+    private let genMaxFOV: Double = 5.0
     @State private var isGeneratingDB = false
     @State private var genDBResult: String?
     @State private var genDBError: String?
@@ -359,77 +359,54 @@ struct SettingsView: View {
                 // MARK: - Generate Database
                 GroupBox("Generate Star Database") {
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Catalog")
-                                .frame(width: 80, alignment: .trailing)
-                            Picker("", selection: $genCatalogType) {
-                                Text("Hipparcos (hip2.dat)").tag("hipparcos")
-                                Text("Tycho-2 (tyc2.dat)").tag("tycho2")
-                            }
-                            .frame(maxWidth: 250)
-                        }
-                        HStack {
-                            Text("File")
-                                .frame(width: 80, alignment: .trailing)
-                            TextField("Path to catalog file", text: $genCatalogPath)
-                                .textFieldStyle(.roundedBorder)
-                            Button("Browse...") {
-                                let panel = NSOpenPanel()
-                                panel.allowedContentTypes = [.data, .plainText]
-                                panel.message = "Select a star catalog file (hip2.dat or tyc2.dat)"
-                                panel.directoryURL = Self.polarStationDataDir
-                                if panel.runModal() == .OK, let url = panel.url {
-                                    genCatalogPath = url.path
-                                }
-                            }
-                            Button("Download") {
-                                downloadCatalogFile()
-                            }
-                            .disabled(isDownloadingCatalog)
-                        }
-                        if isDownloadingCatalog {
+                        Text("Source: Gaia DR3 (ESA)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 88)
+                        if isDownloadingCatalog || isGeneratingDB {
                             VStack(alignment: .leading, spacing: 4) {
                                 ProgressView(value: downloadProgress)
-                                    .tint(.blue)
-                                Text(downloadStatus ?? "Downloading...")
+                                    .tint(isGeneratingDB ? .green : .blue)
+                                Text(downloadStatus ?? "Working...")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             .padding(.leading, 88)
                         }
-                        HStack {
-                            Text("Max Mag")
-                                .frame(width: 80, alignment: .trailing)
-                            Picker("", selection: $genMaxMagnitude) {
-                                Text("10.0 (compact)").tag(10.0)
-                                Text("10.5").tag(10.5)
-                                Text("11.0 (recommended)").tag(11.0)
-                                Text("11.5").tag(11.5)
-                                Text("12.0 (large)").tag(12.0)
-                            }
-                            .frame(maxWidth: 200)
-                        }
-                        HStack {
-                            Text("FOV")
-                                .frame(width: 80, alignment: .trailing)
-                            Text("\(String(format: "%.1f", genMinFOV))° – \(String(format: "%.1f", genMaxFOV))°")
-                                .font(.system(.body, design: .monospaced))
-                            Spacer()
-                        }
-
-                        HStack {
-                            Button("Generate") {
-                                generateDatabase()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(genCatalogPath.isEmpty || isGeneratingDB)
-
-                            if isGeneratingDB {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Generating... this may take several minutes")
+                        if !genCatalogPath.isEmpty {
+                            HStack {
+                                Text("Catalog")
+                                    .frame(width: 80, alignment: .trailing)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                Text(genCatalogPath)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                        }
+                        HStack {
+                            Text("Star density")
+                                .frame(width: 80, alignment: .trailing)
+                            Picker("", selection: $genMaxMagnitude) {
+                                Text("Low — mag≤7 (15K stars, fast, ~50 MB)").tag(7.0)
+                                Text("Medium — mag≤8 (63K stars, ~480 MB)").tag(8.0)
+                                Text("High — mag≤9 (177K stars, recommended, ~1.5 GB)").tag(9.0)
+                            }
+                            .frame(maxWidth: 320)
+                        }
+
+                        HStack {
+                            Button("Download & Generate") {
+                                downloadAndGenerate()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(isDownloadingCatalog || isGeneratingDB)
+
+                            if isGeneratingDB && !isDownloadingCatalog {
+                                ProgressView()
+                                    .controlSize(.small)
                             }
                         }
 
@@ -1826,11 +1803,205 @@ struct SettingsView: View {
         return dir
     }()
 
+    private func downloadAndGenerate() {
+        isDownloadingCatalog = true
+        downloadProgress = 0
+        downloadStatus = "Querying Gaia DR3 archive..."
+        genDBResult = nil
+        genDBError = nil
+
+        let mag = genMaxMagnitude
+        let destDir = Self.polarStationDataDir
+        let csvPath = destDir.appendingPathComponent("gaia_dr3_mag\(String(format: "%.1f", mag)).csv")
+        let dbPath = destDir.appendingPathComponent("star_catalog.rkyv")
+        let hipPath = destDir.appendingPathComponent("gaia_as_hip2.dat")
+
+        Task.detached {
+            do {
+                // Step 1: Download from Gaia TAP service
+                let query = "SELECT source_id,ra,dec,pmra,pmdec,phot_g_mean_mag FROM gaiadr3.gaia_source WHERE phot_g_mean_mag < \(mag) ORDER BY phot_g_mean_mag"
+
+                var components = URLComponents(string: "https://gea.esac.esa.int/tap-server/tap/sync")!
+                components.queryItems = [
+                    URLQueryItem(name: "REQUEST", value: "doQuery"),
+                    URLQueryItem(name: "LANG", value: "ADQL"),
+                    URLQueryItem(name: "FORMAT", value: "csv"),
+                    URLQueryItem(name: "MAXREC", value: "5000000"),
+                    URLQueryItem(name: "QUERY", value: query),
+                ]
+
+                guard let url = components.url else { throw NSError(domain: "", code: -1) }
+
+                await MainActor.run { downloadStatus = "Downloading Gaia DR3 mag≤\(String(format: "%.1f", mag))..." }
+
+                let (bytes, response) = try await URLSession.shared.bytes(from: url)
+                let totalSize = (response as? HTTPURLResponse)
+                    .flatMap { Int($0.value(forHTTPHeaderField: "Content-Length") ?? "") } ?? 0
+
+                try? FileManager.default.removeItem(at: csvPath)
+                FileManager.default.createFile(atPath: csvPath.path, contents: nil)
+                let handle = try FileHandle(forWritingTo: csvPath)
+
+                var downloaded = 0
+                var buffer = Data()
+                var lineCount = 0
+
+                for try await byte in bytes {
+                    buffer.append(byte)
+                    downloaded += 1
+                    if byte == 0x0A { lineCount += 1 }  // count newlines
+
+                    if buffer.count >= 64 * 1024 {
+                        handle.write(buffer)
+                        buffer.removeAll(keepingCapacity: true)
+                        let stars = max(0, lineCount - 1)
+                        let pct: Double
+                        if totalSize > 0 {
+                            pct = Double(downloaded) / Double(totalSize) * 0.4
+                        } else {
+                            // Estimate based on expected star count
+                            let expectedStars: Double = mag <= 7 ? 15000 : mag <= 8 ? 63000 : 177000
+                            pct = min(0.39, Double(stars) / expectedStars * 0.4)
+                        }
+                        await MainActor.run {
+                            downloadProgress = pct
+                            downloadStatus = String(format: "Downloading... %.1f MB (%d stars)", Double(downloaded) / 1_048_576, stars)
+                        }
+                    }
+                }
+                if !buffer.isEmpty { handle.write(buffer) }
+                handle.closeFile()
+
+                await MainActor.run {
+                    downloadProgress = 0.4
+                    downloadStatus = "Downloaded \(lineCount - 1) stars. Converting to solver format..."
+                    genCatalogPath = csvPath.path
+                    isGeneratingDB = true
+                }
+
+                // Step 2: Convert Gaia CSV to hip2.dat format for tetra3
+                try Self.gaiaCSVToHip2(csvPath: csvPath, hipPath: hipPath)
+
+                await MainActor.run { downloadProgress = 0.5; downloadStatus = "Generating solver database (this takes minutes)..." }
+
+                // Step 3: Generate database
+                let solver = PlateSolver()
+                let info = try solver.generateDatabase(
+                    catalogPath: hipPath.path,
+                    catalogType: "hipparcos",
+                    outputPath: dbPath.path,
+                    maxMagnitude: Double(mag),
+                    minFovDeg: 0.5,
+                    maxFovDeg: 5.0
+                )
+
+                // Step 4: Auto-load
+                await MainActor.run {
+                    downloadProgress = 1.0
+                    downloadStatus = "Complete!"
+                    genDBResult = info
+                    isDownloadingCatalog = false
+                    isGeneratingDB = false
+                    starCatalogPath = dbPath.path
+                    loadCatalog()
+                }
+            } catch {
+                await MainActor.run {
+                    downloadStatus = "Failed: \(error.localizedDescription)"
+                    genDBError = error.localizedDescription
+                    isDownloadingCatalog = false
+                    isGeneratingDB = false
+                }
+            }
+        }
+    }
+
+    /// Convert Gaia DR3 CSV to hip2.dat format for tetra3.
+    ///
+    /// tetra3 hip2.dat parser requires 171+ chars per line with fields at exact positions:
+    ///   0-5:    HIP number
+    ///   15-27:  RA (radians)
+    ///   29-41:  Dec (radians)
+    ///   43-49:  parallax (mas)
+    ///   51-58:  pmRA (mas/yr)
+    ///   60-67:  pmDec (mas/yr)
+    ///   69-74:  e_RA
+    ///   76-81:  e_Dec
+    ///   83-88:  e_plx
+    ///   90-95:  e_pmRA
+    ///   97-102: e_pmDec
+    ///   129-135: Hp magnitude
+    ///   137-142: e_Hp
+    ///   152-157: B-V
+    ///   159-163: e_B-V
+    ///   165-170: V-I
+    static func gaiaCSVToHip2(csvPath: URL, hipPath: URL) throws {
+        let content = try String(contentsOf: csvPath, encoding: .utf8)
+        let handle = try FileHandle(forWritingTo: {
+            FileManager.default.createFile(atPath: hipPath.path, contents: nil)
+            return hipPath
+        }())
+
+        var id: UInt32 = 1
+
+        for line in content.split(separator: "\n").dropFirst() {
+            let fields = line.split(separator: ",", omittingEmptySubsequences: false)
+            guard fields.count >= 6 else { continue }
+
+            guard let ra = Double(fields[1]),
+                  let dec = Double(fields[2]),
+                  let mag = Float(fields[5]) else { continue }
+
+            let pmra = Double(fields[3]) ?? 0.0
+            let pmdec = Double(fields[4]) ?? 0.0
+            let raRad = ra * .pi / 180.0
+            let decRad = dec * .pi / 180.0
+
+            // Build fixed-width line matching exact hip2.dat column positions (0-indexed):
+            //  0-5: HIP, 15-27: RA_rad, 29-41: Dec_rad, 43-49: plx,
+            // 51-58: pmRA, 60-67: pmDec, 69-74: e_RA, 76-81: e_Dec,
+            // 83-88: e_plx, 90-95: e_pmRA, 97-102: e_pmDec,
+            // 129-135: Hp, 137-142: e_Hp, 152-157: B-V, 159-163: e_BV, 165-170: V-I
+            var buf = [Character](repeating: " ", count: 172)
+            func write(_ s: String, at col: Int) {
+                for (i, c) in s.enumerated() where col + i < buf.count { buf[col + i] = c }
+            }
+            write(String(format: "%6d", id), at: 0)
+            write(String(format: "%13.10f", raRad), at: 15)
+            write(String(format: "%13.10f", decRad), at: 29)
+            write(String(format: "%7.2f", 0.0), at: 43)        // plx
+            write(String(format: "%8.2f", pmra), at: 51)        // pmRA
+            write(String(format: "%8.2f", pmdec), at: 60)       // pmDec
+            write(String(format: "%6.2f", 0.01), at: 69)        // e_RA
+            write(String(format: "%6.2f", 0.01), at: 76)        // e_Dec
+            write(String(format: "%6.2f", 0.0), at: 83)         // e_plx
+            write(String(format: "%6.2f", 0.0), at: 90)         // e_pmRA
+            write(String(format: "%6.2f", 0.0), at: 97)         // e_pmDec
+            write(String(format: "%7.4f", mag), at: 129)        // Hp
+            write(String(format: "%6.3f", 0.01), at: 137)       // e_Hp
+            write(String(format: "%6.3f", 0.0), at: 152)        // B-V
+            write(String(format: "%5.3f", 0.0), at: 159)        // e_BV
+            write(String(format: "%6.3f", 0.0), at: 165)        // V-I
+            let formatted = String(buf)
+
+            if let data = (formatted + "\n").data(using: .utf8) {
+                handle.write(data)
+            }
+            id += 1
+        }
+        handle.closeFile()
+    }
+
     private func downloadCatalogFile() {
         // Multiple mirrors for reliability
         let mirrors: [(url: String, compressed: Bool)]
         let fileName: String
         switch genCatalogType {
+        case "hyg":
+            fileName = "hygdata_v41.csv"
+            mirrors = [
+                ("https://raw.githubusercontent.com/astronexus/HYG-Database/main/hyg/CURRENT/hygdata_v41.csv", false),
+            ]
         case "tycho2":
             fileName = "tyc2.dat"
             mirrors = [

@@ -26,16 +26,26 @@ fn main() -> Result<()> {
         .map(|s| s.as_str())
         .unwrap_or("star_catalog.rkyv");
 
-    // FOV range for ASI585MC + typical telescope focal lengths:
-    // - 200mm FL: ~3.2° x 1.8° → horizontal FOV ~3.2°
-    // - 400mm FL: ~1.6° x 0.9° → horizontal FOV ~1.6°
-    // - 135mm FL: ~4.7° x 2.7° → horizontal FOV ~4.7°
-    // Use 1.0°–15.0° to cover a wide range of setups.
+    let max_fov: f32 = args.iter().position(|a| a == "--max-fov")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5.0);
+
+    let min_fov: f32 = args.iter().position(|a| a == "--min-fov")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.5);
+
+    let max_mag: f32 = args.iter().position(|a| a == "--max-mag")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10.0);
+
     let config = GenerateDatabaseConfig {
-        max_fov_deg: 15.0,
-        min_fov_deg: Some(1.0),
+        max_fov_deg: max_fov,
+        min_fov_deg: Some(min_fov),
         epoch_proper_motion_year: Some(2026.0),
-        star_max_magnitude: Some(10.0),
+        star_max_magnitude: Some(max_mag),
         ..Default::default()
     };
 
