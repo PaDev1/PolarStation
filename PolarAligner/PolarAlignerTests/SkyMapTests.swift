@@ -1,6 +1,6 @@
 import XCTest
 import PolarCore
-@testable import PolarAligner
+@testable import PolarStation
 
 @MainActor
 final class SkyMapTests: XCTestCase {

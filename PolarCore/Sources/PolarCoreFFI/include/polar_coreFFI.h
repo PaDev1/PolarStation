@@ -1002,6 +1002,11 @@ void*_Nonnull uniffi_polar_core_fn_constructor_platesolver_new(RustCallStatus *_
 RustBuffer uniffi_polar_core_fn_method_platesolver_database_info(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_PLATESOLVER_GENERATE_DATABASE
+#define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_PLATESOLVER_GENERATE_DATABASE
+RustBuffer uniffi_polar_core_fn_method_platesolver_generate_database(void*_Nonnull ptr, RustBuffer catalog_path, RustBuffer catalog_type, RustBuffer output_path, double max_magnitude, double min_fov_deg, double max_fov_deg, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_PLATESOLVER_GET_STAR_CATALOG
 #define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_PLATESOLVER_GET_STAR_CATALOG
 RustBuffer uniffi_polar_core_fn_method_platesolver_get_star_catalog(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
@@ -2184,6 +2189,12 @@ uint16_t uniffi_polar_core_checksum_method_mountcontroller_unpark(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_PLATESOLVER_DATABASE_INFO
 #define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_PLATESOLVER_DATABASE_INFO
 uint16_t uniffi_polar_core_checksum_method_platesolver_database_info(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_PLATESOLVER_GENERATE_DATABASE
+#define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_PLATESOLVER_GENERATE_DATABASE
+uint16_t uniffi_polar_core_checksum_method_platesolver_generate_database(void
     
 );
 #endif

@@ -152,6 +152,19 @@ interface PlateSolver {
     [Throws=SolverError]
     void load_database(string path);
 
+    /// Generate a solver database from a star catalog file.
+    /// catalog_type: "hipparcos" or "tycho2"
+    /// Returns database info string on success.
+    [Throws=SolverError]
+    string generate_database(
+        string catalog_path,
+        string catalog_type,
+        string output_path,
+        f64 max_magnitude,
+        f64 min_fov_deg,
+        f64 max_fov_deg
+    );
+
     /// Solve: find sky position from star centroids.
     [Throws=SolverError]
     SolveResult solve(

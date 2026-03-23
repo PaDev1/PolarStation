@@ -3074,6 +3074,13 @@ public protocol PlateSolverProtocol: AnyObject, Sendable {
     func databaseInfo()  -> String?
     
     /**
+     * Generate a solver database from a star catalog file.
+     * catalog_type: "hipparcos" or "tycho2"
+     * Returns database info string on success.
+     */
+    func generateDatabase(catalogPath: String, catalogType: String, outputPath: String, maxMagnitude: Double, minFovDeg: Double, maxFovDeg: Double) throws  -> String
+    
+    /**
      * Get all stars from the loaded catalog (for sky map display).
      */
     func getStarCatalog()  -> [CatalogStar]
@@ -3154,6 +3161,24 @@ public convenience init() {
 open func databaseInfo() -> String?  {
     return try!  FfiConverterOptionString.lift(try! rustCall() {
     uniffi_polar_core_fn_method_platesolver_database_info(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Generate a solver database from a star catalog file.
+     * catalog_type: "hipparcos" or "tycho2"
+     * Returns database info string on success.
+     */
+open func generateDatabase(catalogPath: String, catalogType: String, outputPath: String, maxMagnitude: Double, minFovDeg: Double, maxFovDeg: Double)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeSolverError_lift) {
+    uniffi_polar_core_fn_method_platesolver_generate_database(self.uniffiClonePointer(),
+        FfiConverterString.lower(catalogPath),
+        FfiConverterString.lower(catalogType),
+        FfiConverterString.lower(outputPath),
+        FfiConverterDouble.lower(maxMagnitude),
+        FfiConverterDouble.lower(minFovDeg),
+        FfiConverterDouble.lower(maxFovDeg),$0
     )
 })
 }
@@ -6817,6 +6842,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_method_platesolver_database_info() != 39882) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_platesolver_generate_database() != 58332) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_method_platesolver_get_star_catalog() != 49432) {

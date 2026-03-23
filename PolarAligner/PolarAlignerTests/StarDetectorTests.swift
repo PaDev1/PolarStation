@@ -1,7 +1,7 @@
 import XCTest
 import Metal
 import CoreML
-@testable import PolarAligner
+@testable import PolarStation
 
 final class StarDetectorTests: XCTestCase {
     var device: MTLDevice!

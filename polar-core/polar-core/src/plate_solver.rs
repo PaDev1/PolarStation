@@ -39,6 +39,67 @@ impl PlateSolver {
         }
     }
 
+    /// Generate a solver database from a star catalog file.
+    ///
+    /// `catalog_path` — path to a catalog file (Hipparcos hip2.dat or Tycho-2 tyc2.dat)
+    /// `catalog_type` — "hipparcos" or "tycho2"
+    /// `output_path` — path to save the generated .rkyv database
+    /// `max_magnitude` — faintest star magnitude to include (e.g., 10.0, 11.0, 12.0)
+    /// `min_fov_deg` — minimum FOV the database should support (degrees)
+    /// `max_fov_deg` — maximum FOV the database should support (degrees)
+    pub fn generate_database(
+        &self,
+        catalog_path: String,
+        catalog_type: String,
+        output_path: String,
+        max_magnitude: f64,
+        min_fov_deg: f64,
+        max_fov_deg: f64,
+    ) -> Result<String, SolverError> {
+        let config = tetra3::GenerateDatabaseConfig {
+            max_fov_deg: max_fov_deg as f32,
+            min_fov_deg: Some(min_fov_deg as f32),
+            epoch_proper_motion_year: Some(2026.0),
+            star_max_magnitude: Some(max_magnitude as f32),
+            ..Default::default()
+        };
+
+        let db = match catalog_type.as_str() {
+            "hipparcos" => {
+                tetra3::SolverDatabase::generate_from_hipparcos(&catalog_path, &config)
+                    .map_err(|_| SolverError::DatabaseLoadFailed)?
+            }
+            "tycho2" => {
+                // Convert Tycho-2 to hip2.dat format, then generate
+                let hip_path = format!("{}.hip2.tmp", output_path);
+                tycho2_to_hipparcos(&catalog_path, &hip_path)
+                    .map_err(|_| SolverError::DatabaseLoadFailed)?;
+                let db = tetra3::SolverDatabase::generate_from_hipparcos(&hip_path, &config)
+                    .map_err(|_| SolverError::DatabaseLoadFailed)?;
+                let _ = std::fs::remove_file(&hip_path);
+                db
+            }
+            _ => return Err(SolverError::DatabaseLoadFailed),
+        };
+
+        let info = format!(
+            "Stars: {}, Patterns: {}, FOV: {:.1}°–{:.1}°",
+            db.star_catalog.len(),
+            db.props.num_patterns,
+            db.props.min_fov_rad.to_degrees(),
+            db.props.max_fov_rad.to_degrees()
+        );
+
+        db.save_to_file(&output_path)
+            .map_err(|_| SolverError::DatabaseLoadFailed)?;
+
+        // Auto-load the generated database
+        let mut guard = self.database.lock().unwrap();
+        *guard = Some(db);
+
+        Ok(info)
+    }
+
     /// Load a pre-built solver database from an .rkyv file.
     pub fn load_database(&self, path: String) -> Result<(), SolverError> {
         let db = tetra3::SolverDatabase::load_from_file(&path)
@@ -97,9 +158,6 @@ impl PlateSolver {
             config.fov_max_error_rad = Some((fov_tolerance_deg as f32).to_radians());
         }
         config.solve_timeout_ms = Some(10000);
-        // Relax match parameters for noisy real-world centroids
-        config.match_radius = 0.02;      // 2% of FOV (default 1% is very tight)
-        config.match_threshold = 1e-4;   // more lenient false-positive threshold
 
         let result = db.solve_from_centroids(&t3_centroids, &config);
 
@@ -174,6 +232,67 @@ impl PlateSolver {
     }
 }
 
+/// Convert a Tycho-2 catalog file to Hipparcos hip2.dat format.
+///
+/// Tycho-2 (pipe-delimited) fields:
+///   0:TYC1 1:TYC2 2:TYC3 3:pflag 4:mRAdeg 5:mDEdeg 6:pmRA 7:pmDE
+///   8-11:errors 12-14:more 15:BTmag 16:e_BTmag 17:VTmag 18:e_VTmag 19:prox
+///
+/// hip2.dat format (fixed-width):
+///   col 1-6:   HIP number
+///   col 16-28: RA (radians)
+///   col 30-42: Dec (radians)
+///   col 44-48: parallax (mas)
+///   col 50-56: pmRA (mas/yr)
+///   col 58-64: pmDec (mas/yr)
+///   col 130-136: Hp magnitude
+fn tycho2_to_hipparcos(tyc_path: &str, hip_path: &str) -> Result<(), std::io::Error> {
+    use std::io::{BufRead, BufReader, Write, BufWriter};
+    use std::fs::File;
+
+    let file = File::open(tyc_path)?;
+    let reader = BufReader::new(file);
+    let out = File::create(hip_path)?;
+    let mut writer = BufWriter::new(out);
+    let mut id: u32 = 1;
+
+    for line in reader.lines() {
+        let line = line?;
+        let fields: Vec<&str> = line.split('|').collect();
+        if fields.len() < 20 { continue; }
+
+        let ra_deg: f64 = match fields[4].trim().parse() { Ok(v) => v, Err(_) => continue };
+        let dec_deg: f64 = match fields[5].trim().parse() { Ok(v) => v, Err(_) => continue };
+        let pm_ra: f64 = fields[6].trim().parse().unwrap_or(0.0);
+        let pm_dec: f64 = fields[7].trim().parse().unwrap_or(0.0);
+        let vt_mag: f64 = fields.get(17)
+            .and_then(|s| s.trim().parse().ok())
+            .or_else(|| fields.get(15).and_then(|s| s.trim().parse().ok()))
+            .unwrap_or(99.0);
+
+        if vt_mag > 13.0 { continue; }
+
+        let ra_rad = ra_deg.to_radians();
+        let dec_rad = dec_deg.to_radians();
+
+        // Write hip2.dat format line (simplified — key fields at correct column positions)
+        // The parser reads: hip(1-6), ra_rad(16-28), dec_rad(30-42), plx(44-48),
+        //   pmRA(50-56), pmDec(58-64), and hpmag(130-136)
+        let mut line_buf = format!(
+            "{:6}          {:13.10} {:13.10} {:5.2} {:7.2} {:7.2}",
+            id, ra_rad, dec_rad, 0.0, pm_ra, pm_dec
+        );
+        // Pad to column 129, then add magnitude
+        while line_buf.len() < 129 { line_buf.push(' '); }
+        line_buf.push_str(&format!("{:7.4}", vt_mag));
+        writeln!(writer, "{}", line_buf)?;
+        id += 1;
+    }
+
+    Ok(())
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,6 +344,11 @@ mod tests {
         let db = tetra3::SolverDatabase::load_from_file(&db_path).expect("load db");
         let catalog: Vec<_> = db.star_catalog.stars().to_vec();
         println!("Catalog: {} stars", catalog.len());
+        println!("DB: patterns={} FOV={:.2}°–{:.2}° epoch={:.1}",
+                 db.props.num_patterns,
+                 db.props.min_fov_rad.to_degrees(),
+                 db.props.max_fov_rad.to_degrees(),
+                 db.props.epoch_proper_motion_year);
 
         let target_ra_deg = 180.0_f64;
         let target_dec_deg = 45.0_f64;
@@ -322,5 +446,102 @@ mod tests {
             assert!(ra_err < 0.5, "RA error {:.3}° should be < 0.5°", ra_err);
             assert!((dec - target_dec_deg).abs() < 0.5, "Dec error {:.3}° should be < 0.5°", (dec - target_dec_deg).abs());
         }
+    }
+
+    #[test]
+    fn test_solve_robustness() {
+        let db_path = format!("{}/../data/star_catalog.rkyv", env!("CARGO_MANIFEST_DIR"));
+        if !std::path::Path::new(&db_path).exists() {
+            eprintln!("Skipping: {} not found", db_path);
+            return;
+        }
+
+        let db = tetra3::SolverDatabase::load_from_file(&db_path).expect("load db");
+        let catalog: Vec<_> = db.star_catalog.stars().to_vec();
+        println!("Catalog: {} stars", catalog.len());
+        println!("DB: patterns={} FOV={:.2}°–{:.2}°",
+                 db.props.num_patterns,
+                 db.props.min_fov_rad.to_degrees(),
+                 db.props.max_fov_rad.to_degrees());
+
+        let fov_deg = 2.42_f64;
+        let image_width: u32 = 1920;
+        let image_height: u32 = 1080;
+        let half_w = image_width as f32 / 2.0;
+        let half_h = image_height as f32 / 2.0;
+
+        let mut default_ok = 0;
+        let mut relaxed_ok = 0;
+        let mut notol_ok = 0;
+        let total = 50;
+
+        // Deterministic random positions
+        let positions: Vec<(f64, f64)> = (0..total).map(|i| {
+            let ra = (i as f64 * 137.508) % 360.0; // golden angle spread
+            let dec = ((i as f64 / total as f64) * 2.0 - 1.0).asin().to_degrees();
+            (ra, dec)
+        }).collect();
+
+        for (i, (target_ra, target_dec)) in positions.iter().enumerate() {
+            let ra0 = target_ra.to_radians();
+            let dec0 = target_dec.to_radians();
+            let plate_scale = fov_deg.to_radians() / image_width as f64;
+
+            let mut centroids: Vec<tetra3::Centroid> = Vec::new();
+            for star in &catalog {
+                if star.mag > 10.0 { continue; }
+                let ra_s = star.ra_rad as f64;
+                let dec_s = star.dec_rad as f64;
+                let cos_c = dec0.sin() * dec_s.sin() + dec0.cos() * dec_s.cos() * (ra_s - ra0).cos();
+                if cos_c < 0.1 { continue; }
+                let xi = (dec_s.cos() * (ra_s - ra0).sin()) / cos_c;
+                let eta = (dec0.cos() * dec_s.sin() - dec0.sin() * dec_s.cos() * (ra_s - ra0).cos()) / cos_c;
+                let px = xi / plate_scale;
+                let py = -eta / plate_scale;
+                if px.abs() > half_w as f64 || py.abs() > half_h as f64 { continue; }
+                centroids.push(tetra3::Centroid {
+                    x: px as f32,
+                    y: py as f32,
+                    mass: Some(10.0_f32.powf(-star.mag / 2.5)),
+                    cov: None,
+                });
+            }
+
+            let n = centroids.len();
+
+            // Test 1: Default config
+            let fov_rad = (fov_deg as f32).to_radians();
+            let mut cfg = tetra3::SolveConfig::new(fov_rad, image_width, image_height);
+            cfg.fov_max_error_rad = Some((1.0_f32).to_radians());
+            cfg.solve_timeout_ms = Some(5000);
+            let r1 = db.solve_from_centroids(&centroids, &cfg);
+            let d = r1.status == tetra3::SolveStatus::MatchFound;
+            if d { default_ok += 1; }
+
+            // Test 2: Relaxed config
+            cfg.match_radius = 0.02;
+            cfg.match_threshold = 1e-4;
+            let r2 = db.solve_from_centroids(&centroids, &cfg);
+            let r = r2.status == tetra3::SolveStatus::MatchFound;
+            if r { relaxed_ok += 1; }
+
+            // Test 3: No FOV constraint
+            let mut cfg3 = tetra3::SolveConfig::new(fov_rad, image_width, image_height);
+            cfg3.solve_timeout_ms = Some(10000);
+            let r3 = db.solve_from_centroids(&centroids, &cfg3);
+            let u = r3.status == tetra3::SolveStatus::MatchFound;
+            if u { notol_ok += 1; }
+
+            println!("[{:2}] RA={:6.1} Dec={:+6.1} stars={:2} default={} relaxed={} noFOV={}",
+                     i, target_ra, target_dec, n,
+                     if d { "OK" } else { "--" },
+                     if r { "OK" } else { "--" },
+                     if u { "OK" } else { "--" });
+        }
+
+        println!("\n=== RESULTS ({} positions, FOV={:.2}°) ===", total, fov_deg);
+        println!("Default:     {}/{} ({:.0}%)", default_ok, total, default_ok as f64 / total as f64 * 100.0);
+        println!("Relaxed:     {}/{} ({:.0}%)", relaxed_ok, total, relaxed_ok as f64 / total as f64 * 100.0);
+        println!("No FOV tol:  {}/{} ({:.0}%)", notol_ok, total, notol_ok as f64 / total as f64 * 100.0);
     }
 }

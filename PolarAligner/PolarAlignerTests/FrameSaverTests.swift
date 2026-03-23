@@ -1,5 +1,5 @@
 import XCTest
-@testable import PolarAligner
+@testable import PolarStation
 
 final class FrameSaverTests: XCTestCase {
 

@@ -1,6 +1,6 @@
 import XCTest
 import PolarCore
-@testable import PolarAligner
+@testable import PolarStation
 
 /// Integration tests for the plate solver pipeline.
 ///
@@ -439,11 +439,14 @@ final class PlateSolverTests: XCTestCase {
                 )
                 if result?.success == true {
                     perfectSolveSuccess += 1
+                    print("[Test \(i+1)] OK  RA=\(String(format:"%6.1f",ra))° Dec=\(String(format:"%+6.1f",dec))° roll=\(String(format:"%5.1f",roll))° stars=\(centroids.count) matched=\(result!.matchedStars) time=\(String(format:"%.0f",result!.solveTimeMs))ms fov=\(String(format:"%.2f",result!.fovDeg))°")
                 } else {
                     perfectFailures.append((ra, dec, centroids.count))
+                    print("[Test \(i+1)] FAIL RA=\(String(format:"%6.1f",ra))° Dec=\(String(format:"%+6.1f",dec))° roll=\(String(format:"%5.1f",roll))° stars=\(centroids.count)")
                 }
             } else {
                 perfectFailures.append((ra, dec, centroids.count))
+                print("[Test \(i+1)] SKIP RA=\(String(format:"%6.1f",ra))° Dec=\(String(format:"%+6.1f",dec))° stars=\(centroids.count) (too few)")
             }
 
             // Test 2: Full pipeline (render → detect → solve)
@@ -532,7 +535,7 @@ final class PlateSolverTests: XCTestCase {
         var centroids: [StarCentroid] = []
 
         for star in Self.catalog {
-            guard star.magnitude <= 10.0 else { continue }
+            guard star.magnitude <= 11.5 else { continue }
 
             guard let pixel = GnomonicProjection.projectToPixel(
                 starRA: star.raDeg, starDec: star.decDeg,

@@ -1,6 +1,6 @@
 import XCTest
 import PolarCore
-@testable import PolarAligner
+@testable import PolarStation
 
 /// Tests for GnomonicProjection utilities: Rodrigues' rotation, misaligned pole
 /// computation, and gnomonic projection.

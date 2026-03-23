@@ -118,6 +118,19 @@ struct SettingsView: View {
     @State private var catalogLoadError: String?
     @State private var isLoadingCatalog = false
 
+    // Database generation
+    @AppStorage("genCatalogType") private var genCatalogType: String = "hipparcos"
+    @AppStorage("genCatalogPath") private var genCatalogPath: String = ""
+    @AppStorage("genMaxMagnitude") private var genMaxMagnitude: Double = 11.0
+    private let genMinFOV: Double = 1.0
+    private let genMaxFOV: Double = 15.0
+    @State private var isGeneratingDB = false
+    @State private var genDBResult: String?
+    @State private var genDBError: String?
+    @State private var isDownloadingCatalog = false
+    @State private var downloadProgress: Double = 0
+    @State private var downloadStatus: String?
+
     // Remote plate solving
     @AppStorage("astrometryNetApiKey") private var astrometryNetApiKey: String = ""
     @AppStorage("astrometryNetEnabled") private var astrometryNetEnabled: Bool = false
@@ -338,6 +351,97 @@ struct SettingsView: View {
                             Text(err)
                                 .foregroundStyle(.red)
                                 .font(.caption)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                // MARK: - Generate Database
+                GroupBox("Generate Star Database") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Catalog")
+                                .frame(width: 80, alignment: .trailing)
+                            Picker("", selection: $genCatalogType) {
+                                Text("Hipparcos (hip2.dat)").tag("hipparcos")
+                                Text("Tycho-2 (tyc2.dat)").tag("tycho2")
+                            }
+                            .frame(maxWidth: 250)
+                        }
+                        HStack {
+                            Text("File")
+                                .frame(width: 80, alignment: .trailing)
+                            TextField("Path to catalog file", text: $genCatalogPath)
+                                .textFieldStyle(.roundedBorder)
+                            Button("Browse...") {
+                                let panel = NSOpenPanel()
+                                panel.allowedContentTypes = [.data, .plainText]
+                                panel.message = "Select a star catalog file (hip2.dat or tyc2.dat)"
+                                panel.directoryURL = Self.polarStationDataDir
+                                if panel.runModal() == .OK, let url = panel.url {
+                                    genCatalogPath = url.path
+                                }
+                            }
+                            Button("Download") {
+                                downloadCatalogFile()
+                            }
+                            .disabled(isDownloadingCatalog)
+                        }
+                        if isDownloadingCatalog {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ProgressView(value: downloadProgress)
+                                    .tint(.blue)
+                                Text(downloadStatus ?? "Downloading...")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.leading, 88)
+                        }
+                        HStack {
+                            Text("Max Mag")
+                                .frame(width: 80, alignment: .trailing)
+                            Picker("", selection: $genMaxMagnitude) {
+                                Text("10.0 (compact)").tag(10.0)
+                                Text("10.5").tag(10.5)
+                                Text("11.0 (recommended)").tag(11.0)
+                                Text("11.5").tag(11.5)
+                                Text("12.0 (large)").tag(12.0)
+                            }
+                            .frame(maxWidth: 200)
+                        }
+                        HStack {
+                            Text("FOV")
+                                .frame(width: 80, alignment: .trailing)
+                            Text("\(String(format: "%.1f", genMinFOV))° – \(String(format: "%.1f", genMaxFOV))°")
+                                .font(.system(.body, design: .monospaced))
+                            Spacer()
+                        }
+
+                        HStack {
+                            Button("Generate") {
+                                generateDatabase()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(genCatalogPath.isEmpty || isGeneratingDB)
+
+                            if isGeneratingDB {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Generating... this may take several minutes")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        if let info = genDBResult {
+                            Text(info)
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                        }
+                        if let err = genDBError {
+                            Text(err)
+                                .font(.caption)
+                                .foregroundStyle(.red)
                         }
                     }
                     .padding(.vertical, 4)
@@ -1712,6 +1816,164 @@ struct SettingsView: View {
                 catalogLoadError = error.localizedDescription
             }
             isLoadingCatalog = false
+        }
+    }
+
+    private static let polarStationDataDir: URL = {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("PolarStation")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    private func downloadCatalogFile() {
+        // Multiple mirrors for reliability
+        let mirrors: [(url: String, compressed: Bool)]
+        let fileName: String
+        switch genCatalogType {
+        case "tycho2":
+            fileName = "tyc2.dat"
+            mirrors = [
+                ("https://cdsarc.cds.unistra.fr/ftp/I/259/tyc2.dat.gz", true),
+                ("https://cdsarc.u-strasbg.fr/ftp/I/259/tyc2.dat.gz", true),
+            ]
+        default:
+            fileName = "hip2.dat"
+            mirrors = [
+                ("https://cdsarc.cds.unistra.fr/ftp/I/311/hip2.dat.gz", true),
+                ("https://cdsarc.u-strasbg.fr/ftp/I/311/hip2.dat.gz", true),
+            ]
+        }
+
+        isDownloadingCatalog = true
+        downloadProgress = 0
+        downloadStatus = "Connecting..."
+
+        let destDir = Self.polarStationDataDir
+        let destFile = destDir.appendingPathComponent(fileName)
+
+        Task.detached {
+            var lastError: Error?
+
+            for (i, mirror) in mirrors.enumerated() {
+                guard let url = URL(string: mirror.url) else { continue }
+
+                await MainActor.run {
+                    downloadStatus = "Trying mirror \(i+1)/\(mirrors.count)..."
+                    downloadProgress = 0
+                }
+
+                do {
+                    // Download with progress
+                    let (bytes, response) = try await URLSession.shared.bytes(from: url)
+                    let totalSize = (response as? HTTPURLResponse)
+                        .flatMap { Int($0.value(forHTTPHeaderField: "Content-Length") ?? "") } ?? 0
+
+                    let tempFile = destDir.appendingPathComponent("\(fileName).download")
+                    try? FileManager.default.removeItem(at: tempFile)
+                    FileManager.default.createFile(atPath: tempFile.path, contents: nil)
+                    let handle = try FileHandle(forWritingTo: tempFile)
+
+                    var downloaded = 0
+                    var buffer = Data()
+
+                    for try await byte in bytes {
+                        buffer.append(byte)
+                        downloaded += 1
+                        if buffer.count >= 256 * 1024 {
+                            handle.write(buffer)
+                            buffer.removeAll(keepingCapacity: true)
+                            let pct = totalSize > 0 ? Double(downloaded) / Double(totalSize) * 0.8 : 0
+                            await MainActor.run {
+                                downloadProgress = pct
+                                downloadStatus = String(format: "Downloading... %.1f MB", Double(downloaded) / 1_048_576)
+                            }
+                        }
+                    }
+                    if !buffer.isEmpty { handle.write(buffer) }
+                    handle.closeFile()
+
+                    // Decompress if needed
+                    if mirror.compressed {
+                        await MainActor.run { downloadProgress = 0.85; downloadStatus = "Decompressing..." }
+                        // Rename to .gz so gunzip recognizes it
+                        let gzFile = destDir.appendingPathComponent("\(fileName).gz")
+                        try? FileManager.default.removeItem(at: gzFile)
+                        try FileManager.default.moveItem(at: tempFile, to: gzFile)
+                        try? FileManager.default.removeItem(at: destFile)
+                        // gunzip removes .gz extension automatically
+                        let proc = Process()
+                        proc.executableURL = URL(fileURLWithPath: "/usr/bin/gunzip")
+                        proc.arguments = [gzFile.path]
+                        try proc.run()
+                        proc.waitUntilExit()
+                    } else {
+                        try? FileManager.default.removeItem(at: destFile)
+                        try FileManager.default.moveItem(at: tempFile, to: destFile)
+                    }
+
+                    guard FileManager.default.fileExists(atPath: destFile.path) else {
+                        throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Decompression produced no output"])
+                    }
+
+                    let fileSize = (try? FileManager.default.attributesOfItem(atPath: destFile.path)[.size] as? Int) ?? 0
+                    await MainActor.run {
+                        genCatalogPath = destFile.path
+                        downloadProgress = 1.0
+                        downloadStatus = String(format: "Downloaded %@ (%.1f MB)", fileName, Double(fileSize) / 1_048_576)
+                        isDownloadingCatalog = false
+                    }
+                    return  // success
+                } catch {
+                    lastError = error
+                    continue  // try next mirror
+                }
+            }
+
+            // All mirrors failed
+            await MainActor.run {
+                downloadStatus = "All mirrors failed: \(lastError?.localizedDescription ?? "unknown error"). Use Browse to select a local file."
+                isDownloadingCatalog = false
+            }
+        }
+    }
+
+    private func generateDatabase() {
+        guard !genCatalogPath.isEmpty else { return }
+        isGeneratingDB = true
+        genDBResult = nil
+        genDBError = nil
+
+        // Save to app support directory
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("PolarStation")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let outputPath = dir.appendingPathComponent("star_catalog.rkyv").path
+
+        Task.detached {
+            do {
+                let solver = PlateSolver()
+                let info = try solver.generateDatabase(
+                    catalogPath: genCatalogPath,
+                    catalogType: genCatalogType,
+                    outputPath: outputPath,
+                    maxMagnitude: genMaxMagnitude,
+                    minFovDeg: genMinFOV,
+                    maxFovDeg: genMaxFOV
+                )
+                await MainActor.run {
+                    genDBResult = "Generated: \(info)\nSaved to: \(outputPath)"
+                    starCatalogPath = outputPath
+                    isGeneratingDB = false
+                    // Auto-load the new database
+                    loadCatalog()
+                }
+            } catch {
+                await MainActor.run {
+                    genDBError = "Generation failed: \(error.localizedDescription)"
+                    isGeneratingDB = false
+                }
+            }
         }
     }
 
