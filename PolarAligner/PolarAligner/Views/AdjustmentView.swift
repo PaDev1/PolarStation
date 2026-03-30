@@ -37,7 +37,7 @@ struct AdjustmentView: View {
                         AdjustmentRow(
                             label: "Altitude",
                             value: error.altErrorArcmin,
-                            direction: error.altErrorArcmin > 0 ? "Lower mount" : "Raise mount",
+                            direction: error.altErrorArcmin > 0 ? "Decrease angle" : "Increase angle",
                             icon: error.altErrorArcmin > 0 ? "arrow.down" : "arrow.up"
                         )
 
@@ -94,6 +94,8 @@ struct AdjustmentView: View {
 
 struct BullseyeView: View {
     let error: PolarError
+    /// Camera azimuth for camera-relative left/right instructions (N=0°, E=+90°, W=-90°).
+    var cameraAzDeg: Double = 0
 
     /// Scale: 1 arcminute = this many points in the view.
     private let scale: Double = 12.0
@@ -129,11 +131,11 @@ struct BullseyeView: View {
                 }
                 .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
 
-                // Error dot
+                // Error dot — positive alt = UP (axis above pole), positive az = RIGHT (axis east)
                 let clampedAz = max(-maxRange, min(maxRange, error.azErrorArcmin))
                 let clampedAlt = max(-maxRange, min(maxRange, error.altErrorArcmin))
                 let dotX = center.x + clampedAz * scale
-                let dotY = center.y + clampedAlt * scale  // positive alt = down (lower)
+                let dotY = center.y - clampedAlt * scale  // positive alt = UP (axis above pole)
 
                 Circle()
                     .fill(errorColor(error.totalErrorArcmin))
@@ -151,18 +153,63 @@ struct BullseyeView: View {
                     .padding(.leading, center.x - 2.0 * scale - 10)
                 }
 
-                // Axis labels
+                // Altitude direction arrow — points from dot toward center
+                let altThreshold = 0.5 // arcmin — hide arrow when nearly centered
                 VStack {
-                    Text("Alt-").font(.system(size: 9)).foregroundStyle(.secondary)
+                    if error.altErrorArcmin > altThreshold {
+                        // Axis too high (dot above center) → decrease angle on mount scale
+                        HStack(spacing: 2) {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Decrease angle")
+                                .font(.system(size: 9, weight: .medium))
+                        }
+                        .foregroundStyle(.orange)
+                    }
                     Spacer()
-                    Text("Alt+").font(.system(size: 9)).foregroundStyle(.secondary)
+                    if error.altErrorArcmin < -altThreshold {
+                        // Axis too low (dot below center) → increase angle on mount scale
+                        HStack(spacing: 2) {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Increase angle")
+                                .font(.system(size: 9, weight: .medium))
+                        }
+                        .foregroundStyle(.orange)
+                    }
                 }
                 .padding(.vertical, 4)
 
+                // Azimuth direction arrow — camera-relative left/right
+                let azThreshold = 0.5
+                let camAzRad = cameraAzDeg * .pi / 180
+                let shouldTurnLeft = cos(camAzRad) >= 0
+                    ? error.azErrorArcmin > azThreshold
+                    : error.azErrorArcmin < -azThreshold
+                let shouldTurnRight = cos(camAzRad) >= 0
+                    ? error.azErrorArcmin < -azThreshold
+                    : error.azErrorArcmin > azThreshold
+
                 HStack {
-                    Text("Az-").font(.system(size: 9)).foregroundStyle(.secondary)
+                    if shouldTurnLeft {
+                        VStack(spacing: 1) {
+                            Image(systemName: "arrow.left")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Turn left")
+                                .font(.system(size: 9, weight: .medium))
+                        }
+                        .foregroundStyle(.orange)
+                    }
                     Spacer()
-                    Text("Az+").font(.system(size: 9)).foregroundStyle(.secondary)
+                    if shouldTurnRight {
+                        VStack(spacing: 1) {
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Turn right")
+                                .font(.system(size: 9, weight: .medium))
+                        }
+                        .foregroundStyle(.orange)
+                    }
                 }
                 .padding(.horizontal, 4)
             }

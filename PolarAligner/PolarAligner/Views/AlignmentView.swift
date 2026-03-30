@@ -413,7 +413,7 @@ struct PolarErrorCard: View {
                         .foregroundStyle(.secondary)
                     Text(String(format: "%+.1f'", error.altErrorArcmin))
                         .font(.system(.title2, design: .monospaced))
-                    Text(error.altErrorArcmin > 0 ? "Lower" : "Raise")
+                    Text(error.altErrorArcmin > 0 ? "Decrease angle" : "Increase angle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

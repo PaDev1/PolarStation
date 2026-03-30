@@ -25,8 +25,11 @@ final class SimulatedAlignmentEngine: ObservableObject {
     @Published var injectedAltError: Double = 10.0
     @Published var injectedAzError: Double = 5.0
 
-    /// Manual adjustment offsets (arcminutes) — simulates turning mount knobs.
-    @Published var adjustmentAlt: Double = 0
+    /// Simulated mount altitude scale reading in degrees.
+    /// Initialized to observerLat + injectedAltError/60 when calibration completes.
+    /// The user drags it toward the target (observer latitude) to correct.
+    @Published var mountAltitudeDeg: Double = 60.0
+    /// Manual azimuth adjustment offset (arcminutes) — simulates turning the az knob.
     @Published var adjustmentAz: Double = 0
 
     /// Computed error from the plate solve pipeline.
@@ -197,7 +200,7 @@ final class SimulatedAlignmentEngine: ObservableObject {
         )
 
         // Effective error = injected - adjustment
-        let effectiveAlt = injectedAltError - adjustmentAlt
+        let effectiveAlt = (mountAltitudeDeg - observerLatDeg) * 60.0
         let effectiveAz = injectedAzError - adjustmentAz
 
         // Compute where the misaligned pole points
@@ -330,6 +333,8 @@ final class SimulatedAlignmentEngine: ObservableObject {
             referenceCameraRA = cameraRA
             referenceCameraDec = cameraDec
             referencePole = pole
+            // Initialize mount altitude scale to the misaligned value
+            mountAltitudeDeg = observerLatDeg + injectedAltError / 60.0
 
             statusMessage = String(format: "Done! Error: %.1f' (Alt %.1f' Az %.1f')",
                                    error.totalErrorArcmin, error.altErrorArcmin, error.azErrorArcmin)
@@ -348,7 +353,7 @@ final class SimulatedAlignmentEngine: ObservableObject {
         currentCameraRA = nil
         currentCameraDec = nil
         solvedPositions = [nil, nil, nil]
-        adjustmentAlt = 0
+        mountAltitudeDeg = observerLatDeg + injectedAltError / 60.0
         adjustmentAz = 0
         statusMessage = "Ready"
     }
@@ -407,7 +412,7 @@ final class SimulatedAlignmentEngine: ObservableObject {
         syncSettings(from: plateSolveService)
 
         // Effective error = injected - adjustment
-        let effectiveAlt = injectedAltError - adjustmentAlt
+        let effectiveAlt = (mountAltitudeDeg - observerLatDeg) * 60.0
         let effectiveAz = injectedAzError - adjustmentAz
 
         // Compute new pole position with the adjusted error

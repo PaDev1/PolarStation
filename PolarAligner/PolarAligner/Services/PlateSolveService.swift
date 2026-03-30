@@ -61,6 +61,21 @@ final class PlateSolveService: ObservableObject {
         try await loadDatabase(from: url.path)
     }
 
+    /// Unload the solver database, freeing ~8 GB of RAM.
+    /// The database is reloaded automatically on the next call to loadDatabase/loadBundledDatabase.
+    func unloadDatabase() {
+        solver.unloadDatabase()
+        isLoaded = false
+        databaseInfo = nil
+        log("[Solve] Database unloaded — RAM freed")
+    }
+
+    /// Ensure the bundled database is loaded. No-op if already loaded.
+    func ensureLoaded() async {
+        guard !isLoaded else { return }
+        try? await loadBundledDatabase()
+    }
+
     /// Solve the sky position from detected star centroids.
     ///
     /// Centroids should be in pixel coordinates with origin at top-left.

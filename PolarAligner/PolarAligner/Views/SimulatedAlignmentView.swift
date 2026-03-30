@@ -379,13 +379,14 @@ struct SimulatedAlignmentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                simSlider(label: "Alt adj.", value: $engine.adjustmentAlt,
-                          range: -30...30, format: "%+.1f'")
+                simSlider(label: "Alt scale", value: $engine.mountAltitudeDeg,
+                          range: (engine.observerLatDeg - 5)...(engine.observerLatDeg + 5),
+                          format: "%.1f°")
                 simSlider(label: "Az adj.", value: $engine.adjustmentAz,
                           range: -30...30, format: "%+.1f'")
 
                 // Effective remaining error display
-                let effectiveAlt = engine.injectedAltError - engine.adjustmentAlt
+                let effectiveAlt = (engine.mountAltitudeDeg - engine.observerLatDeg) * 60.0
                 let effectiveAz = engine.injectedAzError - engine.adjustmentAz
                 let effectiveTotal = sqrt(effectiveAlt * effectiveAlt + effectiveAz * effectiveAz)
                 HStack(spacing: 4) {

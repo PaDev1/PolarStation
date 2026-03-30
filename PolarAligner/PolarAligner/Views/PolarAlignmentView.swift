@@ -224,31 +224,34 @@ struct PolarAlignmentView: View {
 
     private var correctionSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Adjustment")
-                .font(.title2)
-
             if let error = displayError {
+                // Phase-specific header (guided correction)
+                if mode == .real {
+                    switch coordinator.correctionPhase {
+                    case .adjustAltitude:
+                        guidedAltitudeSection(error: error)
+                    case .adjustAzimuth:
+                        guidedAzimuthSection(error: error)
+                    case .done:
+                        guidedDoneSection(error: error)
+                    }
+                }
+
+                // Bullseye + total error (always visible)
                 HStack(spacing: 24) {
-                    BullseyeView(error: error)
+                    BullseyeView(error: error, cameraAzDeg: coordinator.correctionCameraAzDeg)
                         .frame(width: 200, height: 200)
 
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Total error")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         Text(String(format: "%.1f'", error.totalErrorArcmin))
-                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
                             .foregroundStyle(errorColor(error.totalErrorArcmin))
-
-                        AdjustmentRow(
-                            label: "Altitude",
-                            value: error.altErrorArcmin,
-                            direction: error.altErrorArcmin > 0 ? "Lower mount" : "Raise mount",
-                            icon: error.altErrorArcmin > 0 ? "arrow.down" : "arrow.up"
-                        )
-                        AdjustmentRow(
-                            label: "Azimuth",
-                            value: error.azErrorArcmin,
-                            direction: error.azErrorArcmin > 0 ? "Turn left" : "Turn right",
-                            icon: error.azErrorArcmin > 0 ? "arrow.left" : "arrow.right"
-                        )
+                        Text(String(format: "Alt %+.1f'  Az %+.1f'", error.altErrorArcmin, error.azErrorArcmin))
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -257,7 +260,7 @@ struct PolarAlignmentView: View {
             if mode == .real && coordinator.isCorrecting {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Measuring continuously...")
+                    Text(coordinator.statusMessage)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -267,8 +270,9 @@ struct PolarAlignmentView: View {
             if mode == .simulate {
                 GroupBox("Simulated Mount Screws") {
                     VStack(alignment: .leading, spacing: 10) {
-                        simSlider(label: "Alt adj.", value: $engine.adjustmentAlt,
-                                  range: -30...30, format: "%+.1f'")
+                        simSlider(label: "Alt scale", value: $engine.mountAltitudeDeg,
+                                  range: (engine.observerLatDeg - 5)...(engine.observerLatDeg + 5),
+                                  format: "%.1f°")
                         simSlider(label: "Az adj.", value: $engine.adjustmentAz,
                                   range: -30...30, format: "%+.1f'")
 
@@ -311,6 +315,82 @@ struct PolarAlignmentView: View {
                 .buttonStyle(.bordered)
             }
         }
+    }
+
+    // MARK: - Guided Correction Phases
+
+    @ViewBuilder
+    private func guidedAltitudeSection(error: PolarError) -> some View {
+        let deltaDeg = error.altErrorArcmin / 60.0
+        let direction = deltaDeg < 0 ? "Increase" : "Decrease"
+        let icon = deltaDeg < 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill"
+
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Step 1: Adjust Altitude", systemImage: "1.circle.fill")
+                .font(.title3.bold())
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 28))
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(direction) angle by \(String(format: "%.1f", abs(deltaDeg)))°")
+                        .font(.title3.bold())
+                        .foregroundStyle(.primary)
+                    Text("Adjust the altitude scale on your mount. Do not touch azimuth or DEC.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func guidedAzimuthSection(error: PolarError) -> some View {
+        let camAzRad = coordinator.correctionCameraAzDeg * .pi / 180
+        let turnLeft = cos(camAzRad) >= 0
+            ? error.azErrorArcmin > 0
+            : error.azErrorArcmin < 0
+        let direction = turnLeft ? "Turn left" : "Turn right"
+        let icon = turnLeft ? "arrow.left.circle.fill" : "arrow.right.circle.fill"
+
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Step 2: Adjust Azimuth", systemImage: "2.circle.fill")
+                .font(.title3.bold())
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 28))
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(direction) — \(String(format: "%.1f'", abs(error.azErrorArcmin))) remaining")
+                        .font(.title3.bold())
+                        .foregroundStyle(.primary)
+                    Text("Turn the azimuth screw slowly. Watch the error decrease. Do not touch altitude or DEC.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func guidedDoneSection(error: PolarError) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Alignment Complete", systemImage: "checkmark.circle.fill")
+                .font(.title3.bold())
+                .foregroundStyle(.green)
+            Text(String(format: "Total error: %.1f' — ready for imaging", error.totalErrorArcmin))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(Color.green.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Right Panel
@@ -498,7 +578,7 @@ struct PolarAlignmentView: View {
             updateSkyMapFOV()
             debouncePreview()
         }
-        .onChange(of: engine.adjustmentAlt) { _, _ in
+        .onChange(of: engine.mountAltitudeDeg) { _, _ in
             debounceCorrectionUpdate()
         }
         .onChange(of: engine.adjustmentAz) { _, _ in
@@ -816,14 +896,11 @@ struct PolarAlignmentView: View {
 
     private func remeasure() {
         if mode == .real {
-            // In correction mode, just restart the correction loop
-            // (no need to redo full 3-point alignment)
-            if coordinator.isCorrecting {
-                coordinator.startCorrectionLoop(cameraViewModel: cameraViewModel)
-            } else {
-                coordinator.reset()
-                startRealAlignment()
-            }
+            // Always redo the full 3-point alignment.
+            // Restarting only the correction loop would reset the axis to the
+            // original calibration value, discarding any corrections the user made.
+            coordinator.reset()
+            startRealAlignment()
             return
         } else {
             // Re-run alignment with current adjustment offsets applied.
@@ -843,7 +920,7 @@ struct PolarAlignmentView: View {
                     engine.injectedAltError = newError.altErrorArcmin
                     engine.injectedAzError = newError.azErrorArcmin
                 }
-                engine.adjustmentAlt = 0
+                engine.mountAltitudeDeg = engine.observerLatDeg + engine.injectedAltError / 60.0
                 engine.adjustmentAz = 0
             }
         }

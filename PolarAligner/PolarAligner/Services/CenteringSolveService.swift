@@ -75,9 +75,24 @@ final class CenteringSolveService: ObservableObject {
             }
 
             lastSolveResult = result
-            statusMessage = String(format: "Solved: RA %.4f° Dec %+.4f° rot %.1f° (%d stars, %.0fms)",
-                                   result.raDeg, result.decDeg, result.rollDeg,
-                                   result.matchedStars, result.solveTimeMs)
+
+            // Sync mount to plate-solved position so GoTo and tracking are accurate
+            if mountService.isConnected {
+                let solvedRAHours = result.raDeg / 15.0
+                do {
+                    try await mountService.syncPosition(raHours: solvedRAHours, decDeg: result.decDeg)
+                    statusMessage = String(format: "Solved & synced: RA %.4fh Dec %+.4f° rot %.1f° (%d stars, %.0fms)",
+                                           solvedRAHours, result.decDeg, result.rollDeg,
+                                           result.matchedStars, result.solveTimeMs)
+                } catch {
+                    statusMessage = String(format: "Solved: RA %.4fh Dec %+.4f° (sync failed: %@)",
+                                           solvedRAHours, result.decDeg, error.localizedDescription)
+                }
+            } else {
+                statusMessage = String(format: "Solved: RA %.4f° Dec %+.4f° rot %.1f° (%d stars, %.0fms)",
+                                       result.raDeg, result.decDeg, result.rollDeg,
+                                       result.matchedStars, result.solveTimeMs)
+            }
             state = .idle
         } catch {
             state = .failed(error.localizedDescription)
@@ -315,8 +330,22 @@ final class CenteringSolveService: ObservableObject {
                 return
             }
             lastSolveResult = result
-            statusMessage = String(format: "Solved: RA %.4f° Dec %+.4f° rot %.1f°",
-                                   result.raDeg, result.decDeg, result.rollDeg)
+
+            // Sync mount to plate-solved position
+            if mountService.isConnected {
+                let solvedRAHours = result.raDeg / 15.0
+                do {
+                    try await mountService.syncPosition(raHours: solvedRAHours, decDeg: result.decDeg)
+                    statusMessage = String(format: "Solved & synced: RA %.4f° Dec %+.4f° rot %.1f°",
+                                           result.raDeg, result.decDeg, result.rollDeg)
+                } catch {
+                    statusMessage = String(format: "Solved: RA %.4f° Dec %+.4f° (sync failed)",
+                                           result.raDeg, result.decDeg)
+                }
+            } else {
+                statusMessage = String(format: "Solved: RA %.4f° Dec %+.4f° rot %.1f°",
+                                       result.raDeg, result.decDeg, result.rollDeg)
+            }
             state = .idle
         } catch {
             state = .failed(error.localizedDescription)

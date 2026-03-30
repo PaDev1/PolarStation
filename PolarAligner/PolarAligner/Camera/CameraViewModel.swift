@@ -43,6 +43,9 @@ final class CameraViewModel: ObservableObject {
 
     // Star detection
     @Published var detectedStars: [DetectedStar] = []
+    /// Incremented each time runStarDetection completes. Used by waitForFreshDetection
+    /// to reliably detect a new camera frame without relying on star position comparison.
+    private(set) var detectionStamp: Int = 0
     @Published var starDetectionEnabled = false
     @Published var starDetectorModelLoaded = false
     @Published var starDetectorStatus = "Model not loaded"
@@ -73,6 +76,8 @@ final class CameraViewModel: ObservableObject {
     @Published var forceClassicalDetector = true
     private let classicalDetector = ClassicalDetector()
     private var lastDetectionNanos: UInt64 = 0
+    /// Guard against overlapping background detections — only one at a time.
+    private var detectionInProgress = false
     private var tempPollTimer: Timer?
     private var healthCheckTimer: Timer?
     private var healthCheckCounter: Int = 0
@@ -132,11 +137,20 @@ final class CameraViewModel: ObservableObject {
     }
 
     /// Run star detection on a specific texture (used by simulator to bypass debayer).
+    ///
+    /// Detection is dispatched to a background thread so that the GPU wait and CPU
+    /// peak-finding loop do not block the main actor (which caused the beach ball).
     func runStarDetection(on texture: MTLTexture, device: MTLDevice, commandQueue: MTLCommandQueue) {
         guard starDetectionEnabled else {
             appendDebug("[Det] disabled")
             return
         }
+        // Skip if a detection is already running to avoid queuing a backlog of work.
+        guard !detectionInProgress else {
+            appendDebug("[Det] skip: detection already in progress")
+            return
+        }
+        detectionInProgress = true
 
         let fmt = texture.pixelFormat.rawValue
         let storage = texture.storageMode.rawValue
@@ -144,47 +158,54 @@ final class CameraViewModel: ObservableObject {
         let useClassical = forceClassicalDetector || !starDetectorModelLoaded
         appendDebug("[Det] tex=\(texture.width)x\(texture.height) fmt=\(fmt) storage=\(storage) model=\(modelLoaded) classical=\(useClassical)")
 
-        do {
-            let detector: StarDetectorProtocol = useClassical ? classicalDetector : starDetector
-            let stars = try detector.detectStars(in: texture, device: device, commandQueue: commandQueue)
-            detectedStars = stars
-            // Log CoreML diagnostics if available
-            if !useClassical {
-                appendDebug("[Det] \(starDetector.lastDiagnostic)")
+        // Capture detectors (thread-safe class instances) and Metal objects (thread-safe).
+        let detector: StarDetectorProtocol = useClassical ? classicalDetector : starDetector
+        let coreMLDetector = starDetector
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var stars: [DetectedStar] = []
+            var diagnostic = ""
+            do {
+                stars = try detector.detectStars(in: texture, device: device, commandQueue: commandQueue)
+                if !useClassical {
+                    diagnostic = coreMLDetector.lastDiagnostic
+                }
+            } catch {
+                await MainActor.run { [weak self] in self?.appendDebug("[Det] ERROR: \(error)") }
             }
-            if let s = stars.first {
-                appendDebug("[Det] found \(stars.count) stars, best: x=\(String(format:"%.1f",s.x)) y=\(String(format:"%.1f",s.y)) snr=\(String(format:"%.1f",s.snr)) fwhm=\(String(format:"%.1f",s.fwhm))")
-            } else {
-                appendDebug("[Det] found 0 stars")
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.detectedStars = stars
+                self.detectionStamp &+= 1
+                self.detectionInProgress = false
+                if !diagnostic.isEmpty { self.appendDebug("[Det] \(diagnostic)") }
+                if let s = stars.first {
+                    self.appendDebug("[Det] found \(stars.count) stars, best: x=\(String(format:"%.1f",s.x)) y=\(String(format:"%.1f",s.y)) snr=\(String(format:"%.1f",s.snr)) fwhm=\(String(format:"%.1f",s.fwhm))")
+                } else {
+                    self.appendDebug("[Det] found 0 stars")
+                }
             }
-        } catch {
-            appendDebug("[Det] ERROR: \(error)")
         }
     }
 
     /// Wait for the next fresh star detection result.
-    /// Temporarily enables detection, waits for results, then restores previous state.
+    /// Returns as soon as one new camera frame has been processed by the star detector.
     func waitForFreshDetection(timeoutSeconds: Double = 30.0) async -> [DetectedStar] {
         let wasEnabled = starDetectionEnabled
         starDetectionEnabled = true
         defer { starDetectionEnabled = wasEnabled }
 
-        let oldStars = detectedStars
+        let oldStamp = detectionStamp
         let startTime = ContinuousClock.now
         let timeout = Duration.seconds(timeoutSeconds)
 
         while !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 200_000_000)
-            let current = detectedStars
-            if current.count != oldStars.count {
-                return current
-            }
-            if !current.isEmpty, !oldStars.isEmpty,
-               current[0].x != oldStars[0].x || current[0].y != oldStars[0].y {
-                return current
+            if detectionStamp != oldStamp {
+                return detectedStars
             }
             if ContinuousClock.now - startTime > timeout {
-                return current
+                return detectedStars
             }
         }
         return []

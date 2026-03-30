@@ -180,6 +180,13 @@ interface PlateSolver {
 
     /// Get database info string.
     string? database_info();
+
+    /// Unload the solver database, freeing ~8 GB of RAM.
+    /// Call when leaving tabs that require plate solving.
+    void unload_database();
+
+    /// Returns true if a database is currently loaded.
+    boolean is_database_loaded();
 };
 
 [Error]

@@ -63,6 +63,14 @@ final class AlignmentCoordinator: ObservableObject {
         case error(String)
     }
 
+    /// Guided correction phase — walks the user through one axis at a time.
+    enum CorrectionPhase: Equatable {
+        case adjustAltitude   // User adjusts altitude screw (delta shown)
+        case adjustAzimuth    // Live azimuth correction with arrow
+        case done             // Both axes within threshold
+    }
+    @Published var correctionPhase: CorrectionPhase = .adjustAltitude
+
     // MARK: - Correction loop state
 
     /// Reference camera position from the last calibration/solve (for sidereal prediction).
@@ -71,6 +79,15 @@ final class AlignmentCoordinator: ObservableObject {
     private var correctionReferenceTime: Date = Date()
     /// Mount axis from calibration (where the mount rotation axis points).
     private var correctionMountAxis: CelestialCoord?
+    /// Mount axis in alt/az — stored in the geographic frame to avoid diurnal drift.
+    /// Converting RA/Dec with an updated LST each iteration shifts the axis by the
+    /// sidereal rate (~15°/hr), corrupting the correction direction. Storing alt/az
+    /// directly keeps the axis fixed in the geographic frame, as it physically is.
+    private var correctionAxisAlt: Double = 0
+    private var correctionAxisAz:  Double = 0
+    /// Camera azimuth (N=0°, E=+90°, W=-90°) from the latest correction plate solve.
+    /// Used to express "turn left/right" relative to the direction the telescope is pointing.
+    @Published var correctionCameraAzDeg: Double = 0
     /// Task handle for the correction loop (for cancellation).
     private var correctionTask: Task<Void, Never>?
     /// Task handle for the auto-alignment run.
@@ -323,19 +340,11 @@ final class AlignmentCoordinator: ObservableObject {
 
     // MARK: - Correction Loop
 
-    /// Reference stars from last successful solve (for centroid drift tracking).
-    private var referenceStars: [DetectedStar] = []
-    /// Pixel scale from last solve (arcsec per pixel).
-    private var pixelScaleArcsecPerPix: Double = 0
-    /// Last solve's roll angle (radians) for coordinate transform.
-    private var lastSolveRollRad: Double = 0
-    /// Counter for periodic re-solve.
-    private var correctionFrameCount: Int = 0
-
     /// Start the continuous correction loop after 3-point calibration.
     ///
-    /// Uses centroid drift tracking for fast updates, with periodic plate solves
-    /// to recalibrate the reference frame.
+    /// Plate-solves every frame so the error display stays accurate even when
+    /// the mount has a large misalignment (centroid drift pattern-matching
+    /// breaks down when stars shift by more than the match radius).
     func startCorrectionLoop(cameraViewModel: CameraViewModel) {
         guard let error = polarError, let p3 = positions[2] else { return }
 
@@ -344,16 +353,18 @@ final class AlignmentCoordinator: ObservableObject {
         correctionReferenceDec = p3.decDeg
         correctionReferenceTime = Date()
         correctionMountAxis = error.mountAxis
+        // Convert axis to alt/az ONCE using the current LST. The mount axis is physically
+        // fixed in the geographic frame (alt/az). Recomputing from RA/Dec with a later LST
+        // would place the axis at a different alt/az due to Earth's rotation (~15°/hr).
+        let jd0  = currentJulianDate()
+        let lst0 = localSiderealTime(jd: jd0, longitudeDeg: observerLonDeg)
+        let initAA = altAzFromRADec(raDeg: error.mountAxis.raDeg, decDeg: error.mountAxis.decDeg, lstDeg: lst0)
+        correctionAxisAlt = initAA.alt
+        correctionAxisAz  = initAA.az
+        let initCamAA = altAzFromRADec(raDeg: p3.raDeg, decDeg: p3.decDeg, lstDeg: lst0)
+        correctionCameraAzDeg = initCamAA.az
         correctionError = error
-        referenceStars = cameraViewModel.detectedStars
-        correctionFrameCount = 0
-
-        // Compute pixel scale from last solve
-        if let lastResult = plateSolveService.lastResult, lastResult.success {
-            let fovArcsec = lastResult.fovDeg * 3600.0
-            pixelScaleArcsecPerPix = fovArcsec / Double(plateSolveService.imageWidth)
-            lastSolveRollRad = lastResult.rollDeg * .pi / 180.0
-        }
+        correctionPhase = .adjustAltitude
 
         isCorrecting = true
         step = .correcting
@@ -367,31 +378,12 @@ final class AlignmentCoordinator: ObservableObject {
 
                 guard !Task.isCancelled else { break }
 
-                correctionFrameCount += 1
-
-                // Try centroid drift tracking first (fast, works every frame)
-                if !referenceStars.isEmpty && pixelScaleArcsecPerPix > 0 {
-                    let drift = Self.computeCentroidDrift(
-                        reference: referenceStars,
-                        current: freshStars,
-                        matchRadius: 20.0
-                    )
-                    if let drift, drift.matchCount >= 4 {
-                        // Convert pixel drift to sky coordinates
-                        applyCentroidDrift(dx: drift.dx, dy: drift.dy, cameraViewModel: cameraViewModel)
-                        statusMessage = String(format: "Tracking: %.1f' (Alt %+.1f' Az %+.1f') [%d stars]",
-                                               correctionError?.totalErrorArcmin ?? 0,
-                                               correctionError?.altErrorArcmin ?? 0,
-                                               correctionError?.azErrorArcmin ?? 0,
-                                               drift.matchCount)
-                    }
+                guard freshStars.count >= 4 else {
+                    statusMessage = "Tracking: waiting for stars (\(freshStars.count) detected)"
+                    continue
                 }
 
-                // Periodic full plate solve to recalibrate (every 10 frames)
-                if correctionFrameCount % 10 == 0 && freshStars.count >= 4 {
-                    await correctionIteration(cameraViewModel: cameraViewModel)
-                    referenceStars = freshStars  // reset reference after successful solve
-                }
+                await correctionIteration(stars: freshStars)
             }
         }
     }
@@ -619,6 +611,20 @@ final class AlignmentCoordinator: ObservableObject {
 
         let jd = currentJulianDate()
 
+        // Log all 3 positions for debugging
+        print("[Align] === POLAR ERROR COMPUTATION ===")
+        print("[Align] P1: RA=\(String(format: "%.4f", p1.raDeg))° Dec=\(String(format: "%+.4f", p1.decDeg))°")
+        print("[Align] P2: RA=\(String(format: "%.4f", p2.raDeg))° Dec=\(String(format: "%+.4f", p2.decDeg))°")
+        print("[Align] P3: RA=\(String(format: "%.4f", p3.raDeg))° Dec=\(String(format: "%+.4f", p3.decDeg))°")
+        print("[Align] Observer: lat=\(String(format: "%.4f", observerLatDeg))° lon=\(String(format: "%.4f", observerLonDeg))° JD=\(String(format: "%.6f", jd))")
+        // Check Dec consistency — large spread suggests a bad plate solve
+        let decs = [p1.decDeg, p2.decDeg, p3.decDeg]
+        let decSpread = decs.max()! - decs.min()!
+        print("[Align] Dec spread: \(String(format: "%.2f", decSpread))° (should be < ~5° for a well-aligned mount)")
+        if decSpread > 20 {
+            print("[Align] WARNING: Dec spread > 20° — likely a bad plate solve. Axis estimate will be unreliable.")
+        }
+
         do {
             let error = try computePolarError(
                 pos1: p1, pos2: p2, pos3: p3,
@@ -626,6 +632,8 @@ final class AlignmentCoordinator: ObservableObject {
                 observerLonDeg: observerLonDeg,
                 timestampJd: jd
             )
+            print("[Align] Computed axis: RA=\(String(format: "%.4f", error.mountAxis.raDeg))° Dec=\(String(format: "%+.4f", error.mountAxis.decDeg))°")
+            print("[Align] Error: Alt=\(String(format: "%+.1f", error.altErrorArcmin))' Az=\(String(format: "%+.1f", error.azErrorArcmin))' Total=\(String(format: "%.1f", error.totalErrorArcmin))'")
             polarError = error
             correctionError = error
             step = .complete
@@ -648,137 +656,14 @@ final class AlignmentCoordinator: ObservableObject {
 
     /// Single iteration of the correction loop.
     ///
-    /// Grabs current stars from camera, plate-solves, predicts where the camera
-    /// should be (sidereal motion around the calibrated axis), and computes
-    /// the remaining error from the difference.
+    /// Plate-solves the given stars, predicts where the camera should be
+    /// (sidereal motion around the calibrated axis), and computes the
+    /// remaining polar error from the residual.
     ///
-    /// This mirrors the simulator's updateCorrectionPreview() but measures
-    /// the error from actual plate solves instead of geometric computation.
-    // MARK: - Centroid Drift Tracking
-
-    struct CentroidDrift {
-        let dx: Double    // average pixel shift X
-        let dy: Double    // average pixel shift Y
-        let matchCount: Int
-    }
-
-    /// Match current stars to reference stars and compute average pixel shift.
-    static func computeCentroidDrift(
-        reference: [DetectedStar],
-        current: [DetectedStar],
-        matchRadius: Double
-    ) -> CentroidDrift? {
-        var totalDx = 0.0, totalDy = 0.0
-        var matched = 0
-
-        for refStar in reference {
-            var bestDist = Double.greatestFiniteMagnitude
-            var bestDx = 0.0, bestDy = 0.0
-
-            for curStar in current {
-                let dx = curStar.x - refStar.x
-                let dy = curStar.y - refStar.y
-                let dist = sqrt(dx * dx + dy * dy)
-                if dist < matchRadius && dist < bestDist {
-                    bestDist = dist
-                    bestDx = dx
-                    bestDy = dy
-                }
-            }
-
-            if bestDist < matchRadius {
-                totalDx += bestDx
-                totalDy += bestDy
-                matched += 1
-            }
-        }
-
-        guard matched >= 4 else { return nil }
-        return CentroidDrift(dx: totalDx / Double(matched), dy: totalDy / Double(matched), matchCount: matched)
-    }
-
-    /// Apply centroid pixel drift to update the correction error display.
-    private func applyCentroidDrift(dx: Double, dy: Double, cameraViewModel: CameraViewModel) {
-        guard let axis = correctionMountAxis else { return }
-
-        // Convert pixel drift to arcseconds
-        let dxArcsec = dx * pixelScaleArcsecPerPix
-        let dyArcsec = dy * pixelScaleArcsecPerPix
-
-        // Rotate by camera roll to get RA/Dec shift
-        let cosRoll = cos(lastSolveRollRad)
-        let sinRoll = sin(lastSolveRollRad)
-        let dRAArcsec = dxArcsec * cosRoll + dyArcsec * sinRoll
-        let dDecArcsec = -dxArcsec * sinRoll + dyArcsec * cosRoll
-
-        // Convert to degrees
-        let dRADeg = dRAArcsec / 3600.0
-        let dDecDeg = dDecArcsec / 3600.0
-
-        // Predict sidereal motion
-        let elapsed = Date().timeIntervalSince(correctionReferenceTime)
-        let siderealDegPerSec = 15.04107 / 3600.0
-        let rotationDeg = elapsed * siderealDegPerSec
-
-        let predicted = GnomonicProjection.rotateAroundAxis(
-            pointingRA: correctionReferenceRA,
-            pointingDec: correctionReferenceDec,
-            axisRA: axis.raDeg,
-            axisDec: axis.decDeg,
-            angleDeg: rotationDeg
-        )
-
-        // Camera actual = predicted + drift from centroids
-        let actualRA = predicted.raDeg + dRADeg
-        let actualDec = predicted.decDeg + dDecDeg
-
-        // Shift = actual - predicted (isolates user adjustment)
-        let newAxisRA = axis.raDeg + dRADeg
-        let newAxisDec = axis.decDeg + dDecDeg
-
-        // Convert to alt/az error
-        let jd = currentJulianDate()
-        let lst = localSiderealTime(jd: jd, longitudeDeg: observerLonDeg)
-
-        let ha = (lst - newAxisRA) * .pi / 180
-        let decRad = newAxisDec * .pi / 180
-        let latRad = observerLatDeg * .pi / 180
-        let sinAlt = sin(decRad) * sin(latRad) + cos(decRad) * cos(latRad) * cos(ha)
-        let mountAlt = asin(sinAlt) * 180 / .pi
-        let cosAlt = cos(asin(sinAlt))
-        let sinAz = -cos(decRad) * sin(ha) / cosAlt
-        let cosAz = (sin(decRad) - sin(latRad) * sinAlt) / (cos(latRad) * cosAlt)
-        let mountAz = atan2(sinAz, cosAz) * 180 / .pi
-
-        let poleAlt = abs(observerLatDeg)
-        let poleAz: Double = observerLatDeg >= 0 ? 0 : 180
-
-        let altError = (mountAlt - poleAlt) * 60.0
-        let azError = (mountAz - poleAz) * 60.0 * cos(mountAlt * .pi / 180)
-        let totalError = sqrt(altError * altError + azError * azError)
-
-        let updatedError = PolarError(
-            altErrorArcmin: altError,
-            azErrorArcmin: azError,
-            totalErrorArcmin: totalError,
-            mountAxis: CelestialCoord(raDeg: newAxisRA, decDeg: newAxisDec)
-        )
-        correctionError = updatedError
-        solvedRA = actualRA
-        solvedDec = actualDec
-
-        errorTracker?.updateFromDrift(error: updatedError)
-    }
-
-    // MARK: - Full plate solve correction iteration
-
-    private func correctionIteration(cameraViewModel: CameraViewModel) async {
-        let stars = cameraViewModel.detectedStars
-        guard stars.count >= 4 else {
-            statusMessage = "Correction: waiting for stars (\(stars.count) detected)"
-            return
-        }
-
+    /// Using plate solving for every update instead of centroid drift ensures
+    /// the tracking works even with large alignment errors (where star patterns
+    /// shift too far for centroid matching to succeed).
+    private func correctionIteration(stars: [DetectedStar]) async {
         statusMessage = "Correction: plate solving (\(stars.count) stars)..."
 
         guard let result = try? await plateSolveService.solveRobust(centroids: stars),
@@ -787,56 +672,55 @@ final class AlignmentCoordinator: ObservableObject {
             return
         }
 
-        guard let axis = correctionMountAxis else { return }
-
-        // Predict where camera should be pointing based on sidereal tracking
-        // around the ORIGINAL mount axis (same as simulator's rotateAroundAxis)
-        let elapsed = Date().timeIntervalSince(correctionReferenceTime)
-        let siderealDegPerSec = 15.04107 / 3600.0  // ~0.00418°/s
-        let rotationDeg = elapsed * siderealDegPerSec
-
-        let predicted = GnomonicProjection.rotateAroundAxis(
-            pointingRA: correctionReferenceRA,
-            pointingDec: correctionReferenceDec,
-            axisRA: axis.raDeg,
-            axisDec: axis.decDeg,
-            angleDeg: rotationDeg
-        )
-
-        // Camera shift = actual - predicted. This isolates the user's screw adjustment
-        // from natural sidereal motion. The mount axis shifts by approximately the
-        // same amount as the camera (they're rigidly connected).
-        let dRA = result.raDeg - predicted.raDeg
-        let dDec = result.decDeg - predicted.decDeg
-
-        // Compute updated mount axis
-        let newAxisRA = axis.raDeg + dRA
-        let newAxisDec = axis.decDeg + dDec
-
-        // Convert mount axis shift to alt/az error relative to true celestial pole
         let jd = currentJulianDate()
-        let lst = localSiderealTime(jd: jd, longitudeDeg: observerLonDeg)
-
-        // Mount axis in alt/az
-        let ha = (lst - newAxisRA) * .pi / 180
-        let decRad = newAxisDec * .pi / 180
+        let lstDeg = localSiderealTime(jd: jd, longitudeDeg: observerLonDeg)
         let latRad = observerLatDeg * .pi / 180
-        let sinAlt = sin(decRad) * sin(latRad) + cos(decRad) * cos(latRad) * cos(ha)
-        let mountAlt = asin(sinAlt) * 180 / .pi
 
-        let cosAlt = cos(asin(sinAlt))
-        let sinAz = -cos(decRad) * sin(ha) / cosAlt
-        let cosAz = (sin(decRad) - sin(latRad) * sinAlt) / (cos(latRad) * cosAlt)
-        let mountAz = atan2(sinAz, cosAz) * 180 / .pi
+        // For a TRACKING mount the camera RA/Dec is approximately constant between
+        // iterations (the drive compensates Earth's rotation). The predicted position
+        // is simply the last reference RA/Dec evaluated at the current LST.
+        // Any deviation between actual and predicted is entirely due to:
+        //   • a screw adjustment the user just made, OR
+        //   • very slow Dec drift from polar misalignment (~arcseconds per minute).
+        let actualAA    = altAzFromRADec(raDeg: result.raDeg,          decDeg: result.decDeg,          lstDeg: lstDeg)
+        let predictedAA = altAzFromRADec(raDeg: correctionReferenceRA, decDeg: correctionReferenceDec, lstDeg: lstDeg)
+        correctionCameraAzDeg = actualAA.az
+        let dAlt = actualAA.alt - predictedAA.alt
+        var dAz  = actualAA.az  - predictedAA.az
+        if dAz >  180 { dAz -= 360 }
+        if dAz < -180 { dAz += 360 }
 
-        // True pole in alt/az
+        // Apply the same shift to the mount axis (rigid body identity).
+        // Use the stored alt/az directly — the mount axis is fixed in the geographic
+        // frame, so its alt/az never drifts. Re-converting from RA/Dec with an updated
+        // LST would introduce ~15°/hr of spurious azimuth drift.
+        let newAxisAlt = correctionAxisAlt + dAlt
+        let newAxisAz  = correctionAxisAz  + dAz
+        correctionAxisAlt = newAxisAlt
+        correctionAxisAz  = newAxisAz
+
+        // True pole alt/az
         let poleAlt = abs(observerLatDeg)
         let poleAz: Double = observerLatDeg >= 0 ? 0 : 180
 
-        // Error = mount axis - true pole (same as polar_error.rs)
-        let altError = (mountAlt - poleAlt) * 60.0  // arcminutes
-        let azError = (mountAz - poleAz) * 60.0 * cos(mountAlt * .pi / 180)
+        // Polar error from updated axis
+        let altError = (newAxisAlt - poleAlt) * 60.0  // arcminutes
+        var azDiff = newAxisAz - poleAz
+        if azDiff >  180 { azDiff -= 360 }
+        if azDiff < -180 { azDiff += 360 }
+        let azError    = azDiff * 60.0 * cos(newAxisAlt * .pi / 180)
         let totalError = sqrt(altError * altError + azError * azError)
+
+        // Convert updated axis alt/az → RA/Dec for the next iteration's sidereal prediction
+        let altR = newAxisAlt * .pi / 180
+        let azR  = newAxisAz  * .pi / 180
+        let sinDec = sin(latRad) * sin(altR) + cos(latRad) * cos(altR) * cos(azR)
+        let newAxisDec = asin(max(-1.0, min(1.0, sinDec))) * 180 / .pi
+        let sinHA = -sin(azR) * cos(altR)
+        let cosHA =  sin(altR) * cos(latRad) - cos(altR) * sin(latRad) * cos(azR)
+        var newAxisRA = lstDeg - atan2(sinHA, cosHA) * 180 / .pi
+        newAxisRA = newAxisRA.truncatingRemainder(dividingBy: 360)
+        if newAxisRA < 0 { newAxisRA += 360 }
 
         let updatedError = PolarError(
             altErrorArcmin: altError,
@@ -857,12 +741,53 @@ final class AlignmentCoordinator: ObservableObject {
         // Feed to ErrorTracker for history plotting
         errorTracker?.updateFromSolve(error: updatedError, stars: stars)
 
+        // Auto-advance guided correction phase
+        if correctionPhase == .adjustAltitude && abs(altError) < 5.0 {
+            correctionPhase = .adjustAzimuth
+        }
+        if correctionPhase == .adjustAzimuth && totalError < 2.0 {
+            correctionPhase = .done
+            // Sync mount to the plate-solved position so GoTo and tracking are accurate
+            Task {
+                do {
+                    try await mountService.syncPosition(raHours: result.raDeg / 15.0, decDeg: result.decDeg)
+                    print("[Align] Synced mount to plate-solved position: RA=\(String(format: "%.4f", result.raDeg))° Dec=\(String(format: "%+.2f", result.decDeg))°")
+                } catch {
+                    print("[Align] Mount sync failed: \(error)")
+                }
+            }
+        }
+        // Allow returning to azimuth phase if user overshoots after "done"
+        if correctionPhase == .done && totalError >= 3.0 {
+            correctionPhase = abs(altError) >= 5.0 ? .adjustAltitude : .adjustAzimuth
+        }
+
         statusMessage = String(format: "Correction: %.1f' remaining (Alt %+.1f' Az %+.1f')",
                                totalError, altError, azError)
         print("[Align] Correction: total=\(String(format: "%.2f", totalError))' alt=\(String(format: "%+.2f", altError))' az=\(String(format: "%+.2f", azError))'")
     }
 
     // MARK: - Utilities
+
+    /// Convert RA/Dec (degrees) to Alt/Az (degrees) for the observer's location at the given LST.
+    ///
+    /// The mount is a rigid body: when the user turns a screw, the camera and the mount axis
+    /// shift by the SAME angle in alt/az. Working in alt/az is the geometrically correct frame
+    /// for propagating the camera residual to the axis. Adding camera ΔRA directly to axis RA
+    /// is wrong because cos(Dec) scaling differs ~200× between camera (~60-80°) and axis (~90°).
+    private func altAzFromRADec(raDeg: Double, decDeg: Double, lstDeg: Double) -> (alt: Double, az: Double) {
+        let latRad = observerLatDeg * .pi / 180
+        let ha     = (lstDeg - raDeg) * .pi / 180
+        let dec    = decDeg * .pi / 180
+        let sinAlt = sin(dec) * sin(latRad) + cos(dec) * cos(latRad) * cos(ha)
+        let clamped = max(-1.0, min(1.0, sinAlt))
+        let alt    = asin(clamped)
+        let cosAlt = sqrt(1.0 - clamped * clamped)
+        if cosAlt < 1e-9 { return (alt * 180 / .pi, 0) }
+        let sinAz = -cos(dec) * sin(ha) / cosAlt
+        let cosAz = (sin(dec) - sin(latRad) * clamped) / (cos(latRad) * cosAlt)
+        return (alt * 180 / .pi, atan2(sinAz, cosAz) * 180 / .pi)
+    }
 
     /// Compute current Julian Date from system clock (UTC).
     /// Same computation as SimulatedAlignmentEngine.

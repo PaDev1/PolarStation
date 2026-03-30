@@ -40,6 +40,7 @@ final class MountService: ObservableObject {
         backendName = controller.backendName()
         error = nil
         startStatusPolling()
+        try? await refreshStatus()
     }
 
     /// Connect via LX200 serial protocol (AM5 USB, etc.).
@@ -59,6 +60,7 @@ final class MountService: ObservableObject {
         backendName = controller.backendName()
         error = nil
         startStatusPolling()
+        try? await refreshStatus()
     }
 
     /// Connect via LX200 protocol over TCP/WiFi. AM5 default: 192.168.4.1:4030.
@@ -77,6 +79,7 @@ final class MountService: ObservableObject {
         backendName = controller.backendName()
         error = nil
         startStatusPolling()
+        try? await refreshStatus()
     }
 
     /// Sync mount's clock and location using stored observer settings.
@@ -280,6 +283,9 @@ final class MountService: ObservableObject {
                 }
             }
         }
+        // Refresh status immediately so sky map updates
+        try? await refreshStatus()
+        print("[MountService] Synced to RA=\(String(format: "%.4f", raHours))h Dec=\(String(format: "%+.2f", decDeg))°")
     }
 
     /// Sync mount's internal clock and site location with computer.

@@ -48,6 +48,8 @@ struct MountTabView: View {
     // Ephemeral UI state
     @State private var showObsWindowPopover = false
     @State private var showDebugConsole = false
+    @State private var showCameraPiP = false
+    @State private var pipWidth: CGFloat = 320
     var assistantVM: AssistantViewModel
     var assistantWindowController: AssistantWindowController
     // Observation window (persisted via AppStorage)
@@ -125,6 +127,14 @@ struct MountTabView: View {
                                 .padding(.top, 6)
                                 .allowsHitTesting(false)
                         }
+                        // Camera PiP
+                        VStack {
+                            Spacer()
+                            HStack {
+                                Spacer()
+                                cameraPiPOverlay
+                            }
+                        }
                     }
                     .frame(minHeight: 200)
 
@@ -150,6 +160,14 @@ struct MountTabView: View {
                         gotoTarget(raHours: raHours, decDeg: decDeg)
                     }
                     panelToggleButtons
+                    // Camera PiP
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            cameraPiPOverlay
+                        }
+                    }
                 }
                 .frame(minWidth: 400)
             }
@@ -262,9 +280,73 @@ struct MountTabView: View {
             }
             .buttonStyle(.plain)
             .help("Toggle object catalog")
+
+            Button {
+                showCameraPiP.toggle()
+            } label: {
+                Image(systemName: showCameraPiP ? "camera.fill" : "camera")
+                    .font(.system(size: 16))
+                    .padding(8)
+                    .background(.black.opacity(0.6))
+                    .clipShape(Circle())
+                    .foregroundStyle(showCameraPiP ? .green : .white)
+            }
+            .buttonStyle(.plain)
+            .help("Toggle camera preview")
         }
         .padding(8)
         }
+    }
+
+    /// Camera aspect ratio from capture or sensor settings
+    private var cameraAspect: CGFloat {
+        let w: CGFloat
+        let h: CGFloat
+        if cameraViewModel.captureWidth > 0 && cameraViewModel.captureHeight > 0 {
+            w = CGFloat(cameraViewModel.captureWidth)
+            h = CGFloat(cameraViewModel.captureHeight)
+        } else {
+            w = CGFloat(max(sensorWidthPx, 1))
+            h = CGFloat(max(sensorHeightPx, 1))
+        }
+        return w / h
+    }
+
+    /// Floating camera picture-in-picture overlay
+    private var cameraPiPOverlay: some View {
+        Group {
+            if showCameraPiP {
+                let pipHeight = pipWidth / cameraAspect
+                VStack(spacing: 0) {
+                    // Camera preview
+                    CameraPreviewView(viewModel: cameraViewModel.previewViewModel)
+                        .frame(width: pipWidth, height: pipHeight)
+                }
+                .background(.black)
+                .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(.white.opacity(0.3), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.5), radius: 4)
+                // Resize handle
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.4))
+                        .padding(4)
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    pipWidth = max(160, min(800, pipWidth + value.translation.width))
+                                }
+                        )
+                }
+                .padding(8)
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: showCameraPiP)
     }
 
     // MARK: - Center & Solve Panel
@@ -320,6 +402,25 @@ struct MountTabView: View {
                     .controlSize(.small)
                     .disabled(centeringSolveService.state.isActive)
                     .help("One-shot plate solve — captures frame, detects stars, solves")
+
+                    Button("Sync") {
+                        guard let result = centeringSolveService.lastSolveResult, result.success else { return }
+                        Task {
+                            do {
+                                try await mountService.syncPosition(raHours: result.raDeg / 15.0, decDeg: result.decDeg)
+                                // Force sky map to show mount at the synced position
+                                skyMapVM.mountRA = result.raDeg
+                                skyMapVM.mountDec = result.decDeg
+                                centeringSolveService.statusMessage = String(format: "Synced to RA %.4fh Dec %+.4f°", result.raDeg / 15.0, result.decDeg)
+                            } catch {
+                                centeringSolveService.statusMessage = "Sync failed: \(error.localizedDescription)"
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!mountService.isConnected || centeringSolveService.lastSolveResult == nil || centeringSolveService.state.isActive)
+                    .help("Sync mount to last plate-solved position")
 
                     Button("Center") {
                         guard let target = currentGoToTarget else { return }

@@ -200,11 +200,11 @@ final class SkyMapViewModel: ObservableObject {
     }
 
     private func updateLST() {
-        // When a mount is connected, syncToMount() derives LST from the mount's
-        // own coordinates. Only fall back to clock-based LST when no mount.
-        if mountRA == nil {
-            lstRadians = computeLocalSiderealTime()
-        }
+        // Always compute LST from the UTC clock (NTP-synced, always correct).
+        // Using mount coordinates to derive LST was unreliable: mount time may
+        // differ from UTC, and in planning mode the sky didn't move when the
+        // date changed because mountRA was non-nil.
+        lstRadians = computeLocalSiderealTime()
     }
 
     func loadCatalog(from solver: PlateSolver) {
@@ -257,36 +257,30 @@ final class SkyMapViewModel: ObservableObject {
         mountRA = s.raHours * 15.0  // hours → degrees
         mountDec = s.decDeg
 
-        // Derive LST from mount's RA/Dec + Alt/Az for accurate horizon overlay.
-        // The mount is the ground truth — its alt/az and RA/Dec are self-consistent,
-        // so computing LST = RA + H from these avoids any clock discrepancy.
-        if !s.altDeg.isNaN && !s.azDeg.isNaN {
-            let lat = observerLatDeg * .pi / 180.0
-            let alt = s.altDeg * .pi / 180.0
-            let az = s.azDeg * .pi / 180.0
-            let sinH = -sin(az) * cos(alt)
-            let cosH = sin(alt) * cos(lat) - cos(alt) * sin(lat) * cos(az)
-            let h = atan2(sinH, cosH)
-            var lst = s.raHours * 15.0 * .pi / 180.0 + h
-            lst = lst.truncatingRemainder(dividingBy: 2.0 * .pi)
-            if lst < 0 { lst += 2.0 * .pi }
-            lstRadians = lst
-        }
-
         guard followMount else { return }
 
+        // Prefer plate-solved position (truth) over mount-reported position
+        let followRA: Double
+        let followDec: Double
+        if let sRA = solvedRA, let sDec = solvedDec {
+            followRA = sRA
+            followDec = sDec
+        } else {
+            followRA = mountRA!
+            followDec = mountDec!
+        }
+
         if mapMode == .altAz {
-            if !s.altDeg.isNaN && !s.azDeg.isNaN {
-                centerAlt = s.altDeg
-                centerAz = s.azDeg
+            let aa = equatorialToAltAzFast(raDeg: followRA, decDeg: followDec)
+            if !aa.altDeg.isNaN && !aa.azDeg.isNaN {
+                centerAlt = aa.altDeg
+                centerAz = aa.azDeg
             }
         } else {
-            if abs(s.decDeg) < 85.0 {
-                // Normal: follow mount RA
-                centerRA = mountRA!
+            if abs(followDec) < 85.0 {
+                centerRA = followRA
             }
-            // Near pole: keep centerRA as-is (stable orientation)
-            centerDec = mountDec!
+            centerDec = followDec
         }
     }
 
@@ -1418,7 +1412,12 @@ struct SkyMapView: View {
         } else {
             centerStr = "RA \(String(format: "%.1f", viewModel.centerRA / 15.0))h  Dec \(String(format: "%+.1f", viewModel.centerDec))°"
         }
-        let infoText = Text("Map FOV: \(String(format: "%.1f", viewModel.mapFOV))°  \(centerStr)")
+        let utcFormatter = DateFormatter()
+        utcFormatter.dateFormat = "d.M.yyyy HH:mm:ss"
+        utcFormatter.timeZone = TimeZone(identifier: "UTC")
+        let timeStr = utcFormatter.string(from: viewModel.effectiveDate) + " UTC"
+        let locStr = String(format: "%.3f°N %.3f°E", viewModel.observerLatDeg, viewModel.observerLonDeg)
+        let infoText = Text("FOV: \(String(format: "%.1f", viewModel.mapFOV))°  \(centerStr)  \(timeStr)  \(locStr)")
             .font(.system(size: 10, design: .monospaced))
             .foregroundColor(.white.opacity(0.6))
         context.draw(infoText, at: CGPoint(x: 8, y: 8), anchor: .topLeading)

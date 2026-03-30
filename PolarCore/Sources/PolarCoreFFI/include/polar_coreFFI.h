@@ -1012,6 +1012,11 @@ RustBuffer uniffi_polar_core_fn_method_platesolver_generate_database(void*_Nonnu
 RustBuffer uniffi_polar_core_fn_method_platesolver_get_star_catalog(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_PLATESOLVER_IS_DATABASE_LOADED
+#define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_PLATESOLVER_IS_DATABASE_LOADED
+int8_t uniffi_polar_core_fn_method_platesolver_is_database_loaded(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_PLATESOLVER_LOAD_DATABASE
 #define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_PLATESOLVER_LOAD_DATABASE
 void uniffi_polar_core_fn_method_platesolver_load_database(void*_Nonnull ptr, RustBuffer path, RustCallStatus *_Nonnull out_status
@@ -1020,6 +1025,11 @@ void uniffi_polar_core_fn_method_platesolver_load_database(void*_Nonnull ptr, Ru
 #ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_PLATESOLVER_SOLVE
 #define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_PLATESOLVER_SOLVE
 RustBuffer uniffi_polar_core_fn_method_platesolver_solve(void*_Nonnull ptr, RustBuffer centroids, uint32_t image_width, uint32_t image_height, double fov_deg, double fov_tolerance_deg, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_PLATESOLVER_UNLOAD_DATABASE
+#define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_METHOD_PLATESOLVER_UNLOAD_DATABASE
+void uniffi_polar_core_fn_method_platesolver_unload_database(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_FN_FUNC_ANGULAR_SEPARATION
@@ -2204,6 +2214,12 @@ uint16_t uniffi_polar_core_checksum_method_platesolver_get_star_catalog(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_PLATESOLVER_IS_DATABASE_LOADED
+#define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_PLATESOLVER_IS_DATABASE_LOADED
+uint16_t uniffi_polar_core_checksum_method_platesolver_is_database_loaded(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_PLATESOLVER_LOAD_DATABASE
 #define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_PLATESOLVER_LOAD_DATABASE
 uint16_t uniffi_polar_core_checksum_method_platesolver_load_database(void
@@ -2213,6 +2229,12 @@ uint16_t uniffi_polar_core_checksum_method_platesolver_load_database(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_PLATESOLVER_SOLVE
 #define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_PLATESOLVER_SOLVE
 uint16_t uniffi_polar_core_checksum_method_platesolver_solve(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_PLATESOLVER_UNLOAD_DATABASE
+#define UNIFFI_FFIDEF_UNIFFI_POLAR_CORE_CHECKSUM_METHOD_PLATESOLVER_UNLOAD_DATABASE
+uint16_t uniffi_polar_core_checksum_method_platesolver_unload_database(void
     
 );
 #endif

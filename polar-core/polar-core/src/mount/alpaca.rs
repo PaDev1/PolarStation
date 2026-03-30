@@ -220,6 +220,21 @@ impl AlpacaClient {
         self.put("unpark", &[])
     }
 
+    pub fn sync_position(&self, ra_hours: f64, dec_deg: f64) -> Result<(), MountError> {
+        println!("[Alpaca] Sync position: RA={:.4}h Dec={:.4}°", ra_hours, dec_deg);
+        let ra_str = ra_hours.to_string();
+        let dec_str = dec_deg.to_string();
+        let result = self.put("synctocoordinates", &[
+            ("RightAscension", &ra_str),
+            ("Declination", &dec_str),
+        ]);
+        match &result {
+            Ok(()) => println!("[Alpaca] Sync succeeded"),
+            Err(e) => println!("[Alpaca] Sync failed: {:?}", e),
+        }
+        result
+    }
+
     pub fn abort(&self) -> Result<(), MountError> {
         self.put("abortslew", &[])
     }
@@ -265,6 +280,10 @@ impl super::MountBackendTrait for AlpacaClient {
 
     fn set_tracking_rate(&mut self, rate: TrackingRate) -> Result<(), MountError> {
         AlpacaClient::set_tracking_rate(self, rate)
+    }
+
+    fn sync_position(&mut self, ra_hours: f64, dec_deg: f64) -> Result<(), MountError> {
+        AlpacaClient::sync_position(self, ra_hours, dec_deg)
     }
 
     fn move_axis(&mut self, axis: u8, rate_deg_per_sec: f64) -> Result<(), MountError> {

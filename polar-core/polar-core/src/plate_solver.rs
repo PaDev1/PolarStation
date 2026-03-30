@@ -125,6 +125,19 @@ impl PlateSolver {
         Ok(())
     }
 
+    /// Unload the solver database, freeing the ~8 GB of memory it occupies.
+    /// Call this when leaving tabs that require plate solving.
+    /// The next call to `load_database` or `generate_database` will reload it.
+    pub fn unload_database(&self) {
+        let mut guard = self.database.lock().unwrap();
+        *guard = None;
+    }
+
+    /// Returns true if a database is currently loaded.
+    pub fn is_database_loaded(&self) -> bool {
+        self.database.lock().unwrap().is_some()
+    }
+
     /// Solve: find the sky position from star centroids.
     ///
     /// `centroids` — detected star positions in pixel coordinates (origin top-left).

@@ -3086,6 +3086,11 @@ public protocol PlateSolverProtocol: AnyObject, Sendable {
     func getStarCatalog()  -> [CatalogStar]
     
     /**
+     * Returns true if a database is currently loaded.
+     */
+    func isDatabaseLoaded()  -> Bool
+    
+    /**
      * Load a pre-built solver database from an .rkyv file.
      */
     func loadDatabase(path: String) throws 
@@ -3094,6 +3099,12 @@ public protocol PlateSolverProtocol: AnyObject, Sendable {
      * Solve: find sky position from star centroids.
      */
     func solve(centroids: [StarCentroid], imageWidth: UInt32, imageHeight: UInt32, fovDeg: Double, fovToleranceDeg: Double) throws  -> SolveResult
+    
+    /**
+     * Unload the solver database, freeing ~8 GB of RAM.
+     * Call when leaving tabs that require plate solving.
+     */
+    func unloadDatabase() 
     
 }
 open class PlateSolver: PlateSolverProtocol, @unchecked Sendable {
@@ -3194,6 +3205,16 @@ open func getStarCatalog() -> [CatalogStar]  {
 }
     
     /**
+     * Returns true if a database is currently loaded.
+     */
+open func isDatabaseLoaded() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_polar_core_fn_method_platesolver_is_database_loaded(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
      * Load a pre-built solver database from an .rkyv file.
      */
 open func loadDatabase(path: String)throws   {try rustCallWithError(FfiConverterTypeSolverError_lift) {
@@ -3216,6 +3237,16 @@ open func solve(centroids: [StarCentroid], imageWidth: UInt32, imageHeight: UInt
         FfiConverterDouble.lower(fovToleranceDeg),$0
     )
 })
+}
+    
+    /**
+     * Unload the solver database, freeing ~8 GB of RAM.
+     * Call when leaving tabs that require plate solving.
+     */
+open func unloadDatabase()  {try! rustCall() {
+    uniffi_polar_core_fn_method_platesolver_unload_database(self.uniffiClonePointer(),$0
+    )
+}
 }
     
 
@@ -6850,10 +6881,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_polar_core_checksum_method_platesolver_get_star_catalog() != 49432) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_polar_core_checksum_method_platesolver_is_database_loaded() != 19093) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_polar_core_checksum_method_platesolver_load_database() != 33099) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_method_platesolver_solve() != 27506) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_polar_core_checksum_method_platesolver_unload_database() != 39965) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_polar_core_checksum_constructor_alpacacameracontroller_new() != 1431) {
