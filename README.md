@@ -44,9 +44,10 @@ PolarStation
 ## Requirements
 
 - macOS 14.0 (Sonoma) or later
-- Xcode 15+
-- Rust toolchain (`rustup`, stable)
-- Apple Silicon or Intel Mac
+- Apple Silicon (M1 or later)
+- 16 GB RAM or more
+- Xcode 15+ (for building from source)
+- Rust toolchain (`rustup`, stable, for building from source)
 
 ## Building
 
