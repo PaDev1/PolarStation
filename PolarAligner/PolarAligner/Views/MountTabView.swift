@@ -34,6 +34,7 @@ struct MountTabView: View {
 
     // Remote plate solving
     @AppStorage("astrometryNetEnabled") private var astrometryNetEnabled: Bool = false
+    @AppStorage("astrometryNetApiKey") private var astrometryNetApiKey: String = ""
     @AppStorage("astrometryNetLocalMode") private var astrometryNetLocalMode: Bool = false
     @AppStorage("astrometryNetLocalURL") private var astrometryNetLocalURL: String = "http://localhost:8080/api"
 
@@ -41,7 +42,7 @@ struct MountTabView: View {
         astrometryNetLocalMode ? astrometryNetLocalURL : AstrometryNetService.remoteBaseURL
     }
     private var astrometryApiKey: String {
-        astrometryNetLocalMode ? "local" : (KeychainStore.get("astrometryNetApiKey") ?? "")
+        astrometryNetLocalMode ? "local" : astrometryNetApiKey
     }
 
     // Ephemeral UI state

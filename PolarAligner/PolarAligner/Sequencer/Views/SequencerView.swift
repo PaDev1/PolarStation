@@ -23,7 +23,7 @@ struct SequencerView: View {
     @AppStorage("observerLon") private var observerLon: Double = 24.94
     @AppStorage("llmProvider") private var llmProviderRaw: String = LLMProvider.claude.rawValue
     @AppStorage("llmApiEndpoint") private var llmApiEndpoint: String = ""
-    // llmApiKey is read from Keychain at point of use
+    @AppStorage("llmApiKey") private var llmApiKey: String = ""
     @AppStorage("llmModel") private var llmModel: String = ""
     @State private var aiSessionHours: Double = 6
     @State private var aiNotes: String = ""
@@ -1230,7 +1230,7 @@ struct SequencerView: View {
                             llmService: llm,
                             provider: provider,
                             endpoint: llmApiEndpoint,
-                            apiKey: KeychainStore.get("llmApiKey") ?? "",
+                            apiKey: llmApiKey,
                             model: llmModel,
                             deviceRoles: document.deviceRoles,
                             observerLat: observerLat,

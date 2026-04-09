@@ -11,7 +11,6 @@
 		056677F71FA0836494040B92 /* CentroidExtractor.metal in Sources */ = {isa = PBXBuildFile; fileRef = 72D42D53989F171AD0E77390 /* CentroidExtractor.metal */; };
 		0670F6D26DEE03B87CBDAE5D /* FrameSaverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77ABA3C380453B9A2B1FE820 /* FrameSaverTests.swift */; };
 		079B926030BDC44E6DC6C87A /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA8FD3B4B00A2E5E066BAA6 /* AppState.swift */; };
-		A1B2C3D4E5F60002A2B3C4D5 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60001A2B3C4D5 /* KeychainStore.swift */; };
 		0EEEA077DFD5B49FE74AE020 /* FilterWheelViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78FB79525F24DBF650C7250E /* FilterWheelViewModel.swift */; };
 		10CE779E9F19BD9B86C2E9B8 /* PlateSolveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CDB4454434C2EE32680E95 /* PlateSolveService.swift */; };
 		10CE779E9F19BD9B86C2E9B9 /* CenteringSolveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CDB4454434C2EE32680E96 /* CenteringSolveService.swift */; };
@@ -147,7 +146,6 @@
 		23B64395D489E6194B8A6985 /* MetalPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalPipeline.swift; sourceTree = "<group>"; };
 		3B38427B8FD64DD2B9E55820 /* SimulatedAlignmentEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedAlignmentEngine.swift; sourceTree = "<group>"; };
 		3BA8FD3B4B00A2E5E066BAA6 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F60001A2B3C4D5 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		3DD4E82877A64F47BA88252B /* MountService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountService.swift; sourceTree = "<group>"; };
 		418E9E36E6182A146DDA2788 /* ErrorTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorTracker.swift; sourceTree = "<group>"; };
 		43E5FDE1C404DE9E2A346149 /* GnomonicProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GnomonicProjection.swift; sourceTree = "<group>"; };
@@ -267,7 +265,6 @@
 			children = (
 				3BA8FD3B4B00A2E5E066BAA6 /* AppState.swift */,
 				C886D4F7CB8232B4F0A94CF7 /* Info.plist */,
-				A1B2C3D4E5F60001A2B3C4D5 /* KeychainStore.swift */,
 				A83FB2261D598CE736A38D07 /* PolarAlignerApp.swift */,
 			);
 			path = App;
@@ -709,7 +706,6 @@
 				5A3D8FCE2414960A798CBD18 /* AlpacaFilterWheelBridge.swift in Sources */,
 				F8B39A4CB2E01D0B99D900B9 /* AlpacaFrameGrabber.swift in Sources */,
 				079B926030BDC44E6DC6C87A /* AppState.swift in Sources */,
-				A1B2C3D4E5F60002A2B3C4D5 /* KeychainStore.swift in Sources */,
 				3350CF19CEAC4EB07029B9FA /* CameraPreviewView.swift in Sources */,
 				ECBA00D9C3927637ADBDE329 /* CameraSettings.swift in Sources */,
 				5BD5F05ED32667C0FBE5C94B /* CameraTabView.swift in Sources */,
