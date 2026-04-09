@@ -55,6 +55,10 @@ final class AppState: ObservableObject {
     }()
 
     init() {
+        // Migrate API keys from UserDefaults (plaintext) to Keychain on first run after upgrade
+        KeychainStore.migrateFromUserDefaults("astrometryNetApiKey")
+        KeychainStore.migrateFromUserDefaults("llmApiKey")
+
         coreVersion = PolarCore.polarCoreVersion()
         sequenceEngine.deviceResolver.configure(
             mount: mountService,

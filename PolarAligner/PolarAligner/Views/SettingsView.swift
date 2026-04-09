@@ -134,12 +134,20 @@ struct SettingsView: View {
     @State private var downloadStatus: String?
 
     // Remote plate solving
-    @AppStorage("astrometryNetApiKey") private var astrometryNetApiKey: String = ""
+    @State private var astrometryNetApiKey: String = ""          // stored in Keychain
     @AppStorage("astrometryNetEnabled") private var astrometryNetEnabled: Bool = false
     @AppStorage("astrometryNetLocalMode") private var astrometryNetLocalMode: Bool = false
     @AppStorage("astrometryNetLocalURL") private var astrometryNetLocalURL: String = "http://localhost:8080/api"
     @State private var remoteTestStatus: String?
     @State private var isTestingRemote = false
+
+    private var isLocalURLValid: Bool {
+        guard let url = URL(string: astrometryNetLocalURL),
+              let scheme = url.scheme?.lowercased(),
+              (scheme == "http" || scheme == "https"),
+              let host = url.host?.lowercased() else { return false }
+        return host == "localhost" || host == "127.0.0.1"
+    }
 
     private var astrometryBaseURL: String {
         astrometryNetLocalMode ? astrometryNetLocalURL : AstrometryNetService.remoteBaseURL
@@ -164,7 +172,7 @@ struct SettingsView: View {
     // AI Assistant
     @AppStorage("llmProvider") private var llmProviderRaw: String = LLMProvider.claude.rawValue
     @AppStorage("llmApiEndpoint") private var llmApiEndpoint: String = LLMProvider.claude.defaultEndpoint
-    @AppStorage("llmApiKey") private var llmApiKey: String = ""
+    @State private var llmApiKey: String = ""                    // stored in Keychain
     @AppStorage("llmModel") private var llmModel: String = LLMProvider.claude.defaultModel
     @StateObject private var llmService = LLMService()
 
@@ -441,6 +449,11 @@ struct SettingsView: View {
                                 TextField("http://localhost:8080/api", text: $astrometryNetLocalURL)
                                     .textFieldStyle(.roundedBorder)
                             }
+                            if !isLocalURLValid {
+                                Text("URL must use http:// or https:// and point to localhost or 127.0.0.1")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
                             Text("Run Watney locally — same API, no internet needed. Get Watney at github.com/Jusas/WatneyAstrometry (macOS binary available).")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -471,7 +484,7 @@ struct SettingsView: View {
                                     }
                                 }
                             }
-                            .disabled((!astrometryNetLocalMode && astrometryNetApiKey.isEmpty) || isTestingRemote)
+                            .disabled((!astrometryNetLocalMode && astrometryNetApiKey.isEmpty) || isTestingRemote || (astrometryNetLocalMode && !isLocalURLValid))
 
                             if isTestingRemote {
                                 ProgressView().controlSize(.small)
@@ -1387,12 +1400,20 @@ struct SettingsView: View {
         }
         .frame(minWidth: 400)
         .onAppear {
+            astrometryNetApiKey = KeychainStore.get("astrometryNetApiKey") ?? ""
+            llmApiKey = KeychainStore.get("llmApiKey") ?? ""
             refreshPorts()
             discoverCameras()
             discoverGuideCameras()
             syncLocationToCoordinator()
             applyBayerPattern()
             applyCameraFlip()
+        }
+        .onChange(of: astrometryNetApiKey) { _, newValue in
+            KeychainStore.set("astrometryNetApiKey", value: newValue)
+        }
+        .onChange(of: llmApiKey) { _, newValue in
+            KeychainStore.set("llmApiKey", value: newValue)
         }
         .onChange(of: observerLat) { syncLocationToCoordinator() }
         .onChange(of: observerLon) { syncLocationToCoordinator() }

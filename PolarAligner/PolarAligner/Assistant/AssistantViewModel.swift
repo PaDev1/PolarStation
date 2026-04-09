@@ -357,7 +357,7 @@ final class AssistantViewModel: ObservableObject {
     }
 
     private var currentApiKey: String {
-        UserDefaults.standard.string(forKey: "llmApiKey") ?? ""
+        KeychainStore.get("llmApiKey") ?? ""
     }
 
     private var currentModel: String {

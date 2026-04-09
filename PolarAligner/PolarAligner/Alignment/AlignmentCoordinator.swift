@@ -202,7 +202,7 @@ final class AlignmentCoordinator: ObservableObject {
                 if !solved && (useRemoteFallback || UserDefaults.standard.bool(forKey: "astrometryNetLocalMode")) {
                     statusMessage = "Step \(stepNum)/3: Trying remote solver..."
                     let localMode = UserDefaults.standard.bool(forKey: "astrometryNetLocalMode")
-                    let apiKey = localMode ? "local" : (UserDefaults.standard.string(forKey: "astrometryNetApiKey") ?? "")
+                    let apiKey = localMode ? "local" : (KeychainStore.get("astrometryNetApiKey") ?? "")
                     let baseURL = localMode
                         ? (UserDefaults.standard.string(forKey: "astrometryNetLocalURL") ?? "http://localhost:8080/api")
                         : AstrometryNetService.remoteBaseURL
@@ -554,7 +554,7 @@ final class AlignmentCoordinator: ObservableObject {
         plateSolveService.log("[Align] Local solve failed. Remote fallback=\(useRemoteFallback) local=\(localMode)")
         if useRemoteFallback || localMode {
             statusMessage = "\(stepLabel): Trying remote solver..."
-            let apiKey = localMode ? "local" : (UserDefaults.standard.string(forKey: "astrometryNetApiKey") ?? "")
+            let apiKey = localMode ? "local" : (KeychainStore.get("astrometryNetApiKey") ?? "")
             let baseURL = localMode
                 ? (UserDefaults.standard.string(forKey: "astrometryNetLocalURL") ?? "http://localhost:8080/api")
                 : AstrometryNetService.remoteBaseURL
