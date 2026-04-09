@@ -145,6 +145,14 @@ struct SettingsView: View {
         astrometryNetLocalMode ? astrometryNetLocalURL : AstrometryNetService.remoteBaseURL
     }
 
+    private var isLocalURLValid: Bool {
+        guard let url = URL(string: astrometryNetLocalURL),
+              let scheme = url.scheme?.lowercased(),
+              (scheme == "http" || scheme == "https"),
+              let host = url.host?.lowercased() else { return false }
+        return host == "localhost" || host == "127.0.0.1"
+    }
+
     // Auto-connect flags
     @AppStorage("autoConnectMount") private var autoConnectMount: Bool = false
     @AppStorage("autoConnectCamera") private var autoConnectCamera: Bool = false
@@ -441,6 +449,11 @@ struct SettingsView: View {
                                 TextField("http://localhost:8080/api", text: $astrometryNetLocalURL)
                                     .textFieldStyle(.roundedBorder)
                             }
+                            if !isLocalURLValid {
+                                Text("URL must use http:// or https:// and point to localhost or 127.0.0.1")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
                             Text("Run Watney locally — same API, no internet needed. Get Watney at github.com/Jusas/WatneyAstrometry (macOS binary available).")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -471,7 +484,7 @@ struct SettingsView: View {
                                     }
                                 }
                             }
-                            .disabled((!astrometryNetLocalMode && astrometryNetApiKey.isEmpty) || isTestingRemote)
+                            .disabled((!astrometryNetLocalMode && astrometryNetApiKey.isEmpty) || isTestingRemote || (astrometryNetLocalMode && !isLocalURLValid))
 
                             if isTestingRemote {
                                 ProgressView().controlSize(.small)
