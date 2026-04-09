@@ -8,7 +8,7 @@ A macOS application for telescope control, astrophotography, and polar alignment
 
 - **Polar Alignment** — Plate-solving assisted polar alignment workflow with simulated alignment mode for practice
 - **Framing & Sky Map** — Interactive sky map with stereographic projection, DSS2 sky imagery tiles, deep-sky catalog (~14,000 objects from OpenNGC), altitude/visibility planning, and observation window filtering
-- **Camera Control** — Live preview with configurable Bayer debayer (RGGB/BGGR/GRBG/GBRG), STF auto-stretch (Midtone Transfer Function), frame capture to FITS/TIFF, sensor cooling control, and star detection via CoreML and classical background-subtraction with sub-pixel centroid refinement
+- **Camera Control** — Live preview with configurable Bayer debayer (RGGB/BGGR/GRBG/GBRG), STF auto-stretch (Midtone Transfer Function), frame capture to FITS/TIFF with plate-solved RA/Dec coordinates (OBJCTRA/OBJCTDEC) written to the header when available, sensor cooling control, and star detection via CoreML and classical background-subtraction with sub-pixel centroid refinement
 - **Autoguiding** — Guide camera control with calibration, guide loop, dithering, and guide graph
 - **Sequencer** — Visual sequence builder with containers, conditions, triggers, and 30+ instruction types covering all connected devices. AI-assisted sequence building via the assistant
 - **AI Assistant** — LLM-powered assistant with tool use for mount control, sky information, weather, catalog search, and device commands
@@ -109,7 +109,15 @@ PolarStation uses two plate solving backends:
 
 ### Local solver (default)
 
-Built-in [tetra3](https://crates.io/crates/tetra3) geometric hash solver compiled into the app via the Rust core. A bundled star catalog (`star_catalog.rkyv`) is required — load it in Settings → Star Catalog. Solves in under a second when stars are detected.
+Built-in [tetra3](https://crates.io/crates/tetra3) geometric hash solver compiled into the app via the Rust core. Solves in under a second when stars are detected.
+
+A star catalog database is required and is **not bundled** — generate it from within the app:
+
+1. Open **Settings → Star Catalog**
+2. Choose a star density (mag≤8 ~480 MB, mag≤9 ~1.5 GB, mag≤10 ~4 GB, mag≤11 ~8 GB)
+3. Click **Download & Generate** — the app downloads Gaia DR3 data from ESA and builds the pattern database
+
+The catalog is stored in `~/Library/Application Support/PolarStation/` and persists across app updates. mag≤11 achieves the highest solve rate; mag≤9 is a reasonable default for most setups. Once generated, load it with the **Load** button.
 
 ### Remote / local server solver (optional fallback)
 
