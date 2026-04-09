@@ -41,6 +41,30 @@ PolarStation
 
 > **Note:** The Xcode project is named `PolarAligner` for historical reasons. The app builds and runs as **PolarStation**.
 
+## Installation
+
+PolarStation is not notarized or signed with an Apple Developer certificate. macOS will block it on first launch with a "cannot be opened because it is from an unidentified developer" message.
+
+To open it:
+
+1. Right-click (or Control-click) `PolarStation.app`
+2. Select **Open** from the context menu
+3. Click **Open** in the dialog that appears
+
+You only need to do this once. After that, the app opens normally.
+
+Alternatively, from Terminal:
+```bash
+xattr -d com.apple.quarantine /path/to/PolarStation.app
+```
+
+## Known Limitations
+
+- **Single hardware config tested** — developed and tested with ZWO ASI cameras (USB) and a ZWO AM5 mount via ASCOM Remote on Windows. Other Alpaca drivers and camera models may have quirks or require adjustments
+- **API keys stored in plaintext** — Astrometry.net and LLM API keys are stored in `~/Library/Preferences/` (macOS UserDefaults). Keychain storage requires a paid Apple Developer certificate; this is not planned until the app is properly signed
+- **Star overlay rotation** — when camera rotation is set in Settings, the live preview rotates correctly but star detection overlays are not compensated for the rotation. The plate-solved position itself is accurate; only the on-screen marker positions are affected during live view (not after a solve)
+- **No automatic updates** — check the [releases page](https://github.com/PaDev1/PolarStation/releases) manually for new versions
+
 ## Requirements
 
 - macOS 14.0 (Sonoma) or later
