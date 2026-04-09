@@ -919,7 +919,7 @@
 					/opt/homebrew/lib,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.2;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lASICamera2",
@@ -1011,7 +1011,7 @@
 					/opt/homebrew/lib,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.2;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lASICamera2",

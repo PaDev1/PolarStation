@@ -1384,6 +1384,7 @@ struct SettingsView: View {
 
                 GroupBox("About") {
                     VStack(alignment: .leading, spacing: 4) {
+                        Text("PolarStation v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")")
                         Text("PolarCore v\(PolarCore.polarCoreVersion())")
                         Text("Database: \(plateSolveService.databaseInfo ?? "Not loaded")")
                             .foregroundStyle(.secondary)
