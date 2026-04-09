@@ -104,7 +104,17 @@ struct GuideTabView: View {
                 cameraViewModel.discoverCameras()
             }
             cameraViewModel.starDetectionEnabled = true
-            cameraViewModel.resumeLiveView()
+            // Start the guide camera live view if it isn't already running.
+            // resumeLiveView() only fires when wasLiveBeforePause=true, so use
+            // startLive directly to auto-start on every Guide tab visit.
+            if cameraViewModel.isConnected && !cameraViewModel.isCapturing {
+                let settings = CameraSettings(
+                    exposureMs: exposureMs,
+                    gain: Int(guideGain),
+                    binning: guideBinning
+                )
+                cameraViewModel.startLive(settings: settings)
+            }
         }
         .onDisappear {
             // Persist current guide parameters
@@ -114,8 +124,11 @@ struct GuideTabView: View {
             savedMinMove = session.minMoveArcsec
             savedDecMode = session.decMode
 
-            cameraViewModel.starDetectionEnabled = false
-            cameraViewModel.pauseLiveView()
+            // Only pause camera if guiding is not active — guiding must continue across tab switches
+            if !session.isGuiding {
+                cameraViewModel.starDetectionEnabled = false
+                cameraViewModel.pauseLiveView()
+            }
         }
         .onChange(of: mode) { _, newMode in
             if newMode == .real {

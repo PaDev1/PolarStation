@@ -154,6 +154,12 @@ final class CameraPreviewViewModel: ObservableObject {
         didSet { _autoStretchFlag.pointee = autoStretchEnabled ? 1 : 0 }
     }
 
+    /// STF stretch strength — target background display level (0.05 subtle … 0.40 aggressive).
+    /// Defaults to 0.15. Written from MainActor, read from capture thread via pointer.
+    @Published var stfStrength: Float = 0.15 {
+        didSet { _stfStrengthPointer.pointee = stfStrength }
+    }
+
     /// Current STF parameters (computed from image stats when autoStretch is on).
     var stfBlackPoint: Float = 0.0
     var stfWhitePoint: Float = 1.0
@@ -172,6 +178,8 @@ final class CameraPreviewViewModel: ObservableObject {
 
     /// Nonisolated-safe flag for reading autoStretchEnabled from capture thread.
     private let _autoStretchFlag = UnsafeMutablePointer<Int32>.allocate(capacity: 1)
+    /// Nonisolated-safe copy of stfStrength for capture thread reads.
+    private let _stfStrengthPointer = UnsafeMutablePointer<Float>.allocate(capacity: 1)
     var frameCount: UInt64 = 0
     /// Time of last received frame (CFAbsoluteTime). UI can compare to `now` for activity indicator.
     var lastFrameTimestamp: CFAbsoluteTime = 0
@@ -202,12 +210,14 @@ final class CameraPreviewViewModel: ObservableObject {
         _processing.initialize(to: 0)
         _captureFrameCount.initialize(to: 0)
         _autoStretchFlag.initialize(to: 0)
+        _stfStrengthPointer.initialize(to: 0.15)
     }
 
     deinit {
         _processing.deallocate()
         _captureFrameCount.deallocate()
         _autoStretchFlag.deallocate()
+        _stfStrengthPointer.deallocate()
     }
 
     /// Called from the capture thread — dispatches to main for texture update.
@@ -224,14 +234,24 @@ final class CameraPreviewViewModel: ObservableObject {
         // Drop frame if main thread is still processing the previous one
         guard OSAtomicCompareAndSwap32(0, 1, _processing) else { return }
 
+        // Drop partial frames — Alpaca may deliver incomplete data if the connection is slow
+        let expectedSize = width * height * bytesPerPixel
+        guard buffer.count >= expectedSize else {
+            OSAtomicCompareAndSwap32(1, 0, _processing)
+            return
+        }
+
         // Copy the buffer since it will be reused by the capture thread
         let dataCopy = Data(buffer)
 
         // Compute STF stats on capture thread (cheap, avoids main thread work)
         let wantSTF = _autoStretchFlag.pointee != 0
+        let stfStrengthSnapshot = _stfStrengthPointer.pointee
         let stfParams: (black: Float, white: Float, mid: Float)?
         if wantSTF {
-            stfParams = Self.computeSTFParamsSync(data: dataCopy, width: width, height: height, bytesPerPixel: bytesPerPixel)
+            stfParams = Self.computeSTFParamsSync(
+                data: dataCopy, width: width, height: height,
+                bytesPerPixel: bytesPerPixel, targetBackground: stfStrengthSnapshot)
         } else {
             stfParams = nil
         }
@@ -308,14 +328,21 @@ final class CameraPreviewViewModel: ObservableObject {
     // MARK: - STF Auto-Stretch
 
     /// Compute STF parameters (black point, white point, midtones balance) from raw image data.
-    /// Uses median + MAD statistics with standard defaults:
-    /// shadowsClipping = -2.8 sigma, targetBackground = 0.25.
+    ///
+    /// Algorithm:
+    ///   - Black point c0: median − 2.8σ (MAD-based, robust background estimate)
+    ///   - White point c1: 99.9th percentile (clips hot pixels, preserves stars)
+    ///   - Midtones balance m: solves MTF(m, x) = targetBackground where
+    ///       x = (median − c0) / (c1 − c0)  (background position in actual data range)
+    ///       MTF(m, x) = (m−1)·x / ((2m−1)·x − m)  maps 0→0, m→0.5, 1→1
+    ///   - Closed-form inverse: m = x·(1−t) / (x·(1−2t) + t)
+    ///
     /// Called from the capture thread — must be nonisolated.
     private nonisolated static func computeSTFParamsSync(
-        data: Data, width: Int, height: Int, bytesPerPixel: Int
+        data: Data, width: Int, height: Int, bytesPerPixel: Int,
+        targetBackground: Float = 0.15
     ) -> (black: Float, white: Float, mid: Float) {
         let shadowsClipping: Float = -2.8
-        let targetBackground: Float = 0.25
 
         // Sample luminance values (subsample for speed — every 4th pixel)
         let pixelCount = width * height
@@ -344,43 +371,37 @@ final class CameraPreviewViewModel: ObservableObject {
 
         guard !samples.isEmpty else { return (0.0, 1.0, 0.5) }
 
-        // Sort for median
         samples.sort()
-
         let n = samples.count
         let median = (n % 2 == 0) ? (samples[n/2 - 1] + samples[n/2]) / 2.0 : samples[n/2]
 
-        // MAD (Median Absolute Deviation)
+        // MAD → sigma-equivalent (Gaussian consistency factor 1.4826)
         var deviations = samples.map { abs($0 - median) }
         deviations.sort()
         let rawMAD = (n % 2 == 0) ? (deviations[n/2 - 1] + deviations[n/2]) / 2.0 : deviations[n/2]
-        let mad = rawMAD * 1.4826  // normalize to sigma-equivalent
+        let mad = rawMAD * 1.4826
 
-        // Shadow clipping: clip at 2.8 sigma below median
+        // Black point: 2.8σ below median (clips dark background noise floor)
         let c0 = max(median + shadowsClipping * mad, 0.0)
 
-        // Adjusted median (relative to black point)
-        let m2 = median - c0
+        // White point: 99.9th percentile — retains stars, clips hot pixels
+        let c1 = samples[min(Int(Float(n) * 0.999), n - 1)]
 
-        // Compute midtones balance: find m such that MTF(m2, m) = targetBackground
-        // Solving MTF(x, m) = t for m: m = (t * (2x-1) - x) / ((2t-1) * (x-1))
-        // where x = m2/(1-c0), t = targetBackground
-        let x = (c0 < 1.0) ? m2 / (1.0 - c0) : 0.0
-        let midtones: Float
-        if x <= 0.0 {
-            midtones = 0.0
-        } else if x >= 1.0 {
-            midtones = 0.5  // linear
-        } else if x == targetBackground {
-            midtones = 0.5
-        } else {
-            midtones = (targetBackground * (2.0 * x - 1.0) - x) /
-                       ((2.0 * targetBackground - 1.0) * (x - 1.0))
-        }
+        // Require a meaningful data range
+        guard c1 > c0 + 1e-4 else { return (c0, c0 + 0.01, 0.5) }
+
+        // Background position within actual data range [c0, c1]
+        let x = (median - c0) / (c1 - c0)
+
+        // Midtones balance m such that MTF(m, x) = targetBackground.
+        // Closed-form solution of (m−1)·x / ((2m−1)·x − m) = t:
+        //   m = x·(1−t) / (x·(1−2t) + t)
+        let t = targetBackground
+        let midtones = x * (1.0 - t) / (x * (1.0 - 2.0 * t) + t)
 
         return (
             black: c0,
-            white: Float(1.0),
+            white: c1,
             mid: max(0.001, min(0.999, midtones))
         )
     }

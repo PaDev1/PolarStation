@@ -204,6 +204,8 @@ struct MountTabView: View {
             skyMapVM.solvedRollDeg = result.rollDeg
             skyMapVM.solvedFOVDeg = result.fovDeg
             UserDefaults.standard.set(result.rollDeg, forKey: "lastSolvedRotation")
+            UserDefaults.standard.set(result.raDeg, forKey: "lastSolvedRA")
+            UserDefaults.standard.set(result.decDeg, forKey: "lastSolvedDec")
             // Re-center sky map at solved position so overlay is visible
             skyMapVM.followMount = false
             skyMapVM.centerMap(raDeg: result.raDeg, decDeg: result.decDeg)

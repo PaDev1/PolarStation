@@ -40,6 +40,8 @@ final class CameraViewModel: ObservableObject {
     @Published var isSaving = false
     @Published var capturedCount: Int = 0
     @Published var targetCount: Int = 0
+    @Published var exposureStartDate: Date? = nil
+    @Published var currentExposureSec: Double = 0
 
     // Star detection
     @Published var detectedStars: [DetectedStar] = []
@@ -644,6 +646,7 @@ final class CameraViewModel: ObservableObject {
         prefix: String
     ) {
         guard let cam = selectedCamera else { return }
+        appendDebug("[Cam] beginCaptureSequence count=\(count) exp=\(settings.exposureMs)ms isCapturing=\(isCapturing)")
         if isCapturing { stopCapture() }
 
         capturedCount = 0
@@ -655,6 +658,8 @@ final class CameraViewModel: ObservableObject {
         let bayerStr = bayerPatternString(cam.bayerPattern)
         let lat = UserDefaults.standard.double(forKey: "observerLat")
         let lon = UserDefaults.standard.double(forKey: "observerLon")
+        let solvedRA = UserDefaults.standard.object(forKey: "lastSolvedRA") as? Double
+        let solvedDec = UserDefaults.standard.object(forKey: "lastSolvedDec") as? Double
         let timestamp = FrameSaver.captureTimestamp()
 
         // Ensure folder exists
@@ -683,7 +688,9 @@ final class CameraViewModel: ObservableObject {
                     height: h,
                     bytesPerPixel: bpp,
                     observerLat: lat != 0 ? lat : nil,
-                    observerLon: lon != 0 ? lon : nil
+                    observerLon: lon != 0 ? lon : nil,
+                    solvedRA: solvedRA,
+                    solvedDec: solvedDec
                 )
 
                 let filename = String(format: "%@_%@_%03d.%@", prefix, timestamp, num, format.fileExtension)
@@ -710,7 +717,7 @@ final class CameraViewModel: ObservableObject {
         }
 
         frameForwarder.onFrameReceived = nil
-        startCaptureInternal(settings: settings)
+        startCaptureInternal(settings: settings, maxFrames: count)
         statusMessage = "Capturing 0/\(count)..."
     }
 
@@ -725,11 +732,13 @@ final class CameraViewModel: ObservableObject {
 
     func stopCapture() {
         guard isCapturing else { return }
+        appendDebug("[Cam] stopCapture isSaving=\(isSaving)")
         frameGrabber?.stop()
         frameGrabber = nil
         alpacaFrameGrabber?.stop()
         alpacaFrameGrabber = nil
         isCapturing = false
+        exposureStartDate = nil
         frameForwarder.onSaveFrame = nil
         frameForwarder.onFrameReceived = nil
         if isSaving {
@@ -740,22 +749,40 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
-    private func startCaptureInternal(settings: CameraSettings) {
+    private func startCaptureInternal(settings: CameraSettings, maxFrames: Int = 0) {
         guard isConnected else {
             errorMessage = "Camera not connected"
             return
         }
         guard !isCapturing else { return }
 
+        // Claim the capturing slot synchronously so no second grabber can race in
+        // before the background thread finishes configuring the camera.
+        isCapturing = true
         errorMessage = nil
 
         if let bridge = alpacaCameraBridge {
             // Alpaca capture
+            let mode = maxFrames > 0 ? "capture(n=\(maxFrames))" : "live"
+            appendDebug("[Cam] startCaptureInternal \(mode) exp=\(settings.exposureMs)ms gain=\(settings.gain) bin=\(settings.binning)")
             let grabber = AlpacaFrameGrabber(camera: bridge, settings: settings)
+            grabber.maxFrames = maxFrames
             grabber.delegate = frameForwarder
+            grabber.onLog = { [weak self] msg in
+                Task { @MainActor [weak self] in
+                    self?.appendDebug("[Grabber] \(msg)")
+                }
+            }
             grabber.onError = { [weak self] msg in
                 Task { @MainActor [weak self] in
+                    self?.appendDebug("[Grabber] ERROR: \(msg)")
                     self?.errorMessage = "Alpaca: \(msg)"
+                }
+            }
+            grabber.onExposureStarted = { [weak self] durationSec in
+                Task { @MainActor [weak self] in
+                    self?.exposureStartDate = Date()
+                    self?.currentExposureSec = durationSec
                 }
             }
             self.alpacaFrameGrabber = grabber
@@ -765,7 +792,6 @@ final class CameraViewModel: ObservableObject {
                     try grabber.start()
                     Task { @MainActor [weak self] in
                         guard let self else { return }
-                        self.isCapturing = true
                         self.captureWidth = grabber.captureWidth
                         self.captureHeight = grabber.captureHeight
                         if !self.isSaving {
@@ -774,6 +800,7 @@ final class CameraViewModel: ObservableObject {
                     }
                 } catch {
                     Task { @MainActor [weak self] in
+                        self?.isCapturing = false
                         self?.errorMessage = error.localizedDescription
                         self?.statusMessage = "Capture failed"
                         self?.isSaving = false
@@ -791,7 +818,6 @@ final class CameraViewModel: ObservableObject {
                     try grabber.start()
                     Task { @MainActor [weak self] in
                         guard let self else { return }
-                        self.isCapturing = true
                         self.captureWidth = grabber.captureWidth
                         self.captureHeight = grabber.captureHeight
                         if !self.isSaving {
@@ -800,6 +826,7 @@ final class CameraViewModel: ObservableObject {
                     }
                 } catch {
                     Task { @MainActor [weak self] in
+                        self?.isCapturing = false
                         self?.errorMessage = error.localizedDescription
                         self?.statusMessage = "Capture failed"
                         self?.isSaving = false
@@ -807,6 +834,7 @@ final class CameraViewModel: ObservableObject {
                 }
             }
         } else {
+            isCapturing = false
             errorMessage = "No camera backend connected"
         }
     }

@@ -36,11 +36,13 @@ struct PolarAlignerApp: App {
     @AppStorage("cameraSource") private var cameraSourceRaw: String = CameraSource.usb.rawValue
     @AppStorage("cameraAlpacaHost") private var cameraAlpacaHost: String = "192.168.8.30"
     @AppStorage("cameraAlpacaPort") private var cameraAlpacaPort: Int = 11111
+    @AppStorage("cameraAlpacaDeviceIndex") private var cameraAlpacaDeviceIndex: Int = 0
 
     // Guide camera settings
     @AppStorage("guideCameraSource") private var guideCameraSourceRaw: String = CameraSource.usb.rawValue
     @AppStorage("guideCameraAlpacaHost") private var guideCameraAlpacaHost: String = "192.168.8.30"
     @AppStorage("guideCameraAlpacaPort") private var guideCameraAlpacaPort: Int = 11111
+    @AppStorage("guideCameraAlpacaDeviceIndex") private var guideCameraAlpacaDeviceIndex: Int = 0
 
     // Filter wheel settings
     @AppStorage("filterWheelAlpacaHost") private var filterWheelAlpacaHost: String = "192.168.8.30"
@@ -136,8 +138,9 @@ struct PolarAlignerApp: App {
                 )
                 try? await Task.sleep(for: .seconds(3))
                 if !appState.cameraViewModel.alpacaDevices.isEmpty {
-                    appState.cameraViewModel.selectedAlpacaDevice = 0
-                    appState.cameraViewModel.alpacaDeviceNumber = appState.cameraViewModel.alpacaDevices[0].deviceNumber
+                    let idx = min(cameraAlpacaDeviceIndex, appState.cameraViewModel.alpacaDevices.count - 1)
+                    appState.cameraViewModel.selectedAlpacaDevice = idx
+                    appState.cameraViewModel.alpacaDeviceNumber = appState.cameraViewModel.alpacaDevices[idx].deviceNumber
                     appState.cameraViewModel.connect()
                 }
             } else {
@@ -163,8 +166,9 @@ struct PolarAlignerApp: App {
                 )
                 try? await Task.sleep(for: .seconds(3))
                 if !appState.guideCameraViewModel.alpacaDevices.isEmpty {
-                    appState.guideCameraViewModel.selectedAlpacaDevice = 0
-                    appState.guideCameraViewModel.alpacaDeviceNumber = appState.guideCameraViewModel.alpacaDevices[0].deviceNumber
+                    let idx = min(guideCameraAlpacaDeviceIndex, appState.guideCameraViewModel.alpacaDevices.count - 1)
+                    appState.guideCameraViewModel.selectedAlpacaDevice = idx
+                    appState.guideCameraViewModel.alpacaDeviceNumber = appState.guideCameraViewModel.alpacaDevices[idx].deviceNumber
                     appState.guideCameraViewModel.connect()
                 }
             } else {

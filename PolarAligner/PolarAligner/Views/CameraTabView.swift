@@ -23,11 +23,22 @@ struct CameraTabView: View {
             selectedSource: $selectedSource,
             pauseAll: {
                 mainCamera.pauseLiveView()
-                guideCamera.pauseLiveView()
+                // Don't stop guide camera if main camera is actively capturing —
+                // stopping the guide Alpaca grabber calls abortExposure, which on
+                // shared INDIGO servers can interrupt the main camera's exposure.
+                // Also skip if guide camera is running star detection (guiding active).
+                if !mainCamera.isSaving && !guideCamera.starDetectionEnabled {
+                    guideCamera.pauseLiveView()
+                }
             },
             switchCamera: { oldSource, newSource in
                 let oldVM = oldSource == .main ? mainCamera : guideCamera
-                oldVM.pauseLiveView()
+                // Don't pause the guide camera if it's being used for guiding
+                // (starDetectionEnabled = true means a guide session is running).
+                // Don't pause either camera if it's actively saving frames.
+                if !oldVM.isSaving && !oldVM.starDetectionEnabled {
+                    oldVM.pauseLiveView()
+                }
             }
         )
     }
@@ -57,8 +68,12 @@ private struct CameraViewerContent: View {
     @AppStorage("captureColorMode") private var captureColorMode: String = "rgb"
     @AppStorage("capturePrefix") private var capturePrefix: String = "capture"
 
+    @AppStorage("stfStrength") private var stfStrength: Double = 0.15
+
     @State private var captureCount: Int = 1
     @State private var displayRotationDeg: Double = 0.0
+    @State private var showControls: Bool = false
+    @State private var showDebugLog: Bool = false
 
     private var effectiveExposureMs: Double {
         selectedSource == .main ? exposureMs : guideExposureMs
@@ -76,13 +91,16 @@ private struct CameraViewerContent: View {
         VStack(spacing: 0) {
             // MARK: - Top toolbar
             HStack(spacing: 12) {
-                Picker("Source", selection: $selectedSource) {
-                    ForEach(CameraViewSource.allCases, id: \.self) { source in
-                        Text(source.rawValue).tag(source)
-                    }
+                // Debug log toggle
+                Button {
+                    showDebugLog.toggle()
+                } label: {
+                    Image(systemName: "terminal")
+                        .font(.caption)
                 }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 280)
+                .buttonStyle(.borderless)
+                .foregroundStyle(showDebugLog ? .green : .secondary)
+                .help("Toggle camera debug log")
 
                 Spacer()
 
@@ -120,9 +138,25 @@ private struct CameraViewerContent: View {
                     }
                 }
 
-                // Overlay: fps + capture progress
+                // Overlay: controls (top-left), fps (top-right), progress (bottom)
                 VStack {
-                    HStack {
+                    HStack(alignment: .top) {
+                        // Camera controls overlay — top left
+                        CameraControlsOverlay(
+                            isExpanded: $showControls,
+                            isEnabled: viewModel.isConnected,
+                            exposureMs: $exposureMs,
+                            gain: $gain,
+                            binning: $binning,
+                            onApply: {
+                                // Restart live view so new settings take effect immediately
+                                if viewModel.isCapturing && !viewModel.isSaving {
+                                    viewModel.stopCapture()
+                                    viewModel.startLive(settings: currentSettings)
+                                }
+                            }
+                        )
+
                         Spacer()
 
                         // FPS + frame activity (top-right)
@@ -131,7 +165,15 @@ private struct CameraViewerContent: View {
                         }
                     }
                     Spacer()
-                    if viewModel.isSaving {
+                    if viewModel.isSaving, let startDate = viewModel.exposureStartDate {
+                        ExposureTimerView(
+                            startDate: startDate,
+                            durationSec: viewModel.currentExposureSec,
+                            capturedCount: viewModel.capturedCount,
+                            targetCount: viewModel.targetCount
+                        )
+                        .padding()
+                    } else if viewModel.isSaving {
                         HStack {
                             ProgressView(
                                 value: Double(viewModel.capturedCount),
@@ -233,7 +275,7 @@ private struct CameraViewerContent: View {
 
                 Divider().frame(height: 20)
 
-                // Auto-stretch toggle + settings popover
+                // Auto-stretch toggle + strength slider
                 Button {
                     viewModel.previewViewModel.autoStretchEnabled.toggle()
                 } label: {
@@ -248,6 +290,16 @@ private struct CameraViewerContent: View {
                 .tint(viewModel.previewViewModel.autoStretchEnabled ? .cyan : nil)
                 .foregroundStyle(viewModel.previewViewModel.autoStretchEnabled ? .cyan : .secondary)
                 .help("Auto-stretch — adjusts display to reveal faint detail")
+
+                if viewModel.previewViewModel.autoStretchEnabled && viewModel.isConnected {
+                    Slider(value: $stfStrength, in: 0.05...0.40)
+                        .frame(width: 80)
+                        .controlSize(.small)
+                        .help("Stretch amount: left = subtle (dark bg), right = aggressive")
+                        .onChange(of: stfStrength) { _, newVal in
+                            viewModel.previewViewModel.stfStrength = Float(newVal)
+                        }
+                }
 
                 Divider().frame(height: 20)
 
@@ -321,9 +373,56 @@ private struct CameraViewerContent: View {
                 .padding(.vertical, 6)
                 .background(.red.opacity(0.15))
             }
+
+            // Debug log strip (hidden by default, toggle with button in toolbar)
+            if showDebugLog {
+                Divider()
+                VStack(spacing: 0) {
+                    HStack {
+                        Text("Camera Log")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Copy") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(viewModel.debugLog, forType: .string)
+                        }
+                        .font(.caption2)
+                        .buttonStyle(.borderless)
+                        Button("Clear") {
+                            viewModel.debugLog = ""
+                        }
+                        .font(.caption2)
+                        .buttonStyle(.borderless)
+                        Button("Hide") { showDebugLog = false }
+                            .font(.caption2)
+                            .buttonStyle(.borderless)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.top, 4)
+
+                    ScrollView(.vertical) {
+                        Text(viewModel.debugLog)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.green)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 4)
+                    }
+                    .frame(height: 120)
+                    .background(Color.black.opacity(0.85))
+                }
+            }
         }
         .onAppear {
-            viewModel.resumeLiveView(settings: currentSettings)
+            // Sync persisted STF strength to the view model
+            viewModel.previewViewModel.stfStrength = Float(stfStrength)
+            // Only resume if the viewModel isn't already running (e.g. guide camera
+            // running for guiding). resumeLiveView guards on wasLiveBeforePause but
+            // we also skip if the camera is already active to avoid interfering.
+            if !viewModel.isCapturing {
+                viewModel.resumeLiveView(settings: currentSettings)
+            }
         }
         .onDisappear {
             pauseAll()
@@ -392,5 +491,154 @@ private struct CameraViewerContent: View {
             folder: captureFolderURL,
             prefix: prefix
         )
+    }
+}
+
+// MARK: - Camera Controls Overlay
+private struct CameraControlsOverlay: View {
+    @Binding var isExpanded: Bool
+    var isEnabled: Bool
+    @Binding var exposureMs: Double
+    @Binding var gain: Double
+    @Binding var binning: Int
+    var onApply: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Toggle button — always visible
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 14))
+                    .padding(8)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(isEnabled ? .white : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    // Exposure
+                    HStack(spacing: 6) {
+                        Text("Exp")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, alignment: .leading)
+                        TextField("", value: Binding(
+                            get: {
+                                exposureMs >= 1000 ? exposureMs / 1000.0 : exposureMs
+                            },
+                            set: { newVal in
+                                exposureMs = exposureMs >= 1000 ? newVal * 1000.0 : newVal
+                            }
+                        ), format: .number.precision(.fractionLength(exposureMs >= 1000 ? 1 : 0)))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 52)
+                        .font(.system(.caption, design: .monospaced))
+                        Text(exposureMs >= 1000 ? "s" : "ms")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        Stepper("", value: $exposureMs, in: 1...300000, step: exposureMs >= 1000 ? 1000 : 100)
+                            .labelsHidden()
+                            .onChange(of: exposureMs) { _, _ in onApply() }
+                    }
+
+                    // Gain
+                    HStack(spacing: 6) {
+                        Text("Gain")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, alignment: .leading)
+                        TextField("", value: $gain, format: .number.precision(.fractionLength(0)))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 52)
+                            .font(.system(.caption, design: .monospaced))
+                        Text("")
+                            .frame(width: 16)
+                        Stepper("", value: $gain, in: 0...1000, step: 10)
+                            .labelsHidden()
+                            .onChange(of: gain) { _, _ in onApply() }
+                    }
+
+                    // Binning
+                    HStack(spacing: 6) {
+                        Text("Bin")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, alignment: .leading)
+                        Picker("", selection: $binning) {
+                            Text("1x").tag(1)
+                            Text("2x").tag(2)
+                            Text("3x").tag(3)
+                            Text("4x").tag(4)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 120)
+                        .onChange(of: binning) { _, _ in onApply() }
+                    }
+                }
+                .padding(10)
+                .background(.black.opacity(0.75))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .disabled(!isEnabled)
+            }
+        }
+    }
+}
+
+// MARK: - Exposure Timer View
+private struct ExposureTimerView: View {
+    let startDate: Date
+    let durationSec: Double
+    let capturedCount: Int
+    let targetCount: Int
+
+    @State private var elapsed: Double = 0
+    private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                ProgressView(value: min(elapsed, durationSec), total: max(durationSec, 1))
+                    .tint(.orange)
+                Text(timeLabel)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .frame(width: 52, alignment: .trailing)
+            }
+            HStack {
+                ProgressView(
+                    value: Double(capturedCount),
+                    total: Double(max(targetCount, 1))
+                )
+                .tint(.green)
+                Text("\(capturedCount)/\(targetCount)")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .frame(width: 52, alignment: .trailing)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.black.opacity(0.6))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onReceive(timer) { _ in
+            elapsed = Date().timeIntervalSince(startDate)
+        }
+    }
+
+    private var timeLabel: String {
+        let remaining = max(0, durationSec - elapsed)
+        if remaining >= 10 {
+            return String(format: "-%ds", Int(remaining.rounded()))
+        } else {
+            return String(format: "-%.1fs", remaining)
+        }
     }
 }

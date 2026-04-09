@@ -836,7 +836,7 @@ struct SequencerView: View {
     private func instructionParamEditor(_ instruction: SequenceInstruction) -> some View {
         switch instruction.type {
         case SequenceInstruction.captureFrames:
-            paramDouble(instruction.id, key: "exposure_sec", label: "Exposure (sec)", defaultVal: 60)
+            paramExposure(instruction.id, key: "exposure_sec", label: "Exposure")
             paramInt(instruction.id, key: "count", label: "Frame Count", defaultVal: 10)
             paramInt(instruction.id, key: "gain", label: "Gain", defaultVal: 100)
             paramInt(instruction.id, key: "binning", label: "Binning", defaultVal: 1)
@@ -896,7 +896,7 @@ struct SequencerView: View {
         case SequenceInstruction.autofocus:
             paramInt(instruction.id, key: "step_size", label: "Step Size", defaultVal: 100)
             paramInt(instruction.id, key: "num_steps", label: "Sample Points", defaultVal: 9)
-            paramDouble(instruction.id, key: "exposure_sec", label: "Exposure (sec)", defaultVal: 3)
+            paramExposure(instruction.id, key: "exposure_sec", label: "Exposure")
             paramInt(instruction.id, key: "backlash_steps", label: "Backlash Steps", defaultVal: 200)
             paramDouble(instruction.id, key: "settle_sec", label: "Settle Time (sec)", defaultVal: 2)
             paramInt(instruction.id, key: "min_stars", label: "Min Stars", defaultVal: 4)
@@ -941,6 +941,22 @@ struct SequencerView: View {
         inspectorField(label) {
             DoubleField(value: bindInstructionParam(instructionId, key: key, default: .double(defaultVal)).doubleBinding)
                 .frame(width: 100)
+        }
+    }
+
+    private func paramExposure(_ instructionId: UUID, key: String, label: String) -> some View {
+        inspectorField(label) {
+            ExposureField(valueSec: bindInstructionParam(instructionId, key: key, default: .double(60)).doubleBinding)
+        }
+    }
+
+    private func formatExposure(_ sec: Double) -> String {
+        if sec < 1.0 {
+            return "\(Int((sec * 1000).rounded()))ms"
+        } else if sec.truncatingRemainder(dividingBy: 1) == 0 {
+            return "\(Int(sec))s"
+        } else {
+            return String(format: "%.1fs", sec)
         }
     }
 
@@ -1157,15 +1173,9 @@ struct SequencerView: View {
             }
 
             if engine.isRunning {
-                HStack {
-                    Text("Current: \(engine.currentInstruction)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("Frames: \(engine.totalFramesCaptured)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text("Current: \(engine.currentInstruction)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding()
@@ -1815,7 +1825,7 @@ struct SequencerView: View {
             let exp = instruction.params["exposure_sec"]?.doubleValue ?? 0
             let count = instruction.params["count"]?.intValue ?? 0
             let ditherOn = instruction.params["dither_enabled"]?.boolValue ?? false
-            var s = "\(count)x \(Int(exp))s"
+            var s = "\(count)x \(formatExposure(exp))"
             if ditherOn {
                 let px = instruction.params["dither_pixels"]?.doubleValue ?? 5.0
                 s += ", dither \(Int(px))px"
@@ -1976,6 +1986,80 @@ struct DoubleField: View {
 
     private func formatted(_ v: Double) -> String {
         String(format: "%.\(fractionDigits)f", v)
+    }
+}
+
+// MARK: - Exposure Field
+
+/// Exposure time field that auto-switches between ms (< 1 s) and s (>= 1 s).
+/// Value is always stored and bound in seconds.
+struct ExposureField: View {
+    @Binding var valueSec: Double
+    @State private var text: String = ""
+    @State private var inMs: Bool = false
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 2) {
+            TextField("", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 64)
+                .focused($isFocused)
+                .onAppear { syncTextFromValue() }
+                .onChange(of: valueSec) { _, _ in if !isFocused { syncTextFromValue() } }
+                .onChange(of: isFocused) { _, focused in if !focused { commit() } }
+                .onSubmit { commit() }
+
+            Text(inMs ? "ms" : "s")
+                .foregroundStyle(.secondary)
+                .frame(width: 18, alignment: .leading)
+
+            VStack(spacing: 0) {
+                Button { step(up: true) } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 8, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                Button { step(up: false) } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private func syncTextFromValue() {
+        if valueSec < 1.0 {
+            inMs = true
+            text = "\(Int((valueSec * 1000).rounded()))"
+        } else if valueSec.truncatingRemainder(dividingBy: 1) == 0 {
+            inMs = false
+            text = "\(Int(valueSec))"
+        } else {
+            inMs = false
+            text = String(format: "%.1f", valueSec)
+        }
+    }
+
+    private func commit() {
+        let normalized = text.replacingOccurrences(of: ",", with: ".")
+        guard let parsed = Double(normalized), parsed > 0 else {
+            syncTextFromValue()
+            return
+        }
+        valueSec = inMs ? parsed / 1000.0 : parsed
+        syncTextFromValue()
+    }
+
+    private func step(up: Bool) {
+        let stepSize: Double
+        if valueSec < 1.0 { stepSize = 0.1 }          // 100 ms steps
+        else if valueSec < 60.0 { stepSize = 1.0 }     // 1 s steps
+        else if valueSec < 300.0 { stepSize = 30.0 }   // 30 s steps
+        else { stepSize = 60.0 }                        // 60 s steps
+        valueSec = max(0.1, up ? valueSec + stepSize : valueSec - stepSize)
+        syncTextFromValue()
     }
 }
 

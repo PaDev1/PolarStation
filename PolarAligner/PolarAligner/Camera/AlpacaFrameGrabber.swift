@@ -12,6 +12,15 @@ final class AlpacaFrameGrabber {
     /// Called on error (from capture thread). Used to surface errors to UI.
     var onError: ((String) -> Void)?
 
+    /// Called for diagnostic log messages (from capture thread).
+    var onLog: ((String) -> Void)?
+
+    /// Called when each new exposure begins. Arg is duration in seconds.
+    var onExposureStarted: ((Double) -> Void)?
+
+    /// Stop after this many frames (0 = run indefinitely). Set before start().
+    var maxFrames: Int = 0
+
     private var captureThread: Thread?
     private var isRunning = false
     private(set) var frameCount: UInt64 = 0
@@ -36,8 +45,23 @@ final class AlpacaFrameGrabber {
         }
         guard !isRunning else { return }
 
-        // Configure binning and gain
-        try camera.configure(bin: settings.binning, gain: settings.gain)
+        // Configure binning and gain.
+        // Retry up to 3 times: ASCOM drivers can reject configure commands for a
+        // brief window after abortExposure while transitioning back to Idle state.
+        var configError: Error?
+        for attempt in 1...3 {
+            do {
+                try camera.configure(bin: settings.binning, gain: settings.gain)
+                onLog?("configure OK (attempt \(attempt))")
+                configError = nil
+                break
+            } catch {
+                configError = error
+                onLog?("configure attempt \(attempt) failed: \(error.localizedDescription) — retrying in 500ms")
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+        }
+        if let err = configError { throw err }
 
         // Compute post-binning dimensions
         captureWidth = Int(info.width) / settings.binning
@@ -69,40 +93,83 @@ final class AlpacaFrameGrabber {
 
     private func captureLoop() {
         let exposureSecs = settings.exposureMs / 1000.0
-        print("[AlpacaFrameGrabber] Starting capture loop: \(captureWidth)x\(captureHeight), exposure=\(exposureSecs)s")
+        let mode = maxFrames > 0 ? "capture(\(maxFrames))" : "live"
+        let msg = "Loop start: \(mode) \(captureWidth)x\(captureHeight) exp=\(String(format:"%.3f",exposureSecs))s"
+        onLog?(msg)
+        print("[AlpacaFrameGrabber] \(msg)")
 
         while isRunning && !Thread.current.isCancelled {
+            // Check maxFrames before starting the next exposure
+            if maxFrames > 0 && frameCount >= UInt64(maxFrames) {
+                let done = "maxFrames \(maxFrames) reached, stopping"
+                onLog?(done); print("[AlpacaFrameGrabber] \(done)")
+                break
+            }
+
             do {
                 // Start exposure
-                print("[AlpacaFrameGrabber] Starting exposure \(exposureSecs)s...")
+                let exposureStart = Date()
+                let startMsg = "startExposure \(String(format:"%.3f",exposureSecs))s (frame \(frameCount+1))"
+                onLog?(startMsg); print("[AlpacaFrameGrabber] \(startMsg)")
+                onExposureStarted?(exposureSecs)
                 try camera.startExposure(durationSecs: exposureSecs)
-                print("[AlpacaFrameGrabber] Exposure started, polling for ready...")
+                onLog?("startExposure returned OK")
 
-                // Poll until image is ready (every 50ms)
+                // Wait most of the exposure duration before polling.
+                // Some Alpaca/INDIGO servers don't clear isImageReady immediately
+                // after startExposure — polling too early picks up stale state from
+                // the previous frame and downloads a premature image.
+                let prePollWait = max(0.0, exposureSecs - 2.0)
+                if prePollWait > 0 {
+                    onLog?("pre-poll sleep \(String(format:"%.1f",prePollWait))s")
+                    var waited = 0.0
+                    while isRunning && !Thread.current.isCancelled && waited < prePollWait {
+                        let chunk = min(0.5, prePollWait - waited)
+                        Thread.sleep(forTimeInterval: chunk)
+                        waited = Date().timeIntervalSince(exposureStart)
+                    }
+                    guard isRunning && !Thread.current.isCancelled else {
+                        onLog?("stopped during pre-poll sleep"); continue
+                    }
+                }
+
+                // Poll isImageReady (every 50ms) until ready or timeout.
+                // Also require that at least 90% of the exposure time has elapsed
+                // to reject any stale "ready" that slipped through the pre-poll wait.
                 var ready = false
-                let pollStart = Date()
-                let timeout = exposureSecs + 10.0 // generous timeout
+                let timeout = exposureSecs + 10.0
                 while isRunning && !Thread.current.isCancelled {
-                    if let r = try? camera.isImageReady(), r {
+                    let elapsed = Date().timeIntervalSince(exposureStart)
+                    if let r = try? camera.isImageReady(), r,
+                       elapsed >= exposureSecs * 0.9 {
+                        let readyMsg = "imageReady=true at \(String(format:"%.2f",elapsed))s (90% guard=\(String(format:"%.2f",exposureSecs*0.9))s)"
+                        onLog?(readyMsg); print("[AlpacaFrameGrabber] \(readyMsg)")
                         ready = true
                         break
                     }
-                    if Date().timeIntervalSince(pollStart) > timeout {
-                        print("[AlpacaFrameGrabber] Timeout waiting for image ready")
+                    if elapsed > timeout {
+                        let toMsg = "TIMEOUT after \(String(format:"%.1f",elapsed))s"
+                        onLog?(toMsg); print("[AlpacaFrameGrabber] \(toMsg)")
                         onError?("Timeout waiting for exposure")
                         break
                     }
                     Thread.sleep(forTimeInterval: 0.05)
                 }
 
-                guard isRunning && ready else { continue }
+                guard isRunning && ready else {
+                    if !isRunning { onLog?("stopped during poll") }
+                    continue
+                }
 
                 // Download image
                 let dlStart = Date()
+                onLog?("downloadImage...")
                 let data = try camera.downloadImage()
                 let dlTime = Date().timeIntervalSince(dlStart)
+                let elapsed = Date().timeIntervalSince(exposureStart)
                 frameCount += 1
-                print("[AlpacaFrameGrabber] Frame \(frameCount): \(data.count) bytes, download \(String(format: "%.2f", dlTime))s")
+                let dlMsg = "frame \(frameCount): \(data.count) bytes, dl=\(String(format:"%.2f",dlTime))s total=\(String(format:"%.2f",elapsed))s"
+                onLog?(dlMsg); print("[AlpacaFrameGrabber] \(dlMsg)")
 
                 // Deliver frame through delegate
                 let bytesPerPixel = settings.bytesPerPixel
@@ -123,13 +190,17 @@ final class AlpacaFrameGrabber {
                 }
             } catch {
                 if isRunning {
-                    print("[AlpacaFrameGrabber] Error: \(error)")
+                    let errMsg = "ERROR: \(error.localizedDescription)"
+                    onLog?(errMsg); print("[AlpacaFrameGrabber] \(errMsg)")
                     onError?(error.localizedDescription)
                     Thread.sleep(forTimeInterval: 0.5)
+                } else {
+                    onLog?("error after stop (ignored): \(error.localizedDescription)")
                 }
             }
         }
-        print("[AlpacaFrameGrabber] Capture loop ended")
+        let endMsg = "Loop ended (frameCount=\(frameCount))"
+        onLog?(endMsg); print("[AlpacaFrameGrabber] \(endMsg)")
     }
 }
 

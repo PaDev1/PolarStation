@@ -39,11 +39,28 @@ struct CaptureFramesExecutor: InstructionExecutor {
             }
         }
 
-        // Build camera settings
+        // Build camera settings: instruction params override Settings tab values.
+        // Unspecified params fall back to the current Settings tab values (UserDefaults).
+        let baseGain = Int(UserDefaults.standard.double(forKey: "gain").rounded())
+        let baseGainResolved = baseGain > 0 ? baseGain : 300
+        let baseBinning = UserDefaults.standard.integer(forKey: "binning")
+        let baseBinningResolved = baseBinning > 0 ? baseBinning : 1
+
+        let finalGain = gain ?? baseGainResolved
+        let finalBinning = binning ?? baseBinningResolved
+        let finalExposureMs = exposureSec * 1000
+
         var settings = CameraSettings()
-        settings.exposureMs = exposureSec * 1000
-        if let gain { settings.gain = gain }
-        if let binning { settings.binning = binning }
+        settings.exposureMs = finalExposureMs
+        settings.gain = finalGain
+        settings.binning = finalBinning
+
+        // Push resolved settings back so Camera tab reflects what the sequencer is using
+        await MainActor.run {
+            UserDefaults.standard.set(finalExposureMs, forKey: "exposureMs")
+            UserDefaults.standard.set(Double(finalGain), forKey: "gain")
+            UserDefaults.standard.set(finalBinning, forKey: "binning")
+        }
 
         // Resolve capture format from Settings
         let formatRaw = UserDefaults.standard.string(forKey: "captureFormat") ?? "fits"

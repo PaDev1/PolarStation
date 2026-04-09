@@ -68,6 +68,7 @@ struct SettingsView: View {
     @AppStorage("binning") private var binning: Int = 2
     @AppStorage("cameraAlpacaHost") private var cameraAlpacaHost: String = "192.168.8.30"
     @AppStorage("cameraAlpacaPort") private var cameraAlpacaPort: Int = 11111
+    @AppStorage("cameraAlpacaDeviceIndex") private var cameraAlpacaDeviceIndex: Int = 0
 
     // Guide camera
     @AppStorage("guideCameraSource") private var guideCameraSourceRaw: String = CameraSource.usb.rawValue
@@ -79,6 +80,7 @@ struct SettingsView: View {
     @AppStorage("guideBinning") private var guideBinning: Int = 2
     @AppStorage("guideCameraAlpacaHost") private var guideCameraAlpacaHost: String = "192.168.8.30"
     @AppStorage("guideCameraAlpacaPort") private var guideCameraAlpacaPort: Int = 11111
+    @AppStorage("guideCameraAlpacaDeviceIndex") private var guideCameraAlpacaDeviceIndex: Int = 0
     @AppStorage("guideCapturePrefix") private var guideCapturePrefix: String = "guide"
 
     // Filter wheel
@@ -1634,8 +1636,10 @@ struct SettingsView: View {
             let idx = cameraViewModel.selectedAlpacaDevice
             if idx >= 0, idx < cameraViewModel.alpacaDevices.count {
                 cameraViewModel.alpacaDeviceNumber = cameraViewModel.alpacaDevices[idx].deviceNumber
+                cameraAlpacaDeviceIndex = idx
             } else {
                 cameraViewModel.alpacaDeviceNumber = 0
+                cameraAlpacaDeviceIndex = 0
             }
             cameraViewModel.connect()
         } else {
@@ -1655,8 +1659,10 @@ struct SettingsView: View {
             let idx = guideCameraViewModel.selectedAlpacaDevice
             if idx >= 0, idx < guideCameraViewModel.alpacaDevices.count {
                 guideCameraViewModel.alpacaDeviceNumber = guideCameraViewModel.alpacaDevices[idx].deviceNumber
+                guideCameraAlpacaDeviceIndex = idx
             } else {
                 guideCameraViewModel.alpacaDeviceNumber = 0
+                guideCameraAlpacaDeviceIndex = 0
             }
             guideCameraViewModel.connect()
         } else {

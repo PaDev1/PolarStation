@@ -44,18 +44,25 @@ struct CaptureMetadata {
     let bytesPerPixel: Int
     let observerLat: Double?
     let observerLon: Double?
+    /// J2000 plate-solved RA in degrees (nil if no solve available).
+    let solvedRA: Double?
+    /// J2000 plate-solved Dec in degrees (nil if no solve available).
+    let solvedDec: Double?
 }
 
 enum FrameSaverError: Error, LocalizedError {
     case imageCreation
     case destinationCreation
     case writeFailed
+    case incompleteFrame(got: Int, expected: Int, width: Int, height: Int, bpp: Int)
 
     var errorDescription: String? {
         switch self {
         case .imageCreation: return "Failed to create image from raw data"
         case .destinationCreation: return "Failed to create file destination"
         case .writeFailed: return "Failed to write file"
+        case .incompleteFrame(let got, let expected, let w, let h, let bpp):
+            return "Incomplete frame: got \(got) bytes, expected \(expected) (\(w)×\(h)×\(bpp)bpp) — frame dropped"
         }
     }
 }
@@ -66,6 +73,13 @@ enum FrameSaver {
 
     static func save(data: Data, metadata: CaptureMetadata, format: CaptureFormat,
                       colorMode: CaptureColorMode = .rgb, to url: URL) throws {
+        let expectedBytes = metadata.width * metadata.height * metadata.bytesPerPixel
+        guard data.count >= expectedBytes else {
+            throw FrameSaverError.incompleteFrame(
+                got: data.count, expected: expectedBytes,
+                width: metadata.width, height: metadata.height, bpp: metadata.bytesPerPixel
+            )
+        }
         switch format {
         case .fits: try saveFITS(data: data, metadata: metadata, colorMode: colorMode, to: url)
         case .tiff: try saveTIFF(data: data, metadata: metadata, colorMode: colorMode, to: url)
@@ -147,6 +161,14 @@ enum FrameSaver {
         }
         if let lon = metadata.observerLon {
             records.append(fitsRecord("SITELONG", float: lon, comment: "[deg] Observer longitude"))
+        }
+
+        // Plate-solved position
+        if let ra = metadata.solvedRA, let dec = metadata.solvedDec {
+            records.append(fitsRecord("RA", float: ra, comment: "[deg] J2000 RA from plate solve"))
+            records.append(fitsRecord("DEC", float: dec, comment: "[deg] J2000 Dec from plate solve"))
+            records.append(fitsRecord("OBJCTRA", string: raToSexagesimal(ra), comment: "RA (J2000)"))
+            records.append(fitsRecord("OBJCTDEC", string: decToSexagesimal(dec), comment: "Dec (J2000)"))
         }
 
         // Software
@@ -534,6 +556,28 @@ enum FrameSaver {
         let fmt = ISO8601DateFormatter()
         fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return fmt.string(from: Date())
+    }
+
+    // MARK: - Sexagesimal Formatters
+
+    /// Format RA in degrees as "HH MM SS.SS" (OBJCTRA convention).
+    private static func raToSexagesimal(_ raDeg: Double) -> String {
+        let totalSec = (raDeg / 15.0) * 3600.0
+        let h = Int(totalSec / 3600)
+        let m = Int((totalSec - Double(h) * 3600) / 60)
+        let s = totalSec - Double(h) * 3600 - Double(m) * 60
+        return String(format: "%02d %02d %05.2f", h, m, s)
+    }
+
+    /// Format Dec in degrees as "+DD MM SS.S" (OBJCTDEC convention).
+    private static func decToSexagesimal(_ decDeg: Double) -> String {
+        let sign = decDeg < 0 ? "-" : "+"
+        let abs = Swift.abs(decDeg)
+        let totalSec = abs * 3600.0
+        let d = Int(totalSec / 3600)
+        let m = Int((totalSec - Double(d) * 3600) / 60)
+        let s = totalSec - Double(d) * 3600 - Double(m) * 60
+        return String(format: "%@%02d %02d %04.1f", sign, d, m, s)
     }
 
     // MARK: - FITS Record Builders
