@@ -2,7 +2,7 @@
 
 A macOS application for telescope control, astrophotography, and polar alignment.
 
-> **Hobby project** — This software is provided as-is, with no warranty. Use at your own risk. The author assumes no responsibility for any damage to equipment or data loss resulting from use of this software.
+> **Hobby project** — This software is provided as-is, with no warranty. Use at your own risk. The author assumes no responsibility for any damage to equipment or data loss resulting from use of this software. SW is in alpha state, but has been used successfully for deepsky astrophotography. 
 
 ## Features
 
