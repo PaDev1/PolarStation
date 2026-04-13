@@ -12,9 +12,6 @@ struct GuideTabView: View {
     @ObservedObject var simulatedGuideEngine: SimulatedGuideEngine
 
     // Guide camera settings from @AppStorage
-    @AppStorage("guideCameraSource") private var sourceRaw: String = CameraSource.usb.rawValue
-    @AppStorage("guideCameraAlpacaHost") private var alpacaHost: String = "192.168.8.30"
-    @AppStorage("guideCameraAlpacaPort") private var alpacaPort: Int = 11111
     @AppStorage("guideExposureMs") private var exposureMs: Double = 500
     @AppStorage("guideGain") private var guideGain: Double = 300
     @AppStorage("guideBinning") private var guideBinning: Int = 2
@@ -37,7 +34,6 @@ struct GuideTabView: View {
         case simulate = "Simulate"
     }
 
-    private var isAlpaca: Bool { sourceRaw == CameraSource.alpaca.rawValue }
     private var isSimulating: Bool { mode == .simulate }
 
     var body: some View {
@@ -98,11 +94,6 @@ struct GuideTabView: View {
             session.minMoveArcsec = savedMinMove
             session.decMode = savedDecMode
 
-            if isAlpaca {
-                cameraViewModel.discoverAlpacaCameras(host: alpacaHost, port: UInt32(alpacaPort))
-            } else {
-                cameraViewModel.discoverCameras()
-            }
             cameraViewModel.starDetectionEnabled = true
             // Start the guide camera live view if it isn't already running.
             // resumeLiveView() only fires when wasLiveBeforePause=true, so use
@@ -272,46 +263,14 @@ struct GuideTabView: View {
     private var cameraGroupBox: some View {
         GroupBox("Camera") {
             VStack(alignment: .leading, spacing: 8) {
-                if isAlpaca {
-                    Picker("Camera", selection: $cameraViewModel.selectedAlpacaDevice) {
-                        Text("No camera").tag(-1)
-                        ForEach(Array(cameraViewModel.alpacaDevices.enumerated()), id: \.offset) { index, dev in
-                            Text(dev.deviceName).tag(index)
-                        }
-                    }
-
-                    HStack {
-                        Button {
-                            cameraViewModel.discoverAlpacaCameras(host: alpacaHost, port: UInt32(alpacaPort))
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .disabled(cameraViewModel.isDiscoveringAlpacaDevices)
-
-                        if cameraViewModel.isDiscoveringAlpacaDevices {
-                            ProgressView().controlSize(.small)
-                        }
-                    }
-                } else {
-                    Picker("Camera", selection: $cameraViewModel.selectedCameraIndex) {
-                        Text("No camera").tag(-1)
-                        ForEach(Array(cameraViewModel.discoveredCameras.enumerated()), id: \.offset) { index, cam in
-                            Text(cam.name).tag(index)
-                        }
-                    }
-
-                    Button(action: cameraViewModel.discoverCameras) {
-                        Image(systemName: "arrow.clockwise")
-                    }
+                if !cameraViewModel.isConnected {
+                    Text("Connect guide camera in Settings")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 HStack(spacing: 8) {
                     if cameraViewModel.isConnected {
-                        Button("Disconnect") {
-                            cameraViewModel.disconnect()
-                        }
-                        .buttonStyle(.bordered)
-
                         if cameraViewModel.isCapturing {
                             Button("Stop") {
                                 cameraViewModel.stopCapture()
@@ -324,12 +283,6 @@ struct GuideTabView: View {
                             }
                             .buttonStyle(.borderedProminent)
                         }
-                    } else {
-                        Button("Connect") {
-                            connectCamera()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!canConnect)
                     }
                 }
 
@@ -735,10 +688,6 @@ struct GuideTabView: View {
 
     // MARK: - Helpers
 
-    private var canConnect: Bool {
-        isAlpaca ? cameraViewModel.selectedAlpacaDevice >= 0 : cameraViewModel.selectedCamera != nil
-    }
-
     /// Find the current position of the guide star by matching nearest detected star.
     /// This makes the crosshair follow the star as it drifts.
     /// Updates the anchor so subsequent matches search near the last known position,
@@ -824,23 +773,6 @@ struct GuideTabView: View {
             return simulatedGuideEngine.isRunning && cameraViewModel.isCapturing
         }
         return cameraViewModel.isCapturing && mountService.isConnected
-    }
-
-    private func connectCamera() {
-        if isAlpaca {
-            cameraViewModel.cameraSource = .alpaca
-            cameraViewModel.alpacaHost = alpacaHost
-            cameraViewModel.alpacaPort = UInt32(alpacaPort)
-            let idx = cameraViewModel.selectedAlpacaDevice
-            if idx >= 0, idx < cameraViewModel.alpacaDevices.count {
-                cameraViewModel.alpacaDeviceNumber = cameraViewModel.alpacaDevices[idx].deviceNumber
-            } else {
-                cameraViewModel.alpacaDeviceNumber = 0
-            }
-        } else {
-            cameraViewModel.cameraSource = .usb
-        }
-        cameraViewModel.connect()
     }
 
     private func startLive() {

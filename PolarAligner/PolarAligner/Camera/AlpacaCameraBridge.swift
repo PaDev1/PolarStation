@@ -30,10 +30,16 @@ final class AlpacaCameraBridge {
         controller.isConnected()
     }
 
-    /// Configure binning and gain.
+    /// Configure binning and gain. Gain is clamped to the device's reported range.
     func configure(bin: Int, gain: Int) throws {
         try controller.setBinning(bin: UInt8(bin))
-        try controller.setGain(gain: Int32(gain))
+        let clampedGain: Int32
+        if let info = info {
+            clampedGain = max(info.gainMin, min(info.gainMax, Int32(gain)))
+        } else {
+            clampedGain = Int32(gain)
+        }
+        try controller.setGain(gain: clampedGain)
         currentBin = bin
     }
 

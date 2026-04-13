@@ -743,8 +743,11 @@ struct MountTabView: View {
                     }
 
                     HStack(spacing: 12) {
-                        statusBadge(s.tracking ? "Tracking" : "Idle", color: s.tracking ? .green : .gray)
-                        if s.slewing { statusBadge("Slewing", color: .orange) }
+                        if s.slewing {
+                            statusBadge("Slewing", color: .orange)
+                        } else {
+                            statusBadge(s.tracking ? "Tracking" : "Idle", color: s.tracking ? .green : .gray)
+                        }
                         if s.atPark { statusBadge("Parked", color: .blue) }
                     }
                 } else {

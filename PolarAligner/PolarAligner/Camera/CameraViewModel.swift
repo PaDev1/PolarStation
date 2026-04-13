@@ -589,12 +589,7 @@ final class CameraViewModel: ObservableObject {
             self.frameForwarder.onSaveFrame = nil
             self.frameForwarder.onFrameReceived = nil
 
-            // Auto-boost binning for Alpaca to speed up preview (network transfer is the bottleneck)
-            var liveSettings = settings
-            if self.cameraSource == .alpaca && liveSettings.binning < 2 {
-                liveSettings.binning = 2
-            }
-            self.startCaptureInternal(settings: liveSettings)
+            self.startCaptureInternal(settings: settings)
         }
     }
 

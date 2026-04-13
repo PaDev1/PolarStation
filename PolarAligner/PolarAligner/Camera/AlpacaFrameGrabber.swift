@@ -45,11 +45,15 @@ final class AlpacaFrameGrabber {
         }
         guard !isRunning else { return }
 
+        // Abort any lingering exposure before configuring — clears stuck Exposing/Download
+        // state left over from a previous session or an aborted live view.
+        try? camera.abortExposure()
+
         // Configure binning and gain.
-        // Retry up to 3 times: ASCOM drivers can reject configure commands for a
-        // brief window after abortExposure while transitioning back to Idle state.
+        // Retry up to 12 times (6s total): ASCOM drivers can reject configure commands
+        // for several seconds after abortExposure while transitioning back to Idle state.
         var configError: Error?
-        for attempt in 1...3 {
+        for attempt in 1...12 {
             do {
                 try camera.configure(bin: settings.binning, gain: settings.gain)
                 onLog?("configure OK (attempt \(attempt))")
