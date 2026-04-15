@@ -47,9 +47,6 @@ final class SimulatedAlignmentEngine: ObservableObject {
     @Published var initialDec: Double = 60.0      // degrees
     @Published var initialRA: Double? = nil        // nil = auto from LST
 
-    /// Star detector toggle.
-    @Published var useClassicalDetector: Bool = true
-
     /// Detected star count from last frame.
     @Published var lastDetectedCount: Int = 0
 
@@ -95,7 +92,6 @@ final class SimulatedAlignmentEngine: ObservableObject {
     // MARK: - Detection
 
     private let classicalDetector = ClassicalDetector()
-    private var coremlDetector: CoreMLDetector?
 
     // MARK: - Catalog cache
 
@@ -161,17 +157,6 @@ final class SimulatedAlignmentEngine: ObservableObject {
             self.device = dev
             self.commandQueue = dev.makeCommandQueue()
             setupMetalResources(device: dev)
-        }
-
-        // Load CoreML detector if needed
-        if !useClassicalDetector && coremlDetector == nil {
-            let detector = CoreMLDetector()
-            do {
-                try detector.loadModel(named: "StarDetector")
-                coremlDetector = detector
-            } catch {
-                statusMessage = "CoreML model not available, using classical"
-            }
         }
 
         // Load catalog
@@ -555,19 +540,13 @@ final class SimulatedAlignmentEngine: ObservableObject {
 
     // MARK: - Star Detection
 
-    private func detectStars(useClassical: Bool? = nil) -> [DetectedStar] {
+    private func detectStars() -> [DetectedStar] {
         guard let sfTex = starFieldTexture,
               let dev = device,
               let queue = commandQueue else { return [] }
 
-        let classical = useClassical ?? (useClassicalDetector || coremlDetector == nil)
-
         do {
-            if classical {
-                return try classicalDetector.detectStars(in: sfTex, device: dev, commandQueue: queue)
-            } else {
-                return try coremlDetector!.detectStars(in: sfTex, device: dev, commandQueue: queue)
-            }
+            return try classicalDetector.detectStars(in: sfTex, device: dev, commandQueue: queue)
         } catch {
             print("[SimAlign] Detection error: \(error)")
             return []
@@ -594,7 +573,7 @@ final class SimulatedAlignmentEngine: ObservableObject {
                 uploadTexture()
             }
 
-            let detected = detectStars(useClassical: true)
+            let detected = detectStars()
             if !detected.isEmpty {
                 allDetections.append(detected)
             }

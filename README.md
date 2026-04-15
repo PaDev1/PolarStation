@@ -13,7 +13,8 @@ A macOS application for telescope control, astrophotography, and polar alignment
 - **Sequencer** — Visual sequence builder with containers, conditions, triggers, and 30+ instruction types covering all connected devices. AI-assisted sequence building via the assistant
 - **AI Assistant** — LLM-powered assistant with tool use for mount control, sky information, weather, catalog search, and device commands
 - **Full ASCOM/Alpaca Support** — All 10 standard device types: Camera, Mount, Focuser, Filter Wheel, Rotator, Dome, Switch, Safety Monitor, Cover Calibrator, Observing Conditions
-- **ZWO ASI Cameras** — Native USB support for ZWO ASI cameras via the ASI SDK
+- **ZWO ASI Cameras** — Native USB support for ZWO ASI cameras via the ASI SDK (live view, capture, video mode SER recording)
+- **Canon DSLR / Mirrorless** — Native USB support for Canon EOS cameras via the Canon EDSDK (live view, still capture, EVF video SER recording). Canon SDK is obtained separately — see [Canon EDSDK](#canon-edsdk-not-bundled) below
 - **Mount Protocols** — LX200 (serial & TCP) and ASCOM Alpaca
 
 ## Architecture
@@ -114,6 +115,38 @@ The built app is located in Xcode's DerivedData directory.
 | SDK | License | Purpose |
 |-----|---------|---------|
 | [ZWO ASI Camera SDK](https://www.zwoastro.com/software/) | Proprietary (freely distributed) | ZWO ASI USB camera support |
+| [Canon EDSDK](https://developercommunity.usa.canon.com/s/) | Proprietary — **not redistributable** (see below) | Canon EOS USB camera support |
+
+## Canon EDSDK (not bundled)
+
+Canon's EOS SDK ("EDSDK") is proprietary software. Canon's license agreement prohibits redistribution of the SDK (headers, libraries, documentation) outside of end-user applications that you build yourself. For this reason, **the EDSDK is not included in this repository**.
+
+If you want to use Canon USB cameras with PolarStation, you need to download the SDK from Canon directly:
+
+1. Go to the [Canon Developer Community](https://developercommunity.usa.canon.com/s/) (or your regional Canon developer portal) and register for a free developer account.
+2. Accept the EDSDK License Agreement and download **EDSDK for macOS** (tested version: **13.20.10**).
+3. Unzip and copy the framework + headers into the repo before building:
+
+    ```bash
+    # inside the unzipped EDSDK folder
+    mkdir -p PolarAligner/Vendor/EDSDK
+    cp -R Macintosh/Macintosh.dmg  # or the already-mounted contents
+    # end result should be:
+    #   PolarAligner/Vendor/EDSDK/EDSDK.framework/
+    #   PolarAligner/Vendor/EDSDK/Header/EDSDK.h
+    #   PolarAligner/Vendor/EDSDK/Header/EDSDKTypes.h
+    #   PolarAligner/Vendor/EDSDK/Header/EDSDKErrors.h
+    ```
+
+4. Run `./build.sh`.
+
+The `PolarAligner/Vendor/EDSDK/` directory is gitignored and will never be committed.
+
+If you do **not** need Canon camera support, you can skip these steps — the build will still succeed because the Xcode project references the framework, but camera discovery simply won't list any Canon devices. (If the build fails without the SDK present, remove the EDSDK references from `PolarAligner.xcodeproj/project.pbxproj` or set `FRAMEWORK_SEARCH_PATHS` accordingly.)
+
+**Using pre-built releases**: the binary in GitHub Releases embeds EDSDK.framework because end-user distribution of the compiled binary inside an application is permitted by the EDSDK license. The source repository itself does not redistribute it.
+
+Canon, EOS, and EDSDK are trademarks of Canon Inc. PolarStation is not affiliated with, endorsed by, or sponsored by Canon Inc.
 
 ### Sky Imagery
 

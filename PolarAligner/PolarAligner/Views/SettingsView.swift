@@ -124,8 +124,11 @@ struct SettingsView: View {
     @AppStorage("genCatalogType") private var genCatalogType: String = "hipparcos"
     @AppStorage("genCatalogPath") private var genCatalogPath: String = ""
     @AppStorage("genMaxMagnitude") private var genMaxMagnitude: Double = 10.0
-    private let genMinFOV: Double = 0.5
-    private let genMaxFOV: Double = 5.0
+    // FOV range for catalog pattern generation. Must encompass the actual
+    // imaging FOV — patterns outside this range won't match.
+    // 0.2°–10° covers ~250mm to ~3000mm focal length on most imaging chips.
+    private let genMinFOV: Double = 0.2
+    private let genMaxFOV: Double = 10.0
     @State private var isGeneratingDB = false
     @State private var genDBResult: String?
     @State private var genDBError: String?
@@ -1736,7 +1739,25 @@ struct SettingsView: View {
     private func discoverCameras() {
         isDiscoveringCameras = true
         DispatchQueue.global(qos: .userInitiated).async {
-            let cameras = (try? ASICameraBridge.listCameras()) ?? []
+            var cameras = (try? ASICameraBridge.listCameras()) ?? []
+            if let canonList = try? CanonCameraBridge.listCameras() {
+                for (i, info) in canonList.enumerated() {
+                    let pseudo = ASICameraInfo(
+                        name: info.productName + " (Canon)",
+                        cameraID: canonCameraID(for: i),
+                        maxWidth: 0, maxHeight: 0,
+                        isColorCamera: true,
+                        bayerPattern: .rg,
+                        supportedBins: [1],
+                        pixelSize: 0,
+                        hasCooler: false,
+                        isUSB3: true,
+                        bitDepth: 14,
+                        electronPerADU: 0
+                    )
+                    cameras.append(pseudo)
+                }
+            }
             DispatchQueue.main.async {
                 discoveredCameras = cameras
                 if selectedCameraIndex < 0, !cameras.isEmpty {
@@ -1832,6 +1853,8 @@ struct SettingsView: View {
         genDBError = nil
 
         let mag = genMaxMagnitude
+        let minFov = genMinFOV
+        let maxFov = genMaxFOV
         let destDir = Self.polarStationDataDir
         let csvPath = destDir.appendingPathComponent("gaia_dr3_mag\(String(format: "%.1f", mag)).csv")
         let dbPath = destDir.appendingPathComponent("star_catalog.rkyv")
@@ -1839,23 +1862,52 @@ struct SettingsView: View {
 
         Task.detached {
             do {
-                // Step 1: Download from Gaia TAP service
+                // Step 1: Download from Gaia TAP service.
+                // Must use POST with form-encoded params — GET returns an HTML error page.
                 let query = "SELECT source_id,ra,dec,pmra,pmdec,phot_g_mean_mag FROM gaiadr3.gaia_source WHERE phot_g_mean_mag < \(mag) ORDER BY phot_g_mean_mag"
+                guard let url = URL(string: "https://gea.esac.esa.int/tap-server/tap/sync") else {
+                    throw NSError(domain: "", code: -1)
+                }
 
-                var components = URLComponents(string: "https://gea.esac.esa.int/tap-server/tap/sync")!
-                components.queryItems = [
-                    URLQueryItem(name: "REQUEST", value: "doQuery"),
-                    URLQueryItem(name: "LANG", value: "ADQL"),
-                    URLQueryItem(name: "FORMAT", value: "csv"),
-                    URLQueryItem(name: "MAXREC", value: "5000000"),
-                    URLQueryItem(name: "QUERY", value: query),
-                ]
+                func formEncode(_ pairs: [(String, String)]) -> String {
+                    var allowed = CharacterSet.urlQueryAllowed
+                    allowed.remove(charactersIn: "&=+")
+                    return pairs.map { k, v in
+                        let ek = k.addingPercentEncoding(withAllowedCharacters: allowed) ?? k
+                        let ev = v.addingPercentEncoding(withAllowedCharacters: allowed) ?? v
+                        return "\(ek)=\(ev)"
+                    }.joined(separator: "&")
+                }
 
-                guard let url = components.url else { throw NSError(domain: "", code: -1) }
+                let body = formEncode([
+                    ("REQUEST", "doQuery"),
+                    ("LANG", "ADQL"),
+                    ("FORMAT", "csv"),
+                    ("MAXREC", "5000000"),
+                    ("QUERY", query),
+                ])
+
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                request.setValue("text/csv", forHTTPHeaderField: "Accept")
+                request.httpBody = body.data(using: .utf8)
+                request.timeoutInterval = 600
 
                 await MainActor.run { downloadStatus = "Downloading Gaia DR3 mag≤\(String(format: "%.1f", mag))..." }
 
-                let (bytes, response) = try await URLSession.shared.bytes(from: url)
+                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                if let http = response as? HTTPURLResponse {
+                    let ct = http.value(forHTTPHeaderField: "Content-Type") ?? ""
+                    if http.statusCode != 200 {
+                        throw NSError(domain: "GaiaTAP", code: http.statusCode,
+                                      userInfo: [NSLocalizedDescriptionKey: "Gaia TAP returned HTTP \(http.statusCode)"])
+                    }
+                    if ct.contains("text/html") {
+                        throw NSError(domain: "GaiaTAP", code: -3,
+                                      userInfo: [NSLocalizedDescriptionKey: "Gaia archive is unavailable (returned HTML — likely scheduled maintenance at gea.esac.esa.int). Try again later."])
+                    }
+                }
                 let totalSize = (response as? HTTPURLResponse)
                     .flatMap { Int($0.value(forHTTPHeaderField: "Content-Length") ?? "") } ?? 0
 
@@ -1893,9 +1945,15 @@ struct SettingsView: View {
                 if !buffer.isEmpty { handle.write(buffer) }
                 handle.closeFile()
 
+                let starCount = max(0, lineCount - 1)
+                if starCount == 0 {
+                    throw NSError(domain: "GaiaTAP", code: -2,
+                                  userInfo: [NSLocalizedDescriptionKey: "Gaia returned 0 stars (query may have failed)"])
+                }
+
                 await MainActor.run {
                     downloadProgress = 0.4
-                    downloadStatus = "Downloaded \(lineCount - 1) stars. Converting to solver format..."
+                    downloadStatus = "Downloaded \(starCount) stars. Converting to solver format..."
                     genCatalogPath = csvPath.path
                     isGeneratingDB = true
                 }
@@ -1912,8 +1970,8 @@ struct SettingsView: View {
                     catalogType: "hipparcos",
                     outputPath: dbPath.path,
                     maxMagnitude: Double(mag),
-                    minFovDeg: 0.5,
-                    maxFovDeg: 5.0
+                    minFovDeg: minFov,
+                    maxFovDeg: maxFov
                 )
 
                 // Step 4: Auto-load

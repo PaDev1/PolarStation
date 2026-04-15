@@ -217,8 +217,8 @@ struct WelcomeView: View {
                     catalogType: "hipparcos",
                     outputPath: dbPath.path,
                     maxMagnitude: Double(mag),
-                    minFovDeg: 0.5,
-                    maxFovDeg: 5.0
+                    minFovDeg: 0.2,
+                    maxFovDeg: 10.0
                 )
 
                 // Load the database

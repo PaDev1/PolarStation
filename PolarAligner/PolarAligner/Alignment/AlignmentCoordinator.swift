@@ -518,38 +518,16 @@ final class AlignmentCoordinator: ObservableObject {
         stepLabel: String
     ) async throws -> SolveResult? {
         // Try primary solve
-        let primaryDetector = cameraViewModel.forceClassicalDetector ? "classical" : "CoreML"
-        statusMessage = "\(stepLabel): Plate solving (\(stars.count) stars, \(primaryDetector))..."
+        statusMessage = "\(stepLabel): Plate solving (\(stars.count) stars)..."
 
         if let result = try? await plateSolveService.solveRobust(centroids: stars),
            result.success {
             return result
         }
 
-        print("[Align] Primary solve failed with \(primaryDetector) (\(stars.count) stars)")
+        print("[Align] Primary solve failed (\(stars.count) stars)")
 
-        // Fallback: toggle detector and retry
-        let originalDetector = cameraViewModel.forceClassicalDetector
-        cameraViewModel.forceClassicalDetector = !originalDetector
-        let fallbackDetector = cameraViewModel.forceClassicalDetector ? "classical" : "CoreML"
-        statusMessage = "\(stepLabel): Retrying with \(fallbackDetector) detector..."
-        print("[Align] Falling back to \(fallbackDetector) detector")
-
-        // Wait for new detection with the alternate detector
-        try? await Task.sleep(nanoseconds: 1_500_000_000) // wait for ~3 detection frames
-        let fallbackStars = cameraViewModel.detectedStars
-
-        // Restore original detector preference
-        cameraViewModel.forceClassicalDetector = originalDetector
-
-        if fallbackStars.count >= 4 {
-            if let result = try? await plateSolveService.solveRobust(centroids: fallbackStars),
-               result.success {
-                return result
-            }
-        }
-
-        // Last resort: try remote solver if enabled
+        // Try remote solver if enabled
         let localMode = UserDefaults.standard.bool(forKey: "astrometryNetLocalMode")
         plateSolveService.log("[Align] Local solve failed. Remote fallback=\(useRemoteFallback) local=\(localMode)")
         if useRemoteFallback || localMode {

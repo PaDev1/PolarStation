@@ -10,6 +10,13 @@ enum CameraSource: String, CaseIterable {
     case alpaca = "ASCOM Alpaca"
 }
 
+/// Marker camera IDs used for non-ASI devices in the unified USB camera list.
+/// Canon cameras use cameraID = -(1000 + canonIndex) so their EDSDK index can be recovered.
+let kCanonCameraIDBase: Int32 = -1000
+@inline(__always) func isCanonCameraID(_ id: Int32) -> Bool { id <= kCanonCameraIDBase }
+@inline(__always) func canonIndexFromCameraID(_ id: Int32) -> Int { Int(-(id - kCanonCameraIDBase)) }
+@inline(__always) func canonCameraID(for index: Int) -> Int32 { kCanonCameraIDBase - Int32(index) }
+
 /// Manages camera lifecycle: discovery, connection, capture, and frame forwarding to Metal preview.
 @MainActor
 final class CameraViewModel: ObservableObject {
@@ -43,14 +50,65 @@ final class CameraViewModel: ObservableObject {
     @Published var exposureStartDate: Date? = nil
     @Published var currentExposureSec: Double = 0
 
+    // Video recording (ASI USB only)
+    @Published var isRecordingVideo = false
+    @Published var videoFrameCount: Int = 0
+    private var serWriter: SERWriter?
+
+    // Canon-only: white balance preset
+    @Published var canonWhiteBalance: CanonCameraBridge.WhiteBalance = .auto {
+        didSet {
+            applyCanonWhiteBalance()
+        }
+    }
+    /// True when the connected camera supports white balance UI (Canon).
+    var supportsWhiteBalance: Bool { canonCameraBridge != nil }
+
+    /// Set the published WB without re-triggering the didSet → camera write
+    /// (used when reading the current value from the camera on connect).
+    fileprivate func _setCanonWhiteBalanceSilently(_ wb: CanonCameraBridge.WhiteBalance) {
+        _suppressCanonWBApply = true
+        canonWhiteBalance = wb
+        _suppressCanonWBApply = false
+    }
+    private var _suppressCanonWBApply = false
+
+    private func applyCanonWhiteBalance() {
+        if _suppressCanonWBApply { return }
+        guard let bridge = canonCameraBridge else { return }
+        let wb = canonWhiteBalance
+        CanonCameraBridge.sdkQueue.async { [weak self] in
+            do {
+                try bridge.setWhiteBalance(wb)
+                Task { @MainActor [weak self] in
+                    self?.appendDebug("[Canon] WB → \(wb.label)")
+                }
+            } catch {
+                Task { @MainActor [weak self] in
+                    self?.errorMessage = "Canon WB: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     // Star detection
     @Published var detectedStars: [DetectedStar] = []
     /// Incremented each time runStarDetection completes. Used by waitForFreshDetection
     /// to reliably detect a new camera frame without relying on star position comparison.
     private(set) var detectionStamp: Int = 0
     @Published var starDetectionEnabled = false
-    @Published var starDetectorModelLoaded = false
-    @Published var starDetectorStatus = "Model not loaded"
+
+    /// User-selectable star-shape preset for the detector.
+    /// Persisted via UserDefaults so the choice survives restarts.
+    @Published var starDetectorMode: StarDetectorMode = StarDetectorMode(rawValue:
+        UserDefaults.standard.string(forKey: "starDetectorMode") ?? StarDetectorMode.sharp.rawValue
+    ) ?? .sharp {
+        didSet {
+            classicalDetector.config = starDetectorMode.config
+            UserDefaults.standard.set(starDetectorMode.rawValue, forKey: "starDetectorMode")
+            appendDebug("[Det] mode → \(starDetectorMode.rawValue)")
+        }
+    }
 
     /// Debug log lines for the guide tab debug strip.
     @Published var debugLog: String = ""
@@ -70,12 +128,11 @@ final class CameraViewModel: ObservableObject {
 
     private var cameraBridge: ASICameraBridge?
     private var alpacaCameraBridge: AlpacaCameraBridge?
+    private var canonCameraBridge: CanonCameraBridge?
     private var frameGrabber: FrameGrabber?
     private var alpacaFrameGrabber: AlpacaFrameGrabber?
+    private var canonFrameGrabber: CanonFrameGrabber?
     private let frameForwarder = FrameForwarder()
-    private let starDetector = CoreMLDetector()
-    /// When true, bypass CoreML and use ClassicalDetector directly.
-    @Published var forceClassicalDetector = true
     private let classicalDetector = ClassicalDetector()
     private var lastDetectionNanos: UInt64 = 0
     /// Guard against overlapping background detections — only one at a time.
@@ -91,7 +148,8 @@ final class CameraViewModel: ObservableObject {
 
     init() {
         frameForwarder.previewViewModel = previewViewModel
-        loadStarDetectorModel()
+        // Apply persisted star-shape preset to the detector
+        classicalDetector.config = starDetectorMode.config
 
         // Notify when a new frame is processed (for star detection on demand)
         previewViewModel.onFrameProcessed = { [weak self] in
@@ -99,20 +157,6 @@ final class CameraViewModel: ObservableObject {
             // Only run automatic detection when explicitly enabled (guide tab visible)
             guard self.starDetectionEnabled else { return }
             self.runStarDetection()
-        }
-    }
-
-    /// Load the Core ML star detection model from the app bundle.
-    func loadStarDetectorModel() {
-        do {
-            try starDetector.loadModel(named: "StarDetector")
-            starDetectorModelLoaded = true
-            starDetectorStatus = "CoreML UNet loaded"
-            appendDebug("[Model] CoreML StarDetector loaded OK")
-        } catch {
-            starDetectorModelLoaded = false
-            starDetectorStatus = "Fallback: Classical (\(error.localizedDescription))"
-            appendDebug("[Model] CoreML failed: \(error.localizedDescription) → using ClassicalDetector")
         }
     }
 
@@ -154,24 +198,12 @@ final class CameraViewModel: ObservableObject {
         }
         detectionInProgress = true
 
-        let fmt = texture.pixelFormat.rawValue
-        let storage = texture.storageMode.rawValue
-        let modelLoaded = starDetectorModelLoaded
-        let useClassical = forceClassicalDetector || !starDetectorModelLoaded
-        appendDebug("[Det] tex=\(texture.width)x\(texture.height) fmt=\(fmt) storage=\(storage) model=\(modelLoaded) classical=\(useClassical)")
-
-        // Capture detectors (thread-safe class instances) and Metal objects (thread-safe).
-        let detector: StarDetectorProtocol = useClassical ? classicalDetector : starDetector
-        let coreMLDetector = starDetector
+        let detector = classicalDetector
 
         Task.detached(priority: .userInitiated) { [weak self] in
             var stars: [DetectedStar] = []
-            var diagnostic = ""
             do {
                 stars = try detector.detectStars(in: texture, device: device, commandQueue: commandQueue)
-                if !useClassical {
-                    diagnostic = coreMLDetector.lastDiagnostic
-                }
             } catch {
                 await MainActor.run { [weak self] in self?.appendDebug("[Det] ERROR: \(error)") }
             }
@@ -180,7 +212,6 @@ final class CameraViewModel: ObservableObject {
                 self.detectedStars = stars
                 self.detectionStamp &+= 1
                 self.detectionInProgress = false
-                if !diagnostic.isEmpty { self.appendDebug("[Det] \(diagnostic)") }
                 if let s = stars.first {
                     self.appendDebug("[Det] found \(stars.count) stars, best: x=\(String(format:"%.1f",s.x)) y=\(String(format:"%.1f",s.y)) snr=\(String(format:"%.1f",s.snr)) fwhm=\(String(format:"%.1f",s.fwhm))")
                 } else {
@@ -338,10 +369,32 @@ final class CameraViewModel: ObservableObject {
 
     func discoverCameras() {
         DispatchQueue.global(qos: .userInitiated).async {
+            // ASI cameras (ZWO USB)
             var cameras = (try? ASICameraBridge.listCameras()) ?? []
             // Deduplicate by camera ID
             var seen = Set<Int32>()
             cameras = cameras.filter { seen.insert($0.cameraID).inserted }
+
+            // Canon cameras (EDSDK) — append as pseudo-ASICameraInfo with marker IDs
+            if let canonList = try? CanonCameraBridge.listCameras() {
+                for (i, info) in canonList.enumerated() {
+                    let pseudo = ASICameraInfo(
+                        name: info.productName + " (Canon)",
+                        cameraID: canonCameraID(for: i),
+                        maxWidth: 0, maxHeight: 0,
+                        isColorCamera: true,
+                        bayerPattern: .rg,
+                        supportedBins: [1],
+                        pixelSize: 0,
+                        hasCooler: false,
+                        isUSB3: true,
+                        bitDepth: 14,
+                        electronPerADU: 0
+                    )
+                    cameras.append(pseudo)
+                }
+            }
+
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.discoveredCameras = cameras
@@ -378,7 +431,99 @@ final class CameraViewModel: ObservableObject {
         if cameraSource == .alpaca {
             connectAlpaca()
         } else {
-            connectUSB()
+            // Unified USB path: route to Canon or ASI based on selected camera
+            if let id = selectedCamera?.cameraID, isCanonCameraID(id) {
+                connectCanon(edsIndex: canonIndexFromCameraID(id))
+            } else {
+                connectUSB()
+            }
+        }
+    }
+
+    private func connectCanon(edsIndex: Int) {
+        errorMessage = nil
+        statusMessage = "Connecting to Canon camera..."
+
+        let index = edsIndex
+
+        // EDSDK on macOS requires initialization + event pump on the main thread
+        // BEFORE any session is opened. Set both up now.
+        do {
+            try CanonCameraBridge.initializeSDK()
+        } catch {
+            errorMessage = error.localizedDescription
+            statusMessage = "Canon SDK init failed"
+            return
+        }
+        CanonEventPump.shared.retain()
+
+        CanonCameraBridge.sdkQueue.async { [weak self] in
+            do {
+                let bridge = CanonCameraBridge()
+                try bridge.open(at: index)
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.canonCameraBridge = bridge
+                    self.isConnected = true
+                    let name = bridge.info?.productName ?? "Canon camera"
+                    self.statusMessage = "Connected to \(name)"
+                    self.startHealthCheck()
+                    // Wire up the still-captured handler to auto-download RAW
+                    bridge.onStillCaptured = { [weak self] dirItem in
+                        guard let self else {
+                            EdsRelease(dirItem)
+                            return
+                        }
+                        self.handleCanonStillCaptured(dirItem: dirItem)
+                    }
+                    // Read current WB from the camera so the UI matches.
+                    CanonCameraBridge.sdkQueue.async { [weak self] in
+                        if let wb = try? bridge.getWhiteBalance() {
+                            Task { @MainActor [weak self] in
+                                // Set _wrapper to avoid triggering the didSet → re-applying
+                                self?._setCanonWhiteBalanceSilently(wb)
+                            }
+                        }
+                    }
+                }
+            } catch {
+                CanonEventPump.shared.release()
+                Task { @MainActor [weak self] in
+                    self?.errorMessage = error.localizedDescription
+                    self?.statusMessage = "Connection failed"
+                }
+            }
+        }
+    }
+
+    private func handleCanonStillCaptured(dirItem: EdsDirectoryItemRef) {
+        // Download the newly captured image to the user's capture folder.
+        CanonCameraBridge.sdkQueue.async { [weak self] in
+            guard let self, let bridge = self.canonCameraBridge else {
+                EdsRelease(dirItem)
+                return
+            }
+            let folderPath = UserDefaults.standard.string(forKey: "captureFolder") ?? ""
+            let folder: URL
+            if folderPath.isEmpty {
+                folder = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Pictures/PolarStation")
+            } else {
+                folder = URL(fileURLWithPath: folderPath)
+            }
+            let prefix = UserDefaults.standard.string(forKey: "capturePrefix") ?? "canon"
+            do {
+                let saved = try bridge.downloadImage(dirItem: dirItem, toFolder: folder, filenamePrefix: prefix)
+                Task { @MainActor [weak self] in
+                    self?.statusMessage = "Saved \(saved.lastPathComponent)"
+                    self?.appendDebug("[Canon] Saved \(saved.lastPathComponent)")
+                }
+            } catch {
+                Task { @MainActor [weak self] in
+                    self?.errorMessage = "Canon download: \(error.localizedDescription)"
+                }
+            }
+            EdsRelease(dirItem)
         }
     }
 
@@ -464,8 +609,15 @@ final class CameraViewModel: ObservableObject {
                 try? bridge.close()
             }
         }
+        if let bridge = canonCameraBridge {
+            CanonCameraBridge.sdkQueue.async {
+                bridge.close()
+            }
+            CanonEventPump.shared.release()
+        }
         cameraBridge = nil
         alpacaCameraBridge = nil
+        canonCameraBridge = nil
         isConnected = false
         coolerEnabled = false
         sensorTempC = nil
@@ -623,12 +775,57 @@ final class CameraViewModel: ObservableObject {
         folder: URL,
         prefix: String
     ) {
+        // Canon: use native still shutter — RAW file is downloaded via DirItemRequestTransfer.
+        if canonCameraBridge != nil {
+            beginCanonStillCapture(count: count, folder: folder, prefix: prefix)
+            return
+        }
+
         ensureConnected { [weak self] in
             guard let self else { return }
             self.beginCaptureSequence(
                 count: count, settings: settings,
                 format: format, colorMode: colorMode, folder: folder, prefix: prefix
             )
+        }
+    }
+
+    /// Canon still capture: press the shutter `count` times. Each image is
+    /// delivered asynchronously by the ObjectEvent handler and saved via
+    /// `handleCanonStillCaptured`.
+    private func beginCanonStillCapture(count: Int, folder: URL, prefix: String) {
+        guard let bridge = canonCameraBridge else { return }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        UserDefaults.standard.set(folder.path, forKey: "captureFolder")
+        UserDefaults.standard.set(prefix, forKey: "capturePrefix")
+
+        capturedCount = 0
+        targetCount = count
+        isSaving = true
+        statusMessage = "Canon: shooting 0/\(count)..."
+        appendDebug("[Canon] still sequence count=\(count)")
+
+        CanonCameraBridge.sdkQueue.async { [weak self] in
+            for i in 0..<count {
+                do {
+                    try bridge.takePicture()
+                    Task { @MainActor [weak self] in
+                        self?.capturedCount = i + 1
+                        self?.statusMessage = "Canon: shooting \(i + 1)/\(count)..."
+                    }
+                    // Let the camera finish the shot + transfer before next shutter
+                    Thread.sleep(forTimeInterval: 1.5)
+                } catch {
+                    Task { @MainActor [weak self] in
+                        self?.errorMessage = "Canon shutter: \(error.localizedDescription)"
+                    }
+                    break
+                }
+            }
+            Task { @MainActor [weak self] in
+                self?.isSaving = false
+                self?.statusMessage = "Canon: \(self?.capturedCount ?? 0) frames shot"
+            }
         }
     }
 
@@ -723,6 +920,229 @@ final class CameraViewModel: ObservableObject {
         statusMessage = "Capture complete (\(capturedCount) frames saved)"
     }
 
+    // MARK: - Video Recording (ASI USB only)
+
+    /// Start recording video to a SER file using ASI video mode.
+    /// Only works with USB ASI cameras (not Alpaca).
+    func startVideoRecording(settings: CameraSettings, folder: URL, prefix: String) {
+        // Canon path: tap the EVF JPEG stream and write each decoded frame as RGB SER
+        if canonCameraBridge != nil {
+            beginCanonVideoRecording(folder: folder, prefix: prefix)
+            return
+        }
+        guard cameraSource == .usb, cameraBridge != nil else {
+            errorMessage = "Video recording requires USB camera"
+            return
+        }
+        guard !isCapturing else {
+            appendDebug("[Video] Cannot start: capture already running")
+            return
+        }
+
+        ensureConnected { [weak self] in
+            guard let self else { return }
+            self.beginVideoRecording(settings: settings, folder: folder, prefix: prefix)
+        }
+    }
+
+    /// True when the Canon record path auto-started live view, so stop should also stop live.
+    private var canonLiveStartedByRecording = false
+
+    /// Canon EVF → SER recording. Live view must be running; if not, we start it.
+    private func beginCanonVideoRecording(folder: URL, prefix: String) {
+        guard let bridge = canonCameraBridge else { return }
+
+        // Ensure live view is running so we have a frame stream to tap
+        canonLiveStartedByRecording = false
+        if !isCapturing {
+            canonLiveStartedByRecording = true
+            startCaptureInternal(settings: CameraSettings())
+        }
+
+        guard let grabber = canonFrameGrabber else {
+            errorMessage = "Canon: live view not active"
+            return
+        }
+
+        // Wait for first frame so we know the dimensions, then create the SER writer.
+        // Frame size doesn't change during EVF, so this only happens once.
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let timestamp = FrameSaver.captureTimestamp()
+        let filename = "\(prefix)_\(timestamp).ser"
+        let fileURL = folder.appendingPathComponent(filename)
+
+        videoFrameCount = 0
+        isRecordingVideo = true
+        statusMessage = "Recording (Canon EVF)..."
+        appendDebug("[Canon] Recording to \(filename)")
+
+        // Defer SER writer creation until the first frame arrives — we need w/h.
+        var writer: SERWriter?
+        var writerLock = NSLock()
+        grabber.onRGBFrame = { [weak self] rgbBuf, w, h in
+            writerLock.lock()
+            if writer == nil {
+                writer = try? SERWriter(
+                    url: fileURL,
+                    width: w,
+                    height: h,
+                    bitsPerPixel: 8,
+                    colorID: .rgb,
+                    instrument: bridge.info?.productName ?? "Canon"
+                )
+                if writer == nil {
+                    Task { @MainActor [weak self] in
+                        self?.errorMessage = "Failed to create SER file"
+                        self?.isRecordingVideo = false
+                    }
+                }
+            }
+            writer?.addFrame(rgbBuf)
+            let count = writer?.frameCount ?? 0
+            writerLock.unlock()
+            Task { @MainActor [weak self] in
+                self?.videoFrameCount = Int(count)
+            }
+        }
+
+        // Stash the writer so finalize can find it
+        self.canonSerWriter = { writer }
+    }
+
+    /// Box around the Canon SER writer so the closure-captured `writer` survives
+    /// across frames and can be finalized on stop.
+    private var canonSerWriter: (() -> SERWriter?)?
+
+    private func beginVideoRecording(settings: CameraSettings, folder: URL, prefix: String) {
+        guard let cam = selectedCamera else { return }
+        if isCapturing { stopCapture() }
+
+        // Compute dimensions
+        let width = cam.maxWidth / settings.binning
+        let height = cam.maxHeight / settings.binning
+        let adjWidth = (width / 8) * 8
+        let adjHeight = (height / 2) * 2
+
+        // Determine SER color ID from bayer pattern
+        let serColorID: SERWriter.ColorID
+        if cam.isColorCamera {
+            switch cam.bayerPattern {
+            case .rg: serColorID = .bayerRGGB
+            case .gr: serColorID = .bayerGRBG
+            case .gb: serColorID = .bayerGBRG
+            case .bg: serColorID = .bayerBGGR
+            }
+        } else {
+            serColorID = .mono
+        }
+
+        let bitsPerPixel = settings.bytesPerPixel * 8
+        let timestamp = FrameSaver.captureTimestamp()
+        let filename = "\(prefix)_\(timestamp).ser"
+
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let fileURL = folder.appendingPathComponent(filename)
+
+        do {
+            let writer = try SERWriter(
+                url: fileURL,
+                width: adjWidth,
+                height: adjHeight,
+                bitsPerPixel: bitsPerPixel,
+                colorID: serColorID,
+                instrument: cam.name
+            )
+            self.serWriter = writer
+        } catch {
+            errorMessage = "Failed to create SER file: \(error.localizedDescription)"
+            return
+        }
+
+        videoFrameCount = 0
+        isRecordingVideo = true
+        errorMessage = nil
+
+        // Set up frame forwarding: preview + SER write
+        frameForwarder.onSaveFrame = { [weak self] data, w, h, bpp, _ in
+            guard let self, let writer = self.serWriter else { return }
+            data.withUnsafeBytes { rawBuffer in
+                guard let base = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+                let ubp = UnsafeBufferPointer(start: base, count: data.count)
+                writer.addFrame(ubp)
+            }
+            Task { @MainActor [weak self] in
+                self?.videoFrameCount = Int(writer.frameCount)
+                self?.statusMessage = "Recording: \(writer.frameCount) frames"
+            }
+        }
+        frameForwarder.onFrameReceived = nil
+
+        // Start FrameGrabber in video mode
+        guard let bridge = cameraBridge else { return }
+        let grabber = FrameGrabber(camera: bridge, settings: settings)
+        grabber.videoMode = true
+        grabber.delegate = frameForwarder
+        self.frameGrabber = grabber
+        isCapturing = true
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try grabber.start()
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.captureWidth = grabber.captureWidth
+                    self.captureHeight = grabber.captureHeight
+                    self.statusMessage = "Recording \(grabber.captureWidth)x\(grabber.captureHeight)"
+                }
+            } catch {
+                Task { @MainActor [weak self] in
+                    self?.isCapturing = false
+                    self?.isRecordingVideo = false
+                    self?.errorMessage = error.localizedDescription
+                    self?.statusMessage = "Recording failed"
+                }
+            }
+        }
+
+        appendDebug("[Video] Recording to \(filename) \(adjWidth)x\(adjHeight) \(bitsPerPixel)bpp color=\(serColorID) isColor=\(cam.isColorCamera) bayer=\(cam.bayerPattern)")
+    }
+
+    /// Stop video recording and finalize the SER file.
+    func stopVideoRecording() {
+        guard isRecordingVideo else { return }
+        appendDebug("[Video] Stopping, \(videoFrameCount) frames recorded")
+
+        // Canon path: detach the RGB tap, finalize the SER writer, and only
+        // stop live view if we auto-started it as part of recording.
+        if canonCameraBridge != nil {
+            canonFrameGrabber?.onRGBFrame = nil
+            let writer = canonSerWriter?()
+            canonSerWriter = nil
+            writer?.finalize()
+            isRecordingVideo = false
+            statusMessage = "Video saved (\(videoFrameCount) frames)"
+            if canonLiveStartedByRecording {
+                stopCapture()
+                canonLiveStartedByRecording = false
+            }
+            return
+        }
+
+        // ASI path: stop capture, finalize SER writer
+        stopCapture()
+
+        if let writer = serWriter {
+            DispatchQueue.global(qos: .utility).async {
+                writer.finalize()
+            }
+            serWriter = nil
+        }
+
+        isRecordingVideo = false
+        frameForwarder.onSaveFrame = nil
+        statusMessage = "Video saved (\(videoFrameCount) frames)"
+    }
+
     // MARK: - Core Capture
 
     func stopCapture() {
@@ -732,6 +1152,8 @@ final class CameraViewModel: ObservableObject {
         frameGrabber = nil
         alpacaFrameGrabber?.stop()
         alpacaFrameGrabber = nil
+        canonFrameGrabber?.stop()
+        canonFrameGrabber = nil
         isCapturing = false
         exposureStartDate = nil
         frameForwarder.onSaveFrame = nil
@@ -806,6 +1228,17 @@ final class CameraViewModel: ObservableObject {
             // USB capture
             let grabber = FrameGrabber(camera: bridge, settings: settings)
             grabber.delegate = frameForwarder
+            // Only update the exposure timer for capture sequences, not live view
+            // (the timer UI is gated on isSaving, and short live-view exposures
+            // would flood the main actor with @Published setters).
+            if maxFrames > 0 {
+                grabber.onExposureStarted = { [weak self] durationSec in
+                    Task { @MainActor [weak self] in
+                        self?.exposureStartDate = Date()
+                        self?.currentExposureSec = durationSec
+                    }
+                }
+            }
             self.frameGrabber = grabber
 
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -825,6 +1258,35 @@ final class CameraViewModel: ObservableObject {
                         self?.errorMessage = error.localizedDescription
                         self?.statusMessage = "Capture failed"
                         self?.isSaving = false
+                    }
+                }
+            }
+        } else if let bridge = canonCameraBridge {
+            // Canon live view (JPEG EVF). Still capture uses takePicture() separately.
+            appendDebug("[Cam] startCaptureInternal canon EVF")
+            let grabber = CanonFrameGrabber(camera: bridge)
+            grabber.previewViewModel = previewViewModel
+            grabber.onLog = { [weak self] msg in
+                Task { @MainActor [weak self] in
+                    self?.appendDebug("[Canon] \(msg)")
+                }
+            }
+            self.canonFrameGrabber = grabber
+
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                do {
+                    try grabber.start()
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        if !self.isSaving {
+                            self.statusMessage = "Live (Canon EVF)"
+                        }
+                    }
+                } catch {
+                    Task { @MainActor [weak self] in
+                        self?.isCapturing = false
+                        self?.errorMessage = error.localizedDescription
+                        self?.statusMessage = "Live view failed"
                     }
                 }
             }

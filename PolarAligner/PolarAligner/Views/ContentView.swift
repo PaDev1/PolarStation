@@ -41,7 +41,7 @@ struct ContentView: View {
                         assistantWindowController: appState.assistantWindowController
                     )
                 case "camera":
-                    CameraTabView(mainCamera: appState.cameraViewModel, guideCamera: appState.guideCameraViewModel)
+                    CameraTabView(mainCamera: appState.cameraViewModel)
                 case "guide":
                     GuideTabView(
                         cameraViewModel: appState.guideCameraViewModel,

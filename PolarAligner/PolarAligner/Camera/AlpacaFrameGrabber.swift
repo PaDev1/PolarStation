@@ -141,7 +141,8 @@ final class AlpacaFrameGrabber {
                 // Also require that at least 90% of the exposure time has elapsed
                 // to reject any stale "ready" that slipped through the pre-poll wait.
                 var ready = false
-                let timeout = exposureSecs + 10.0
+                // DSLRs via ASCOM can take 10-20s to download a RAW after exposure completes.
+                let timeout = exposureSecs + 30.0
                 while isRunning && !Thread.current.isCancelled {
                     let elapsed = Date().timeIntervalSince(exposureStart)
                     if let r = try? camera.isImageReady(), r,

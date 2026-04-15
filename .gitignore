@@ -42,3 +42,8 @@ dist/
 
 # Claude
 .claude/
+
+# Canon EDSDK — not redistributable. Users must download from Canon and
+# place the framework themselves. See README.
+EDSDKv132010M/
+PolarAligner/Vendor/EDSDK/

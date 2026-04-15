@@ -112,25 +112,54 @@ struct CameraPreviewView: NSViewRepresentable {
             encoder.setFragmentTexture(texture, index: 0)
             var blitParams = SIMD4<Float>(viewModel.displayRotationRad, 0, 0, 0)
             encoder.setFragmentBytes(&blitParams, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+
+            // Aspect-fit viewport: scale the image into the drawable while
+            // preserving the texture's aspect ratio. Unused area stays black
+            // (clear color) which produces letterbox/pillarbox bars.
+            let texW = Double(texture.width)
+            let texH = Double(texture.height)
+            let dW = Double(drawW)
+            let dH = Double(drawH)
+            let texAspect = texW / texH
+            let drawAspect = dW / dH
+            let vpW: Double
+            let vpH: Double
+            if texAspect > drawAspect {
+                // Texture wider than view → fit width, letterbox top/bottom
+                vpW = dW
+                vpH = dW / texAspect
+            } else {
+                // Texture taller than view → fit height, pillarbox left/right
+                vpH = dH
+                vpW = dH * texAspect
+            }
+            let vpX = (dW - vpW) / 2.0
+            let vpY = (dH - vpH) / 2.0
+            let viewport = MTLViewport(originX: vpX, originY: vpY,
+                                       width: vpW, height: vpH,
+                                       znear: 0.0, zfar: 1.0)
+            encoder.setViewport(viewport)
+
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             encoder.endEncoding()
 
             commandBuffer.present(drawable)
             commandBuffer.commit()
 
-            // Image fills the entire view — imageRect = full view bounds in points.
-            // Only update when size changes to avoid redundant @Published updates.
+            // imageRect = the actual image region in SwiftUI points (so star
+            // overlays etc. line up with the letterboxed image, not the bars).
             let backingScale = view.window?.backingScaleFactor ?? 2.0
-            let newSize = CGSize(
-                width: CGFloat(drawW) / backingScale,
-                height: CGFloat(drawH) / backingScale
+            let newRect = CGRect(
+                x: vpX / backingScale,
+                y: vpY / backingScale,
+                width: vpW / backingScale,
+                height: vpH / backingScale
             )
-            if newSize != lastImageRectSize {
-                lastImageRectSize = newSize
-                let rectInPoints = CGRect(origin: .zero, size: newSize)
+            if newRect.size != lastImageRectSize {
+                lastImageRectSize = newRect.size
                 Task { @MainActor [weak self] in
                     guard let self, self.isActive else { return }
-                    self.viewModel.imageRect = rectInPoints
+                    self.viewModel.imageRect = newRect
                 }
             }
         }
@@ -314,6 +343,69 @@ final class CameraPreviewViewModel: ObservableObject {
             OSAtomicCompareAndSwap32(1, 0, self._processing)
 
             // Trigger star detection callback (may be slow — runs after unlocking)
+            self.onFrameProcessed?()
+        }
+    }
+
+    /// Process a frame that is already in BGRA8 format (e.g., decoded JPEG from a Canon EVF).
+    /// Bypasses Bayer debayering — uploads BGRA bytes directly to a Metal texture.
+    nonisolated func processBGRAFrame(
+        buffer: UnsafeBufferPointer<UInt8>,
+        width: Int,
+        height: Int
+    ) {
+        let captureTime = CFAbsoluteTimeGetCurrent()
+        let captureCount = UInt64(OSAtomicIncrement64(_captureFrameCount))
+
+        guard OSAtomicCompareAndSwap32(0, 1, _processing) else { return }
+
+        let expectedSize = width * height * 4
+        guard buffer.count >= expectedSize, let device = self.device else {
+            OSAtomicCompareAndSwap32(1, 0, _processing)
+            return
+        }
+
+        let dataCopy = Data(buffer)
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .bgra8Unorm,
+                width: width,
+                height: height,
+                mipmapped: false
+            )
+            descriptor.usage = [.shaderRead]
+            descriptor.storageMode = .shared
+            if let tex = device.makeTexture(descriptor: descriptor) {
+                dataCopy.withUnsafeBytes { rawBuffer in
+                    if let base = rawBuffer.baseAddress {
+                        tex.replace(region: MTLRegionMake2D(0, 0, width, height),
+                                    mipmapLevel: 0,
+                                    withBytes: base,
+                                    bytesPerRow: width * 4)
+                        self.displayTexture = tex
+                    }
+                }
+            }
+
+            // Frame rate
+            if self.lastFrameTime > 0 {
+                let dt = captureTime - self.lastFrameTime
+                if dt > 0 {
+                    let instantFps = 1.0 / dt
+                    if self.frameRate > 0 {
+                        self.frameRate = self.fpsAlpha * instantFps + (1.0 - self.fpsAlpha) * self.frameRate
+                    } else {
+                        self.frameRate = instantFps
+                    }
+                }
+            }
+            self.lastFrameTime = captureTime
+            self.lastFrameTimestamp = captureTime
+            self.frameCount = captureCount
+
+            OSAtomicCompareAndSwap32(1, 0, self._processing)
             self.onFrameProcessed?()
         }
     }

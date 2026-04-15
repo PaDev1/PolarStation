@@ -153,15 +153,6 @@ struct PolarAlignmentView: View {
 
                     Divider()
 
-                    HStack(spacing: 6) {
-                        Picker("Detector", selection: $engine.useClassicalDetector) {
-                            Text("Classical").tag(true)
-                            Text("CoreML").tag(false)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 180)
-                    }
-
                     simSlider(label: "Seeing", value: $engine.seeingFWHM,
                               range: 0.5...6.0, format: "%.1f\"")
                 }

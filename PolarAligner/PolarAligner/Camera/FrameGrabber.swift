@@ -25,8 +25,18 @@ final class FrameGrabber {
 
     weak var delegate: FrameGrabberDelegate?
 
+    /// Called when each new exposure begins. Arg is duration in seconds.
+    var onExposureStarted: ((Double) -> Void)?
+
+    /// When true, use ASI video mode (continuous streaming) instead of snap mode.
+    var videoMode: Bool = false
+
     private var captureThread: Thread?
     private var isRunning = false
+    /// Set true by the capture thread on entry, false on exit. Used by `stop()`
+    /// to know when the thread is safe to discard.
+    private var threadActive = false
+    private let threadActiveLock = NSLock()
     private var frameBuffer: UnsafeMutablePointer<UInt8>?
     private var bufferSize: Int = 0
     private(set) var frameCount: UInt64 = 0
@@ -79,11 +89,21 @@ final class FrameGrabber {
         // Allocate frame buffer
         allocateBuffer()
 
-        // Start capture thread (snap mode — no video capture)
         isRunning = true
         frameCount = 0
+        threadActiveLock.lock()
+        threadActive = true
+        threadActiveLock.unlock()
         let thread = Thread { [weak self] in
-            self?.captureLoop()
+            guard let self else { return }
+            if self.videoMode {
+                self.videoCaptureLoop()
+            } else {
+                self.captureLoop()
+            }
+            self.threadActiveLock.lock()
+            self.threadActive = false
+            self.threadActiveLock.unlock()
         }
         thread.name = "com.polaraligner.frame-grabber"
         thread.qualityOfService = .userInteractive
@@ -91,14 +111,29 @@ final class FrameGrabber {
         thread.start()
     }
 
-    /// Stop the capture loop.
+    /// Stop the capture loop and wait for the capture thread to fully exit.
+    /// Blocking is required so that no SDK call is in flight when the caller
+    /// proceeds to start a new grabber on the same camera.
     func stop() {
         isRunning = false
         captureThread?.cancel()
-        captureThread = nil
 
-        // Stop any in-progress exposure
-        try? camera.stopExposure()
+        if videoMode {
+            try? camera.stopVideoCapture()
+        } else {
+            try? camera.stopExposure()
+        }
+
+        // Wait for the capture thread to exit (max ~3s — should be near-instant).
+        let deadline = Date().addingTimeInterval(3.0)
+        while Date() < deadline {
+            threadActiveLock.lock()
+            let active = threadActive
+            threadActiveLock.unlock()
+            if !active { break }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        captureThread = nil
     }
 
     /// Update settings while capturing. Stops and restarts the capture.
@@ -123,6 +158,42 @@ final class FrameGrabber {
         bufferSize = 0
     }
 
+    /// Video mode: continuous streaming via ASIStartVideoCapture / ASIGetVideoData.
+    /// Higher frame rates than snap mode — used for planetary/lunar video recording.
+    private func videoCaptureLoop() {
+        guard let buffer = frameBuffer else { return }
+
+        do {
+            try camera.startVideoCapture()
+        } catch {
+            print("[FrameGrabber] startVideoCapture failed: \(error)")
+            return
+        }
+
+        let waitMs = settings.captureTimeoutMs
+
+        while isRunning && !Thread.current.isCancelled {
+            let got = camera.getVideoData(buffer: buffer, bufferSize: bufferSize, waitMs: waitMs)
+            if got {
+                frameCount += 1
+                let ubp = UnsafeBufferPointer(start: UnsafePointer(buffer), count: bufferSize)
+                delegate?.frameGrabber(
+                    self,
+                    didCapture: ubp,
+                    width: captureWidth,
+                    height: captureHeight,
+                    bytesPerPixel: settings.bytesPerPixel,
+                    frameNumber: frameCount
+                )
+            } else {
+                droppedFrames += 1
+            }
+        }
+
+        try? camera.stopVideoCapture()
+    }
+
+    /// Snap mode: repeated start/poll/download cycle.
     private func captureLoop() {
         guard let buffer = frameBuffer else { return }
 
@@ -130,6 +201,7 @@ final class FrameGrabber {
             // Start exposure
             do {
                 try camera.startExposure()
+                onExposureStarted?(settings.exposureMs / 1000.0)
             } catch {
                 droppedFrames += 1
                 Thread.sleep(forTimeInterval: 0.1)

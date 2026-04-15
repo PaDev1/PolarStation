@@ -1,66 +1,24 @@
 import SwiftUI
 
-/// Which camera feed to display in the Camera tab.
-enum CameraViewSource: String, CaseIterable {
-    case main = "Main Camera"
-    case guide = "Guide Camera"
-}
-
-/// Camera tab: live preview viewer for connected cameras, with capture support.
-/// Connections are managed in Settings — this tab just displays the selected camera's feed.
-///
-/// Outer shell does NOT observe either camera to avoid layout storms from @Published changes
-/// on both cameras simultaneously. Only the inner CameraViewerContent observes the active camera.
+/// Camera tab: live preview viewer for the main camera, with capture support.
+/// Guide camera is controlled independently in the Guide tab.
+/// Connections are managed in Settings — this tab just displays the main camera's feed.
 struct CameraTabView: View {
     let mainCamera: CameraViewModel
-    let guideCamera: CameraViewModel
-
-    @State private var selectedSource: CameraViewSource = .main
 
     var body: some View {
-        CameraViewerContent(
-            viewModel: selectedSource == .main ? mainCamera : guideCamera,
-            selectedSource: $selectedSource,
-            pauseAll: {
-                mainCamera.pauseLiveView()
-                // Don't stop guide camera if main camera is actively capturing —
-                // stopping the guide Alpaca grabber calls abortExposure, which on
-                // shared INDIGO servers can interrupt the main camera's exposure.
-                // Also skip if guide camera is running star detection (guiding active).
-                if !mainCamera.isSaving && !guideCamera.starDetectionEnabled {
-                    guideCamera.pauseLiveView()
-                }
-            },
-            switchCamera: { oldSource, newSource in
-                let oldVM = oldSource == .main ? mainCamera : guideCamera
-                // Don't pause the guide camera if it's being used for guiding
-                // (starDetectionEnabled = true means a guide session is running).
-                // Don't pause either camera if it's actively saving frames.
-                if !oldVM.isSaving && !oldVM.starDetectionEnabled {
-                    oldVM.pauseLiveView()
-                }
-            }
-        )
+        CameraViewerContent(viewModel: mainCamera)
     }
 }
 
-/// Inner content that observes only the active camera.
+/// Main camera viewer content.
 private struct CameraViewerContent: View {
     @ObservedObject var viewModel: CameraViewModel
-    @Binding var selectedSource: CameraViewSource
-
-    var pauseAll: () -> Void
-    var switchCamera: (CameraViewSource, CameraViewSource) -> Void
 
     // Camera settings (shared with SettingsView)
     @AppStorage("exposureMs") private var exposureMs: Double = 500
     @AppStorage("gain") private var gain: Double = 300
     @AppStorage("binning") private var binning: Int = 2
-
-    // Guide camera settings
-    @AppStorage("guideExposureMs") private var guideExposureMs: Double = 500
-    @AppStorage("guideGain") private var guideGain: Double = 300
-    @AppStorage("guideBinning") private var guideBinning: Int = 2
 
     // Capture settings (shared with SettingsView)
     @AppStorage("captureFolder") private var captureFolder: String = ""
@@ -74,18 +32,6 @@ private struct CameraViewerContent: View {
     @State private var displayRotationDeg: Double = 0.0
     @State private var showControls: Bool = false
     @State private var showDebugLog: Bool = false
-
-    private var effectiveExposureMs: Double {
-        selectedSource == .main ? exposureMs : guideExposureMs
-    }
-
-    private var effectiveGain: Double {
-        selectedSource == .main ? gain : guideGain
-    }
-
-    private var effectiveBinning: Int {
-        selectedSource == .main ? binning : guideBinning
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -133,7 +79,7 @@ private struct CameraViewerContent: View {
                         Image(systemName: "camera")
                             .font(.system(size: 48))
                             .foregroundStyle(.tertiary)
-                        Text("Connect \(selectedSource.rawValue.lowercased()) in Settings")
+                        Text("Connect camera in Settings")
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -154,7 +100,11 @@ private struct CameraViewerContent: View {
                                     viewModel.stopCapture()
                                     viewModel.startLive(settings: currentSettings)
                                 }
-                            }
+                            },
+                            canonWhiteBalance: viewModel.supportsWhiteBalance
+                                ? Binding(get: { viewModel.canonWhiteBalance },
+                                          set: { viewModel.canonWhiteBalance = $0 })
+                                : nil
                         )
 
                         Spacer()
@@ -199,7 +149,19 @@ private struct CameraViewerContent: View {
             // MARK: - Bottom controls
             HStack(spacing: 16) {
                 // Live preview (no saving)
-                if viewModel.isCapturing && !viewModel.isSaving {
+                if viewModel.isRecordingVideo {
+                    Button {
+                        viewModel.stopVideoRecording()
+                    } label: {
+                        Label("Stop Recording", systemImage: "stop.circle.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+
+                    Text("\(viewModel.videoFrameCount) frames")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.red)
+                } else if viewModel.isCapturing && !viewModel.isSaving {
                     Button {
                         viewModel.stopCapture()
                     } label: {
@@ -217,6 +179,18 @@ private struct CameraViewerContent: View {
                     .disabled(!viewModel.isConnected)
                 }
 
+                // Video record (ASI USB only)
+                if viewModel.cameraSource == .usb && !viewModel.isRecordingVideo && !viewModel.isSaving {
+                    Button {
+                        startVideoRecording()
+                    } label: {
+                        Label("Record", systemImage: "record.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    .disabled(!viewModel.isConnected || viewModel.isCapturing)
+                }
+
                 // Capture with count (saves files)
                 if viewModel.isSaving {
                     Button {
@@ -226,7 +200,7 @@ private struct CameraViewerContent: View {
                     }
                     .buttonStyle(.bordered)
                     .tint(.red)
-                } else {
+                } else if !viewModel.isRecordingVideo {
                     HStack(spacing: 4) {
                         Button {
                             startCapture()
@@ -253,15 +227,15 @@ private struct CameraViewerContent: View {
                 Divider().frame(height: 20)
 
                 // Quick settings readout
-                Text(effectiveExposureMs >= 1000
-                     ? String(format: "%.1f s", effectiveExposureMs / 1000)
-                     : String(format: "%.0f ms", effectiveExposureMs))
+                Text(exposureMs >= 1000
+                     ? String(format: "%.1f s", exposureMs / 1000)
+                     : String(format: "%.0f ms", exposureMs))
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
-                Text(String(format: "G%.0f", effectiveGain))
+                Text(String(format: "G%.0f", gain))
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
-                Text("\(effectiveBinning)x\(effectiveBinning)")
+                Text("\(binning)x\(binning)")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                 Text(captureFormat.uppercased())
@@ -415,21 +389,13 @@ private struct CameraViewerContent: View {
             }
         }
         .onAppear {
-            // Sync persisted STF strength to the view model
             viewModel.previewViewModel.stfStrength = Float(stfStrength)
-            // Only resume if the viewModel isn't already running (e.g. guide camera
-            // running for guiding). resumeLiveView guards on wasLiveBeforePause but
-            // we also skip if the camera is already active to avoid interfering.
             if !viewModel.isCapturing {
                 viewModel.resumeLiveView(settings: currentSettings)
             }
         }
         .onDisappear {
-            pauseAll()
-        }
-        .onChange(of: selectedSource) { oldValue, newValue in
-            switchCamera(oldValue, newValue)
-            viewModel.resumeLiveView(settings: currentSettings)
+            viewModel.pauseLiveView()
         }
     }
 
@@ -437,9 +403,9 @@ private struct CameraViewerContent: View {
 
     private var currentSettings: CameraSettings {
         CameraSettings(
-            exposureMs: effectiveExposureMs,
-            gain: Int(effectiveGain),
-            binning: effectiveBinning
+            exposureMs: exposureMs,
+            gain: Int(gain),
+            binning: binning
         )
     }
 
@@ -460,7 +426,7 @@ private struct CameraViewerContent: View {
     }
 
     private var totalExposureLabel: String {
-        let totalSec = effectiveExposureMs * Double(captureCount) / 1000
+        let totalSec = exposureMs * Double(captureCount) / 1000
         if totalSec < 60 {
             return String(format: "Σ %.0fs", totalSec)
         } else if totalSec < 3600 {
@@ -475,6 +441,7 @@ private struct CameraViewerContent: View {
     }
 
     private var statusColor: Color {
+        if viewModel.isRecordingVideo { return .red }
         if viewModel.isSaving { return .orange }
         if viewModel.isCapturing { return .green }
         if viewModel.isConnected { return .yellow }
@@ -492,6 +459,15 @@ private struct CameraViewerContent: View {
             prefix: prefix
         )
     }
+
+    private func startVideoRecording() {
+        let prefix = capturePrefix.isEmpty ? "video" : capturePrefix
+        viewModel.startVideoRecording(
+            settings: currentSettings,
+            folder: captureFolderURL,
+            prefix: prefix
+        )
+    }
 }
 
 // MARK: - Camera Controls Overlay
@@ -502,6 +478,8 @@ private struct CameraControlsOverlay: View {
     @Binding var gain: Double
     @Binding var binning: Int
     var onApply: () -> Void
+    /// Optional Canon-specific white balance binding. When nil, the WB row is hidden.
+    var canonWhiteBalance: Binding<CanonCameraBridge.WhiteBalance>? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -580,6 +558,24 @@ private struct CameraControlsOverlay: View {
                         .pickerStyle(.segmented)
                         .frame(width: 120)
                         .onChange(of: binning) { _, _ in onApply() }
+                    }
+
+                    // White balance — Canon only
+                    if let wb = canonWhiteBalance {
+                        HStack(spacing: 6) {
+                            Text("WB")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28, alignment: .leading)
+                            Picker("", selection: wb) {
+                                ForEach(CanonCameraBridge.WhiteBalance.allCases, id: \.self) { v in
+                                    Text(v.label).tag(v)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 140)
+                            .labelsHidden()
+                        }
                     }
                 }
                 .padding(10)

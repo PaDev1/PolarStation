@@ -95,17 +95,6 @@ struct GuideTabView: View {
             session.decMode = savedDecMode
 
             cameraViewModel.starDetectionEnabled = true
-            // Start the guide camera live view if it isn't already running.
-            // resumeLiveView() only fires when wasLiveBeforePause=true, so use
-            // startLive directly to auto-start on every Guide tab visit.
-            if cameraViewModel.isConnected && !cameraViewModel.isCapturing {
-                let settings = CameraSettings(
-                    exposureMs: exposureMs,
-                    gain: Int(guideGain),
-                    binning: guideBinning
-                )
-                cameraViewModel.startLive(settings: settings)
-            }
         }
         .onDisappear {
             // Persist current guide parameters
@@ -301,20 +290,7 @@ struct GuideTabView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // Star detector selection
-                HStack(spacing: 6) {
-                    Picker("Detector", selection: $cameraViewModel.forceClassicalDetector) {
-                        Text("Classical").tag(true)
-                        Text("CoreML").tag(false)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 180)
 
-                    Image(systemName: cameraViewModel.forceClassicalDetector ? "cpu" : "brain")
-                        .foregroundStyle(cameraViewModel.forceClassicalDetector ? .blue :
-                                            (cameraViewModel.starDetectorModelLoaded ? .green : .orange))
-                        .font(.caption)
-                }
             }
             .padding(.vertical, 4)
         }
@@ -496,6 +472,22 @@ struct GuideTabView: View {
                     Text("\"")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+
+                // Star detector preset — sharp vs diffused stars
+                HStack {
+                    Text("Stars")
+                        .frame(width: 65, alignment: .trailing)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $cameraViewModel.starDetectorMode) {
+                        ForEach(StarDetectorMode.allCases) { m in
+                            Text(m.rawValue).tag(m)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 160)
+                    .labelsHidden()
                 }
             }
             .padding(.vertical, 4)

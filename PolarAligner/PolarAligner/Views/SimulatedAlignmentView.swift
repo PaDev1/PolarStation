@@ -251,20 +251,6 @@ struct SimulatedAlignmentView: View {
 
                 Divider()
 
-                // Detector toggle
-                HStack(spacing: 6) {
-                    Picker("Detector", selection: $engine.useClassicalDetector) {
-                        Text("Classical").tag(true)
-                        Text("CoreML").tag(false)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 180)
-
-                    Image(systemName: engine.useClassicalDetector ? "cpu" : "brain")
-                        .foregroundStyle(engine.useClassicalDetector ? .blue : .green)
-                        .font(.caption)
-                }
-
                 // Camera parameters
                 simSlider(label: "Seeing", value: $engine.seeingFWHM,
                           range: 0.5...6.0, format: "%.1f\"")

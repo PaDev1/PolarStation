@@ -132,7 +132,7 @@ final class SimulatedGuideEngine: ObservableObject {
 
         cameraViewModel.appendDebug("[Sim] Metal device=\(dev.name)")
         cameraViewModel.appendDebug("[Sim] sfTex=\(starFieldTexture != nil) dispTex=\(displayTexture != nil) stretchPipe=\(stretchPipeline != nil)")
-        cameraViewModel.appendDebug("[Sim] model=\(cameraViewModel.starDetectorModelLoaded) status=\(cameraViewModel.starDetectorStatus)")
+        cameraViewModel.appendDebug("[Sim] detector=classical")
         cameraViewModel.appendDebug("[Sim] image=\(imageWidth)x\(imageHeight) viewSize=\(Int(viewSize.width))x\(Int(viewSize.height)) stars=\(starField.count)")
 
         // Set up camera view model for simulated mode

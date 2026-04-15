@@ -12,7 +12,8 @@ import MetalPerformanceShaders
 /// 5. Find local maxima (peaks)
 /// 6. Sub-pixel centroid refinement (CentroidExtractor.metal)
 final class ClassicalDetector: StarDetectorProtocol {
-    private let config: StarDetectionConfig
+    /// Active detection config — can be swapped at runtime (e.g. Sharp/Diffused preset).
+    var config: StarDetectionConfig
     private var centroidPipeline: MTLComputePipelineState?
     private var luminancePipeline: MTLComputePipelineState?
 
@@ -138,13 +139,16 @@ final class ClassicalDetector: StarDetectorProtocol {
 
                 guard val > threshold else { continue }
 
-                // Check if local maximum in 3x3 neighborhood
+                // Check if local maximum in 3x3 neighborhood.
+                // Use strict `>` so flat-top peaks (common with diffuse stars on
+                // less-sharp optics) are not all rejected as "neighbor equals me".
+                // Min-separation enforcement below dedupes plateau pixels.
                 var isMax = true
                 for dy in -1...1 {
                     for dx in -1...1 {
                         if dx == 0 && dy == 0 { continue }
                         let nidx = (y + dy) * width + (x + dx)
-                        if subtracted[nidx] >= val {
+                        if subtracted[nidx] > val {
                             isMax = false
                             break
                         }
