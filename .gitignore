@@ -47,3 +47,6 @@ dist/
 # place the framework themselves. See README.
 EDSDKv132010M/
 PolarAligner/Vendor/EDSDK/
+
+# External analysis/processing tools (not part of the app build)
+tools/

@@ -126,6 +126,12 @@ final class CameraViewModel: ObservableObject {
 
     // MARK: - Internal
 
+    /// Serial queue for all camera SDK / network operations (start, stop, configure,
+    /// close, etc.). Keeps UI responsive — MainActor only flips @Published state,
+    /// never waits for HTTP/SDK calls. Also serializes stop→start on the same
+    /// camera so the new session doesn't race the old one.
+    private let cameraOpQueue = DispatchQueue(label: "com.polaraligner.camera-ops", qos: .userInitiated)
+
     private var cameraBridge: ASICameraBridge?
     private var alpacaCameraBridge: AlpacaCameraBridge?
     private var canonCameraBridge: CanonCameraBridge?
@@ -599,19 +605,17 @@ final class CameraViewModel: ObservableObject {
     func disconnect() {
         stopCapture()
         stopTemperaturePolling()
+        // Close runs on the same serial queue as stop/start so it's strictly ordered
+        // after any pending grabber shutdown — no race on the underlying bridge.
         if let bridge = cameraBridge {
-            DispatchQueue.global(qos: .userInitiated).async {
-                try? bridge.close()
-            }
+            cameraOpQueue.async { try? bridge.close() }
         }
         if let bridge = alpacaCameraBridge {
-            DispatchQueue.global(qos: .userInitiated).async {
-                try? bridge.close()
-            }
+            cameraOpQueue.async { try? bridge.close() }
         }
         if let bridge = canonCameraBridge {
-            CanonCameraBridge.sdkQueue.async {
-                bridge.close()
+            cameraOpQueue.async {
+                CanonCameraBridge.sdkQueue.sync { bridge.close() }
             }
             CanonEventPump.shared.release()
         }
@@ -1085,7 +1089,7 @@ final class CameraViewModel: ObservableObject {
         self.frameGrabber = grabber
         isCapturing = true
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        cameraOpQueue.async { [weak self] in
             do {
                 try grabber.start()
                 Task { @MainActor [weak self] in
@@ -1148,12 +1152,24 @@ final class CameraViewModel: ObservableObject {
     func stopCapture() {
         guard isCapturing else { return }
         appendDebug("[Cam] stopCapture isSaving=\(isSaving)")
-        frameGrabber?.stop()
+
+        // Snapshot the grabbers and clear the VM's references synchronously on main
+        // (so a subsequent startCaptureInternal can't double-start), then run the
+        // actual .stop() calls — which do HTTP / SDK / thread-join work — on the
+        // serial camera queue. UI never blocks on network.
+        let usbGrabber = frameGrabber
+        let alpacaGrabber = alpacaFrameGrabber
+        let canonGrabber = canonFrameGrabber
         frameGrabber = nil
-        alpacaFrameGrabber?.stop()
         alpacaFrameGrabber = nil
-        canonFrameGrabber?.stop()
         canonFrameGrabber = nil
+
+        cameraOpQueue.async {
+            usbGrabber?.stop()
+            alpacaGrabber?.stop()
+            canonGrabber?.stop()
+        }
+
         isCapturing = false
         exposureStartDate = nil
         frameForwarder.onSaveFrame = nil
@@ -1204,7 +1220,7 @@ final class CameraViewModel: ObservableObject {
             }
             self.alpacaFrameGrabber = grabber
 
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            cameraOpQueue.async { [weak self] in
                 do {
                     try grabber.start()
                     Task { @MainActor [weak self] in
@@ -1241,7 +1257,7 @@ final class CameraViewModel: ObservableObject {
             }
             self.frameGrabber = grabber
 
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            cameraOpQueue.async { [weak self] in
                 do {
                     try grabber.start()
                     Task { @MainActor [weak self] in
@@ -1273,7 +1289,7 @@ final class CameraViewModel: ObservableObject {
             }
             self.canonFrameGrabber = grabber
 
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            cameraOpQueue.async { [weak self] in
                 do {
                     try grabber.start()
                     Task { @MainActor [weak self] in
