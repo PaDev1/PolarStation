@@ -90,6 +90,28 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
+    /// ROI presets that fit within the currently connected USB camera's sensor.
+    /// Different ASI models have very different sensor sizes (e.g. ASI585MC
+    /// 3840×2160 vs ASI120MM 1280×960), so unavailable presets are filtered
+    /// out of the picker rather than silently clamped.
+    var availableRoiPresets: [ASIRoiPreset] {
+        guard let cam = selectedCamera else { return ASIRoiPreset.allCases }
+        return ASIRoiPreset.allCases.filter { preset in
+            guard let d = preset.dimensions else { return true } // .full always OK
+            return d.width <= cam.maxWidth && d.height <= cam.maxHeight
+        }
+    }
+
+    /// Call after a camera connects so a saved preset that doesn't fit the new
+    /// sensor falls back to `.full` (e.g. user swaps from ASI585 to ASI120).
+    private func reconcileRoiPresetForConnectedCamera() {
+        guard cameraBridge != nil else { return }
+        if !availableRoiPresets.contains(asiRoiPreset) {
+            appendDebug("[Cam] Saved ROI \(asiRoiPreset.rawValue) doesn't fit \(selectedCamera?.name ?? "camera"); reverting to Full")
+            asiRoiPreset = .full
+        }
+    }
+
     // Canon-only: white balance preset
     @Published var canonWhiteBalance: CanonCameraBridge.WhiteBalance = .auto {
         didSet {
@@ -587,6 +609,7 @@ final class CameraViewModel: ObservableObject {
                     self.cameraBridge = bridge
                     self.isConnected = true
                     self.statusMessage = "Connected to \(name)"
+                    self.reconcileRoiPresetForConnectedCamera()
                     self.startHealthCheck()
                     if self.hasCooler {
                         self.startTemperaturePolling()

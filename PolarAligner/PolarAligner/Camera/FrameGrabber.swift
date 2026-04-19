@@ -82,15 +82,29 @@ final class FrameGrabber {
         startX = (startX / 4) * 4
         startY = (startY / 2) * 2
 
+        print("[FrameGrabber] Camera: \(info.name) sensor=\(info.maxWidth)x\(info.maxHeight) isColor=\(info.isColorCamera)")
+        print("[FrameGrabber] ROI config: req=\(settings.roiWidth ?? -1)x\(settings.roiHeight ?? -1) bin=\(settings.binning) fmt=\(settings.imageFormat) → out=\(captureWidth)x\(captureHeight) start=(\(startX),\(startY))")
+
         // Configure camera. ORDER MATTERS: setStartPos must come after
         // setROIFormat — changing format resets start position to (0, 0).
-        try camera.setROIFormat(
-            width: captureWidth,
-            height: captureHeight,
-            bin: settings.binning,
-            imageType: settings.imageFormat
-        )
-        try camera.setStartPos(x: startX, y: startY)
+        do {
+            try camera.setROIFormat(
+                width: captureWidth,
+                height: captureHeight,
+                bin: settings.binning,
+                imageType: settings.imageFormat
+            )
+        } catch {
+            print("[FrameGrabber] setROIFormat FAILED w=\(captureWidth) h=\(captureHeight) bin=\(settings.binning) fmt=\(settings.imageFormat): \(error)")
+            throw error
+        }
+        do {
+            try camera.setStartPos(x: startX, y: startY)
+        } catch {
+            print("[FrameGrabber] setStartPos FAILED x=\(startX) y=\(startY): \(error) — continuing with default (0,0)")
+            // Non-fatal: some cameras don't support start-position changes;
+            // fall through with full-frame readout at (0,0).
+        }
         try camera.setExposure(microseconds: settings.exposureMicroseconds)
         try camera.setGain(settings.gain)
 
