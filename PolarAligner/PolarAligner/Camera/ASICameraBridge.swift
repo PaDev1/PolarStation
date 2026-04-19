@@ -210,6 +210,12 @@ final class ASICameraBridge {
         try check(ASISetROIFormat(cameraID, Int32(width), Int32(height), Int32(bin), imageType.rawValue))
     }
 
+    /// Position the ROI on the sensor (post-bin coordinates). Must be called
+    /// AFTER `setROIFormat` — changing format resets start position to (0, 0).
+    func setStartPos(x: Int, y: Int) throws {
+        try check(ASISetStartPos(cameraID, Int32(x), Int32(y)))
+    }
+
     func getROIFormat() throws -> (width: Int, height: Int, bin: Int, imageType: ASIImageFormat) {
         var w: Int32 = 0, h: Int32 = 0, b: Int32 = 0
         var imgType: Int32 = 0

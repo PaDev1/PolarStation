@@ -55,6 +55,41 @@ final class CameraViewModel: ObservableObject {
     @Published var videoFrameCount: Int = 0
     private var serWriter: SERWriter?
 
+    // ASI USB only: image format (RAW8 / RAW16). RAW8 halves the per-frame
+    // bandwidth so you can hit the camera's full frame rate (e.g. 47 fps vs
+    // 24 fps on the ASI585MC Pro). Useful for planetary video; RAW16 is better
+    // for deep-sky work where bit depth matters. Persisted via UserDefaults.
+    @Published var asiImageFormat: ASIImageFormat = {
+        if let raw = UserDefaults.standard.object(forKey: "asiImageFormat") as? Int,
+           let fmt = ASIImageFormat(rawValue: Int32(raw)) {
+            return fmt
+        }
+        return .raw16
+    }() {
+        didSet {
+            UserDefaults.standard.set(Int(asiImageFormat.rawValue), forKey: "asiImageFormat")
+            appendDebug("[Cam] ASI format → \(asiImageFormat)")
+        }
+    }
+    /// True when the connected camera supports RAW8/RAW16 selection (ASI USB only).
+    var supportsImageFormatSelection: Bool { cameraBridge != nil }
+
+    /// ASI USB only: ROI preset. Smaller ROI reads out fewer sensor rows so
+    /// frame rate scales up proportionally (the real planetary-imaging win).
+    /// Persisted via UserDefaults.
+    @Published var asiRoiPreset: ASIRoiPreset = {
+        if let raw = UserDefaults.standard.string(forKey: "asiRoiPreset"),
+           let preset = ASIRoiPreset(rawValue: raw) {
+            return preset
+        }
+        return .full
+    }() {
+        didSet {
+            UserDefaults.standard.set(asiRoiPreset.rawValue, forKey: "asiRoiPreset")
+            appendDebug("[Cam] ASI ROI → \(asiRoiPreset.rawValue)")
+        }
+    }
+
     // Canon-only: white balance preset
     @Published var canonWhiteBalance: CanonCameraBridge.WhiteBalance = .auto {
         didSet {
@@ -1083,7 +1118,13 @@ final class CameraViewModel: ObservableObject {
 
         // Start FrameGrabber in video mode
         guard let bridge = cameraBridge else { return }
-        let grabber = FrameGrabber(camera: bridge, settings: settings)
+        var videoSettings = settings
+        videoSettings.imageFormat = asiImageFormat
+        if let roi = asiRoiPreset.dimensions {
+            videoSettings.roiWidth = roi.width
+            videoSettings.roiHeight = roi.height
+        }
+        let grabber = FrameGrabber(camera: bridge, settings: videoSettings)
         grabber.videoMode = true
         grabber.delegate = frameForwarder
         self.frameGrabber = grabber
@@ -1242,8 +1283,20 @@ final class CameraViewModel: ObservableObject {
             }
         } else if let bridge = cameraBridge {
             // USB capture
-            let grabber = FrameGrabber(camera: bridge, settings: settings)
+            var asiSettings = settings
+            asiSettings.imageFormat = asiImageFormat
+            if let roi = asiRoiPreset.dimensions {
+                asiSettings.roiWidth = roi.width
+                asiSettings.roiHeight = roi.height
+            }
+            let grabber = FrameGrabber(camera: bridge, settings: asiSettings)
             grabber.delegate = frameForwarder
+            // Use video mode for live preview — no per-frame startExposure overhead,
+            // continuous sensor readout. Capture sequences (maxFrames > 0) still use
+            // snap mode so each frame is a deliberate, individually-timed exposure.
+            if maxFrames == 0 {
+                grabber.videoMode = true
+            }
             // Only update the exposure timer for capture sequences, not live view
             // (the timer UI is gated on isSaving, and short live-view exposures
             // would flood the main actor with @Published setters).

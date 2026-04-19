@@ -63,21 +63,34 @@ final class FrameGrabber {
         }
         guard !isRunning else { return }
 
-        // Compute post-binning dimensions
-        captureWidth = info.maxWidth / settings.binning
-        captureHeight = info.maxHeight / settings.binning
+        // Desired ROI in sensor pixels (pre-binning). nil → full sensor.
+        // Clamp to the actual sensor size so undersized cameras degrade
+        // gracefully if a preset exceeds their dimensions.
+        let roiW = min(settings.roiWidth ?? info.maxWidth, info.maxWidth)
+        let roiH = min(settings.roiHeight ?? info.maxHeight, info.maxHeight)
 
-        // Ensure width is multiple of 8, height multiple of 2
-        captureWidth = (captureWidth / 8) * 8
-        captureHeight = (captureHeight / 2) * 2
+        // Post-binning output dimensions — width multiple of 8, height multiple of 2.
+        captureWidth = ((roiW / settings.binning) / 8) * 8
+        captureHeight = ((roiH / settings.binning) / 2) * 2
 
-        // Configure camera
+        // Centre the ROI on the sensor (post-bin coordinates). Floor the start
+        // position to a multiple of 4×2 for SDK alignment requirements.
+        let maxOutW = info.maxWidth / settings.binning
+        let maxOutH = info.maxHeight / settings.binning
+        var startX = max(0, (maxOutW - captureWidth) / 2)
+        var startY = max(0, (maxOutH - captureHeight) / 2)
+        startX = (startX / 4) * 4
+        startY = (startY / 2) * 2
+
+        // Configure camera. ORDER MATTERS: setStartPos must come after
+        // setROIFormat — changing format resets start position to (0, 0).
         try camera.setROIFormat(
             width: captureWidth,
             height: captureHeight,
             bin: settings.binning,
             imageType: settings.imageFormat
         )
+        try camera.setStartPos(x: startX, y: startY)
         try camera.setExposure(microseconds: settings.exposureMicroseconds)
         try camera.setGain(settings.gain)
 

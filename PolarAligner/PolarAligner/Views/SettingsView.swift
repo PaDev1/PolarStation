@@ -1862,12 +1862,20 @@ struct SettingsView: View {
 
         Task.detached {
             do {
-                // Step 1: Download from Gaia TAP service.
-                // Must use POST with form-encoded params — GET returns an HTML error page.
-                let query = "SELECT source_id,ra,dec,pmra,pmdec,phot_g_mean_mag FROM gaiadr3.gaia_source WHERE phot_g_mean_mag < \(mag) ORDER BY phot_g_mean_mag"
-                guard let url = URL(string: "https://gea.esac.esa.int/tap-server/tap/sync") else {
-                    throw NSError(domain: "", code: -1)
-                }
+                // Strategy: try the Gaia TAP /sync endpoint first. It streams bytes
+                // directly so the user sees immediate progress. If it fails (HTML
+                // downtime page, 408 timeout, 500 pool-empty, etc.), fall back to
+                // the /async (UWS) endpoint which queues the job server-side.
+                // Note: ORDER BY triggers Gaia's "heavy query" quota for anonymous
+                // users on large result sets, so we omit it — the catalog builder
+                // doesn't need sorted input.
+                let query = "SELECT source_id,ra,dec,pmra,pmdec,phot_g_mean_mag FROM gaiadr3.gaia_source WHERE phot_g_mean_mag < \(mag)"
+                let syncBase = "https://gea.esac.esa.int/tap-server/tap/sync"
+                let asyncBase = "https://gea.esac.esa.int/tap-server/tap/async"
+                // ARI-Gaia Heidelberg mirror — mirrors the same Gaia DR3 data via the
+                // same TAP protocol. Used as a fallback when ESA's archive is under
+                // load (DB pool exhaustion, silent async failures, etc.).
+                let ariSyncBase = "https://gaia.ari.uni-heidelberg.de/tap/sync"
 
                 func formEncode(_ pairs: [(String, String)]) -> String {
                     var allowed = CharacterSet.urlQueryAllowed
@@ -1879,37 +1887,155 @@ struct SettingsView: View {
                     }.joined(separator: "&")
                 }
 
-                let body = formEncode([
+                func postForm(url: URL, pairs: [(String, String)], followRedirects: Bool = true) async throws -> (Data, HTTPURLResponse) {
+                    var req = URLRequest(url: url)
+                    req.httpMethod = "POST"
+                    req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                    req.httpBody = formEncode(pairs).data(using: .utf8)
+                    req.timeoutInterval = 60
+                    // URLSession follows redirects by default; that's fine for UWS 303s.
+                    let (data, resp) = try await URLSession.shared.data(for: req)
+                    guard let http = resp as? HTTPURLResponse else {
+                        throw NSError(domain: "GaiaTAP", code: -10, userInfo: [NSLocalizedDescriptionKey: "No HTTP response"])
+                    }
+                    return (data, http)
+                }
+
+                func decodeGaiaError(_ body: Data) -> String {
+                    let s = String(data: body, encoding: .utf8) ?? ""
+                    if let r = s.range(of: "<b>Message: </b>") {
+                        let rest = s[r.upperBound...]
+                        if let end = rest.range(of: "</li>") {
+                            return String(rest[..<end.lowerBound]).trimmingCharacters(in: .whitespaces)
+                        }
+                    }
+                    return ""
+                }
+
+                // --- Helper: fetch CSV as streaming bytes. Throws on HTTP error or
+                // HTML content, so the caller can try the alternate endpoint. ---
+                func fetchCsvStream(url: URL, method: String, body: Data?) async throws -> (URLSession.AsyncBytes, Int) {
+                    var req = URLRequest(url: url)
+                    req.httpMethod = method
+                    req.setValue("text/csv", forHTTPHeaderField: "Accept")
+                    if let body {
+                        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                        req.httpBody = body
+                    }
+                    req.timeoutInterval = 600
+                    let (bs, resp) = try await URLSession.shared.bytes(for: req)
+                    guard let http = resp as? HTTPURLResponse else {
+                        throw NSError(domain: "GaiaTAP", code: -10, userInfo: [NSLocalizedDescriptionKey: "No HTTP response"])
+                    }
+                    let ct = http.value(forHTTPHeaderField: "Content-Type") ?? ""
+                    if http.statusCode != 200 {
+                        throw NSError(domain: "GaiaTAP", code: http.statusCode,
+                                      userInfo: [NSLocalizedDescriptionKey: "Gaia returned HTTP \(http.statusCode)"])
+                    }
+                    if ct.contains("text/html") {
+                        throw NSError(domain: "GaiaTAP", code: -3,
+                                      userInfo: [NSLocalizedDescriptionKey: "Gaia returned HTML (service disruption or query rejected)"])
+                    }
+                    let total = Int(http.value(forHTTPHeaderField: "Content-Length") ?? "") ?? 0
+                    return (bs, total)
+                }
+
+                // --- Attempt /sync first — starts streaming immediately. ---
+                await MainActor.run { downloadStatus = "Gaia DR3 mag≤\(String(format: "%.1f", mag)): trying sync endpoint…" }
+
+                let syncBody = formEncode([
                     ("REQUEST", "doQuery"),
                     ("LANG", "ADQL"),
                     ("FORMAT", "csv"),
                     ("MAXREC", "5000000"),
                     ("QUERY", query),
-                ])
+                ]).data(using: .utf8)
 
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-                request.setValue("text/csv", forHTTPHeaderField: "Accept")
-                request.httpBody = body.data(using: .utf8)
-                request.timeoutInterval = 600
-
-                await MainActor.run { downloadStatus = "Downloading Gaia DR3 mag≤\(String(format: "%.1f", mag))..." }
-
-                let (bytes, response) = try await URLSession.shared.bytes(for: request)
-                if let http = response as? HTTPURLResponse {
-                    let ct = http.value(forHTTPHeaderField: "Content-Type") ?? ""
-                    if http.statusCode != 200 {
-                        throw NSError(domain: "GaiaTAP", code: http.statusCode,
-                                      userInfo: [NSLocalizedDescriptionKey: "Gaia TAP returned HTTP \(http.statusCode)"])
+                var bytes: URLSession.AsyncBytes
+                var totalSize: Int
+                do {
+                    (bytes, totalSize) = try await fetchCsvStream(
+                        url: URL(string: syncBase)!, method: "POST", body: syncBody)
+                    await MainActor.run { downloadStatus = "Downloading Gaia DR3 mag≤\(String(format: "%.1f", mag)) (ESA sync)…" }
+                } catch let esaSyncErr {
+                    // ESA /sync failed. Try ARI-Gaia Heidelberg mirror next — same
+                    // Gaia DR3 dataset, different infrastructure, usually not
+                    // overloaded when ESA is. Sync there too so bytes stream.
+                    await MainActor.run {
+                        downloadStatus = "ESA sync failed (\(esaSyncErr.localizedDescription)); trying ARI-Gaia mirror…"
                     }
-                    if ct.contains("text/html") {
-                        throw NSError(domain: "GaiaTAP", code: -3,
-                                      userInfo: [NSLocalizedDescriptionKey: "Gaia archive is unavailable (returned HTML — likely scheduled maintenance at gea.esac.esa.int). Try again later."])
+                    do {
+                        (bytes, totalSize) = try await fetchCsvStream(
+                            url: URL(string: ariSyncBase)!, method: "POST", body: syncBody)
+                        await MainActor.run { downloadStatus = "Downloading Gaia DR3 mag≤\(String(format: "%.1f", mag)) (ARI-Gaia mirror)…" }
+                    } catch let ariErr {
+                        // Both sync endpoints failed. Last resort: ESA async job.
+                        await MainActor.run {
+                            downloadStatus = "ARI mirror also failed (\(ariErr.localizedDescription)); trying ESA async job…"
+                        }
+
+                        guard let submitURL = URL(string: asyncBase) else { throw NSError(domain: "", code: -1) }
+                    let (submitBody, submitHTTP) = try await postForm(url: submitURL, pairs: [
+                        ("REQUEST", "doQuery"),
+                        ("LANG", "ADQL"),
+                        ("FORMAT", "csv"),
+                        ("MAXREC", "5000000"),
+                        ("PHASE", "RUN"),
+                        ("QUERY", query),
+                    ])
+                    guard let jobURL = submitHTTP.url, jobURL.absoluteString != asyncBase else {
+                        let msg = decodeGaiaError(submitBody)
+                        throw NSError(domain: "GaiaTAP", code: submitHTTP.statusCode,
+                                      userInfo: [NSLocalizedDescriptionKey:
+                                        "Async submit failed (HTTP \(submitHTTP.statusCode))" + (msg.isEmpty ? "" : ": \(msg)")])
                     }
+
+                    // Poll phase
+                    var phase = "PENDING"
+                    let phaseURL = jobURL.appendingPathComponent("phase")
+                    let pollDeadline = Date().addingTimeInterval(600)
+                    var pollIter = 0
+                    while phase != "COMPLETED" && phase != "ERROR" && phase != "ABORTED" {
+                        if Date() > pollDeadline {
+                            throw NSError(domain: "GaiaTAP", code: -5,
+                                          userInfo: [NSLocalizedDescriptionKey: "Gaia async job timed out after 10 min in phase \(phase)"])
+                        }
+                        try await Task.sleep(nanoseconds: 2_000_000_000)
+                        pollIter += 1
+                        let (pData, _) = try await URLSession.shared.data(from: phaseURL)
+                        phase = String(data: pData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "UNKNOWN"
+                        await MainActor.run {
+                            downloadStatus = "Gaia async job \(phase.lowercased())… (\(pollIter)×2s)"
+                            downloadProgress = 0.05 + min(0.25, Double(pollIter) * 0.01)
+                        }
+                    }
+
+                    if phase != "COMPLETED" {
+                        var msg = ""
+                        if let errURL = URL(string: jobURL.absoluteString + "/error") {
+                            let (errData, _) = try await URLSession.shared.data(from: errURL)
+                            let raw = String(data: errData, encoding: .utf8) ?? ""
+                            if let r = raw.range(of: "<uws:message>"),
+                               let e = raw.range(of: "</uws:message>") {
+                                msg = String(raw[r.upperBound..<e.lowerBound])
+                            }
+                        }
+                        if msg.isEmpty {
+                            msg = "Gaia query rejected — the archive may be overloaded. Try a lower magnitude (mag≤9) or retry later."
+                        }
+                        throw NSError(domain: "GaiaTAP", code: -6,
+                                      userInfo: [NSLocalizedDescriptionKey: "Gaia async \(phase): \(msg.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))"])
+                    }
+
+                    await MainActor.run {
+                        downloadProgress = 0.3
+                        downloadStatus = "Async job complete, downloading results…"
+                    }
+
+                    let resultsURL = jobURL.appendingPathComponent("results/result")
+                    (bytes, totalSize) = try await fetchCsvStream(url: resultsURL, method: "GET", body: nil)
+                    } // end inner catch (ARI fallback)
                 }
-                let totalSize = (response as? HTTPURLResponse)
-                    .flatMap { Int($0.value(forHTTPHeaderField: "Content-Length") ?? "") } ?? 0
 
                 try? FileManager.default.removeItem(at: csvPath)
                 FileManager.default.createFile(atPath: csvPath.path, contents: nil)

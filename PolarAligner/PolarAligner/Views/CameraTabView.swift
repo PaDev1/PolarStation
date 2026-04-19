@@ -104,6 +104,14 @@ private struct CameraViewerContent: View {
                             canonWhiteBalance: viewModel.supportsWhiteBalance
                                 ? Binding(get: { viewModel.canonWhiteBalance },
                                           set: { viewModel.canonWhiteBalance = $0 })
+                                : nil,
+                            asiImageFormat: viewModel.supportsImageFormatSelection
+                                ? Binding(get: { viewModel.asiImageFormat },
+                                          set: { viewModel.asiImageFormat = $0 })
+                                : nil,
+                            asiRoiPreset: viewModel.supportsImageFormatSelection
+                                ? Binding(get: { viewModel.asiRoiPreset },
+                                          set: { viewModel.asiRoiPreset = $0 })
                                 : nil
                         )
 
@@ -480,6 +488,10 @@ private struct CameraControlsOverlay: View {
     var onApply: () -> Void
     /// Optional Canon-specific white balance binding. When nil, the WB row is hidden.
     var canonWhiteBalance: Binding<CanonCameraBridge.WhiteBalance>? = nil
+    /// Optional ASI USB image format binding (RAW8 / RAW16). When nil, hidden.
+    var asiImageFormat: Binding<ASIImageFormat>? = nil
+    /// Optional ASI USB ROI preset binding. When nil, hidden.
+    var asiRoiPreset: Binding<ASIRoiPreset>? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -558,6 +570,43 @@ private struct CameraControlsOverlay: View {
                         .pickerStyle(.segmented)
                         .frame(width: 120)
                         .onChange(of: binning) { _, _ in onApply() }
+                    }
+
+                    // Image format — ASI USB only (RAW8 gives 2× fps; RAW16 for DSO)
+                    if let fmt = asiImageFormat {
+                        HStack(spacing: 6) {
+                            Text("Fmt")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28, alignment: .leading)
+                            Picker("", selection: fmt) {
+                                Text("RAW8").tag(ASIImageFormat.raw8)
+                                Text("RAW16").tag(ASIImageFormat.raw16)
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 120)
+                            .labelsHidden()
+                            .onChange(of: fmt.wrappedValue) { _, _ in onApply() }
+                        }
+                    }
+
+                    // ROI — ASI USB only (smaller ROI = higher fps, for planets)
+                    if let roi = asiRoiPreset {
+                        HStack(spacing: 6) {
+                            Text("ROI")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28, alignment: .leading)
+                            Picker("", selection: roi) {
+                                ForEach(ASIRoiPreset.allCases) { p in
+                                    Text(p.rawValue).tag(p)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 140)
+                            .labelsHidden()
+                            .onChange(of: roi.wrappedValue) { _, _ in onApply() }
+                        }
                     }
 
                     // White balance — Canon only
